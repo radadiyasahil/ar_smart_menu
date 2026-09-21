@@ -1,0 +1,6 @@
+@ARSmartMenu.API_HostAddress = http://localhost:5232
+
+GET {{ARSmartMenu.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

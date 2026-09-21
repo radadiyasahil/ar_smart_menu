@@ -1,0 +1,11 @@
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\bin\Debug\net9.0\ARSmartMenu.Domain.deps.json
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\bin\Debug\net9.0\ARSmartMenu.Domain.dll
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\bin\Debug\net9.0\ARSmartMenu.Domain.pdb
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.GeneratedMSBuildEditorConfig.editorconfig
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.AssemblyInfoInputs.cache
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.AssemblyInfo.cs
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.csproj.CoreCompileInputs.cache
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.dll
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\refint\ARSmartMenu.Domain.dll
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.pdb
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ref\ARSmartMenu.Domain.dll

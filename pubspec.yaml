@@ -1,0 +1,57 @@
+name: ar_smart_menu
+description: "AR Smart Menu - SaaS platform for restaurants and retail businesses."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State management
+  provider: ^6.1.2
+
+  # Networking (prepared for future API integration)
+  dio: ^5.7.0
+
+  # Navigation
+  go_router: ^14.6.2
+
+  # Local storage
+  shared_preferences: ^2.3.3
+
+  # Forms (used in upcoming product screens)
+  flutter_form_builder: ^10.3.0
+  form_builder_validators: ^11.0.0
+
+  # Charts (used in analytics screen)
+  fl_chart: ^0.69.2
+
+  # QR generation
+  qr_flutter: ^4.1.0
+
+  # Multilingual support
+  easy_localization: ^3.0.7
+  intl: ^0.20.2
+
+  # Product photo upload
+  image_picker: ^1.1.2
+
+  # Open WebAR preview in browser
+  url_launcher: ^6.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/translations/

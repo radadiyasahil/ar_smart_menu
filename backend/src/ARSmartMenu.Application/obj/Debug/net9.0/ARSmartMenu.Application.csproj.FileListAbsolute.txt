@@ -1,0 +1,15 @@
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\bin\Debug\net9.0\ARSmartMenu.Application.deps.json
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\bin\Debug\net9.0\ARSmartMenu.Application.dll
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\bin\Debug\net9.0\ARSmartMenu.Application.pdb
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\bin\Debug\net9.0\ARSmartMenu.Domain.dll
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\bin\Debug\net9.0\ARSmartMenu.Domain.pdb
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.csproj.AssemblyReference.cache
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.GeneratedMSBuildEditorConfig.editorconfig
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.AssemblyInfoInputs.cache
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.AssemblyInfo.cs
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.csproj.CoreCompileInputs.cache
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartM.6D07A5FD.Up2Date
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.dll
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\refint\ARSmartMenu.Application.dll
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.pdb
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ref\ARSmartMenu.Application.dll

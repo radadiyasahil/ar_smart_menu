@@ -1,4 +1,37 @@
-import axios from 'axios'
+export interface PublicMenuDish {
+  id: string
+  name: string
+  description?: string
+  pricePaise?: number
+  vegStatus: number
+  isSpicy: boolean
+  isBestseller: boolean
+  isNew: boolean
+  soldOutToday: boolean
+  thumbnailUrl?: string
+  photoUrls: string[]
+  glbUrl?: string
+  usdzUrl?: string
+  has3dModel: boolean
+  dishSlug: string
+}
+
+export interface PublicMenuCategory {
+  categoryName: string
+  categoryId: number
+  dishes: PublicMenuDish[]
+}
+
+export interface PublicMenuResponse {
+  slug: string
+  businessName: string
+  logoUrl?: string
+  city: string
+  address?: string
+  whatsAppNumber?: string
+  orderingUrl?: string
+  categories: PublicMenuCategory[]
+}
 
 import { apiClient, type ApiEnvelope } from './apiClient'
 import type { ArExperience, Product } from '@/types/product'
@@ -132,28 +165,26 @@ function mapExperience(data: PublicArResponse): ArExperience {
 }
 
 export const productService = {
-  async getExperienceBySlug(slug: string): Promise<ArExperience> {
-    try {
-      const res = await apiClient.get<ApiEnvelope<PublicArResponse>>(
-        `/public/ar/${slug}`,
-      )
-      if (!res.data.success || !res.data.data) {
-        throw new Error(res.data.error ?? 'Product not found')
-      }
-      return mapExperience(res.data.data)
-    } catch (e) {
-      if (axios.isAxiosError(e)) {
-        if (e.response?.status === 404) {
-          throw new Error('NOT_FOUND')
-        }
-        if (!e.response) {
-          throw new Error(
-            'NETWORK: Cannot reach the API. Start the backend: scripts\\dev-backend.ps1 (port 5232)',
-          )
-        }
-      }
-      throw e
+  /** Fetch the entire restaurant menu dynamically from the backend */
+  async fetchMenuBySlug(slug: string): Promise<PublicMenuResponse> {
+    const res = await apiClient.get<ApiEnvelope<PublicMenuResponse>>(
+      `/public/ar/menu/${slug}`,
+    )
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error || 'Menu not found')
     }
+    return res.data.data
+  },
+
+  /** Fetch a specific dish AR experience dynamically from the backend */
+  async getExperienceBySlug(slug: string): Promise<ArExperience> {
+    const res = await apiClient.get<ApiEnvelope<PublicArResponse>>(
+      `/public/ar/${slug}`,
+    )
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Product not found')
+    }
+    return mapExperience(res.data.data)
   },
 
   async logScan(

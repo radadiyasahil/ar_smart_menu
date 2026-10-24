@@ -3,9 +3,25 @@
 $ErrorActionPreference = "Stop"
 Set-Location "$PSScriptRoot\..\webar-experience"
 
-Write-Host "Starting WebAR experience (Vite HMR)..." -ForegroundColor Cyan
-Write-Host "URL: http://localhost:5174/dish/{slug}" -ForegroundColor Green
-Write-Host "API : http://localhost:5232/api" -ForegroundColor Green
+# Free port 5174 if busy
+$existing = Get-NetTCPConnection -LocalPort 5174 -ErrorAction SilentlyContinue
+if ($existing) {
+    Write-Host "Freeing port 5174..." -ForegroundColor Yellow
+    $pids = $existing | Select-Object -ExpandProperty OwningProcess -Unique
+    foreach ($p in $pids) {
+        Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Milliseconds 500
+}
+
+# Ensure npm packages are installed
+if (-not (Test-Path "$PSScriptRoot\..\webar-experience\node_modules")) {
+    Write-Host "Installing WebAR dependencies..." -ForegroundColor Cyan
+    npm install
+}
+
+Write-Host "Starting WebAR Customer Experience (http://localhost:5174/dish/shish-kebab)..." -ForegroundColor Green
+Write-Host "Opening in browser automatically..." -ForegroundColor Cyan
 Write-Host ""
 
 npm run dev

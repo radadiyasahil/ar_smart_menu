@@ -19,19 +19,22 @@ public class QualityReviewService : IQualityReviewService
     private readonly IQrCodeService _qrCodes;
     private readonly MediaUrlResolver _mediaUrls;
     private readonly Microsoft.Extensions.Configuration.IConfiguration _config;
+    private readonly INotificationService _notifications;
 
     public QualityReviewService(
         AppDbContext db,
         IStorageService storage,
         IQrCodeService qrCodes,
         MediaUrlResolver mediaUrls,
-        Microsoft.Extensions.Configuration.IConfiguration config)
+        Microsoft.Extensions.Configuration.IConfiguration config,
+        INotificationService notifications)
     {
         _db = db;
         _storage = storage;
         _qrCodes = qrCodes;
         _mediaUrls = mediaUrls;
         _config = config;
+        _notifications = notifications;
     }
 
     public async Task<ApprovalReviewDto?> GetReviewAsync(Guid jobId, CancellationToken ct = default)

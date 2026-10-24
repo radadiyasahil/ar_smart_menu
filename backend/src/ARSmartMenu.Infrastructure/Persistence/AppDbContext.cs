@@ -20,6 +20,7 @@ public partial class AppDbContext : DbContext
     public DbSet<RevokedToken> RevokedTokens => Set<RevokedToken>();
     public DbSet<ArScanEvent> ArScanEvents => Set<ArScanEvent>();
     public DbSet<ArViewEvent> ArViewEvents => Set<ArViewEvent>();
+    public DbSet<AppNotification> Notifications => Set<AppNotification>();
 
     // Phase 4 pipeline entities
     public DbSet<Photographer> Photographers => Set<Photographer>();

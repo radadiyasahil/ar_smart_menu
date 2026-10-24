@@ -20,6 +20,30 @@ class QrService {
         .toList();
   }
 
+  Future<QrCodeModel> getMasterQr() async {
+    final response = await _dio.get<Map<String, dynamic>>('/qrcodes/master');
+    final envelope = response.data!;
+    if (envelope['success'] != true) {
+      throw Exception(envelope['error'] ?? 'Failed to get master QR');
+    }
+    return QrCodeModel.fromJson(envelope['data'] as Map<String, dynamic>);
+  }
+
+  Future<List<QrCodeModel>> generateTableQrs({int count = 10}) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/qrcodes/tables',
+      queryParameters: {'count': count},
+    );
+    final envelope = response.data!;
+    if (envelope['success'] != true) {
+      throw Exception(envelope['error'] ?? 'Failed to generate table QRs');
+    }
+    final data = envelope['data'] as List<dynamic>;
+    return data
+        .map((e) => QrCodeModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<QrCodeModel> generateForProduct(String productId) async {
     final response = await _dio.post<Map<String, dynamic>>(
       '/qrcodes/generate',

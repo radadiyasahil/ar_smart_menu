@@ -8,6 +8,7 @@ D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMen
 D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.AssemblyInfoInputs.cache
 D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.AssemblyInfo.cs
 D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.csproj.CoreCompileInputs.cache
+D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.sourcelink.json
 D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartM.6D07A5FD.Up2Date
 D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\ARSmartMenu.Application.dll
 D:\ar_smart_menu\backend\src\ARSmartMenu.Application\obj\Debug\net9.0\refint\ARSmartMenu.Application.dll

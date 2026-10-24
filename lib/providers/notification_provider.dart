@@ -1,20 +1,11 @@
 import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import '../core/services/notification_service.dart';
 import '../models/business_model.dart';
 import '../models/product_model.dart';
 
-enum OwnerNotificationType {
-  productLive,
-  productRejected,
-  productReview,
-  businessApproved,
-  businessRejected,
-  planLimit,
-  info,
-}
+enum OwnerNotificationType { productLive, productRejected, productReview, businessApproved, businessRejected, planLimit, info }
 
 class OwnerNotification {
   const OwnerNotification({
@@ -27,248 +18,176 @@ class OwnerNotification {
     this.read = false,
   });
 
-  final String id;
-  final String title;
-  final String body;
+  final String id, title, body;
   final OwnerNotificationType type;
   final DateTime createdAt;
   final String? productId;
   final bool read;
 
   OwnerNotification copyWith({bool? read}) => OwnerNotification(
-        id: id,
-        title: title,
-        body: body,
-        type: type,
-        createdAt: createdAt,
-        productId: productId,
-        read: read ?? this.read,
-      );
+    id: id, title: title, body: body, type: type, createdAt: createdAt, productId: productId, read: read ?? this.read,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'body': body,
-        'type': type.name,
-        'createdAt': createdAt.toIso8601String(),
-        'productId': productId,
-        'read': read,
-      };
+    'id': id, 'title': title, 'body': body, 'type': type.name,
+    'createdAt': createdAt.toIso8601String(), 'productId': productId, 'read': read,
+  };
 
   factory OwnerNotification.fromJson(Map<String, dynamic> json) {
+    final tStr = (json['type'] as String? ?? 'info').toLowerCase();
+    final type = OwnerNotificationType.values.firstWhere(
+      (e) => e.name.toLowerCase() == tStr,
+      orElse: () => OwnerNotificationType.info,
+    );
     return OwnerNotification(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      body: json['body'] as String,
-      type: OwnerNotificationType.values.firstWhere(
-        (e) => e.name == json['type'],
-        orElse: () => OwnerNotificationType.info,
-      ),
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      productId: json['productId'] as String?,
-      read: json['read'] as bool? ?? false,
+      id: (json['id'] ?? '').toString(),
+      title: json['title'] as String? ?? 'Notification',
+      body: json['body'] as String? ?? '',
+      type: type,
+      createdAt: DateTime.tryParse((json['createdAt'] ?? '').toString()) ?? DateTime.now(),
+      productId: json['productId']?.toString(),
+      read: (json['read'] as bool?) ?? (json['isRead'] as bool?) ?? false,
     );
   }
 }
 
-/// In-app alerts for product status, business approval, and plan limits.
 class NotificationProvider extends ChangeNotifier {
-  static const _notificationsKey = 'owner_notifications_v1';
-  static const _productSnapshotKey = 'owner_product_status_snapshot';
-  static const _businessStatusKey = 'owner_business_status_snapshot';
-  static const _planWarnKey = 'owner_plan_limit_warned';
+  static const _kNotifs = 'owner_notifications_v1';
+  static const _kProdSnap = 'owner_product_status_snapshot';
+  static const _kBizSnap = 'owner_business_status_snapshot';
+  static const _kWarn = 'owner_plan_limit_warned';
 
+  final _service = NotificationService();
   List<OwnerNotification> _notifications = [];
   bool _hydrated = false;
 
-  List<OwnerNotification> get notifications =>
-      List.unmodifiable(_notifications);
-
-  int get unreadCount =>
-      _notifications.where((notification) => !notification.read).length;
+  List<OwnerNotification> get notifications => List.unmodifiable(_notifications);
+  int get unreadCount => _notifications.where((n) => !n.read).length;
 
   Future<void> hydrate() async {
     if (_hydrated) return;
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_notificationsKey);
+    final raw = prefs.getString(_kNotifs);
     if (raw != null) {
-      final list = jsonDecode(raw) as List<dynamic>;
-      _notifications = list
-          .map((e) => OwnerNotification.fromJson(e as Map<String, dynamic>))
-          .toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      try {
+        _notifications = (jsonDecode(raw) as List)
+            .map((e) => OwnerNotification.fromJson(e as Map<String, dynamic>))
+            .toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      } catch (_) {}
     }
     _hydrated = true;
     notifyListeners();
+    await fetchRemote();
   }
 
-  Future<void> sync({
-    required List<ProductModel> products,
-    BusinessModel? business,
-    int? maxProducts,
-  }) async {
+  Future<void> fetchRemote() async {
+    try {
+      final remotes = await _service.getNotifications();
+      if (remotes.isEmpty) return;
+      final existing = {for (final n in _notifications) n.id: n};
+      var changed = false;
+
+      for (final r in remotes) {
+        if (!existing.containsKey(r.id)) {
+          _notifications.add(r);
+          changed = true;
+        } else if (existing[r.id]!.read != r.read) {
+          final i = _notifications.indexWhere((n) => n.id == r.id);
+          if (i != -1) { _notifications[i] = _notifications[i].copyWith(read: r.read); changed = true; }
+        }
+      }
+      if (changed) {
+        _notifications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        await _persist();
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> sync({required List<ProductModel> products, BusinessModel? business, int? maxProducts}) async {
     await hydrate();
     final prefs = await SharedPreferences.getInstance();
-    final previousProducts = _readProductSnapshot(prefs);
-    final previousBusinessStatus = prefs.getInt(_businessStatusKey);
+    final prevProds = _readSnapshot(prefs, _kProdSnap);
+    final prevBiz = prefs.getInt(_kBizSnap);
     var changed = false;
 
-    if (business != null && previousBusinessStatus != null) {
-      if (business.status == BusinessStatus.active &&
-          previousBusinessStatus != BusinessStatus.active.value) {
-        _prepend(
-          OwnerNotification(
-            id: 'business-approved-${business.id}',
-            title: 'Business approved',
-            body: '${business.businessName} is active — add products and QR codes.',
-            type: OwnerNotificationType.businessApproved,
-            createdAt: DateTime.now(),
-          ),
-        );
-        changed = true;
-      } else if (business.isRejected &&
-          previousBusinessStatus != BusinessStatus.rejected.value) {
-        _prepend(
-          OwnerNotification(
-            id: 'business-rejected-${business.id}',
-            title: 'Business needs changes',
-            body: business.rejectionReason ??
-                'Admin rejected your registration. Update details in Account.',
-            type: OwnerNotificationType.businessRejected,
-            createdAt: DateTime.now(),
-          ),
-        );
-        changed = true;
-      }
-    }
-
     if (business != null) {
-      await prefs.setInt(_businessStatusKey, business.status.value);
+      if (prevBiz != null) {
+        if (business.status == BusinessStatus.active && prevBiz != BusinessStatus.active.value) {
+          _prepend(OwnerNotification(id: 'biz-ok-${business.id}', title: 'Business approved', body: '${business.businessName} is active.', type: OwnerNotificationType.businessApproved, createdAt: DateTime.now()));
+          changed = true;
+        } else if (business.isRejected && prevBiz != BusinessStatus.rejected.value) {
+          _prepend(OwnerNotification(id: 'biz-rej-${business.id}', title: 'Business needs changes', body: business.rejectionReason ?? 'Registration rejected.', type: OwnerNotificationType.businessRejected, createdAt: DateTime.now()));
+          changed = true;
+        }
+      }
+      await prefs.setInt(_kBizSnap, business.status.value);
     }
 
-    for (final product in products) {
-      final prev = previousProducts[product.id];
-      if (prev == null) continue;
+    for (final p in products) {
+      final prev = prevProds[p.id];
+      final isTrans = prev != null && prev != p.status.value;
+      final isInitial = prev == null && _notifications.isEmpty && (p.isLive || p.isRejected);
 
-      if (product.isLive && prev != ProductStatus.live.value) {
-        _prepend(
-          OwnerNotification(
-            id: 'live-${product.id}-${DateTime.now().millisecondsSinceEpoch}',
-            title: '${product.name} is live',
-            body: 'Customers can scan the QR and view your dish in AR.',
-            type: OwnerNotificationType.productLive,
-            createdAt: DateTime.now(),
-            productId: product.id,
-          ),
-        );
-        changed = true;
-      } else if (product.isRejected && prev != ProductStatus.rejected.value) {
-        _prepend(
-          OwnerNotification(
-            id: 'rejected-${product.id}-${DateTime.now().millisecondsSinceEpoch}',
-            title: '${product.name} rejected',
-            body: product.rejectionReasonOnly ??
-                'Admin asked for changes — open the product to see details.',
-            type: OwnerNotificationType.productRejected,
-            createdAt: DateTime.now(),
-            productId: product.id,
-          ),
-        );
-        changed = true;
-      } else if (product.status == ProductStatus.review &&
-          prev != ProductStatus.review.value) {
-        _prepend(
-          OwnerNotification(
-            id: 'review-${product.id}-${DateTime.now().millisecondsSinceEpoch}',
-            title: '${product.name} in review',
-            body: '3D model is ready — waiting for admin approval.',
-            type: OwnerNotificationType.productReview,
-            createdAt: DateTime.now(),
-            productId: product.id,
-          ),
-        );
-        changed = true;
+      if (isTrans || isInitial) {
+        if (p.isLive && (prev == null || prev != ProductStatus.live.value)) {
+          _prepend(OwnerNotification(id: 'live-${p.id}-${DateTime.now().millisecondsSinceEpoch}', title: '${p.name} is now LIVE in AR!', body: 'Customers can scan QR to view in 3D.', type: OwnerNotificationType.productLive, createdAt: DateTime.now(), productId: p.id));
+          changed = true;
+        } else if (p.isRejected && (prev == null || prev != ProductStatus.rejected.value)) {
+          _prepend(OwnerNotification(id: 'rej-${p.id}-${DateTime.now().millisecondsSinceEpoch}', title: '${p.name} rejected', body: p.rejectionReasonOnly ?? 'Admin requested changes.', type: OwnerNotificationType.productRejected, createdAt: DateTime.now(), productId: p.id));
+          changed = true;
+        } else if (p.status == ProductStatus.review && (prev == null || prev != ProductStatus.review.value)) {
+          _prepend(OwnerNotification(id: 'rev-${p.id}-${DateTime.now().millisecondsSinceEpoch}', title: '${p.name} in review', body: '3D model waiting for admin approval.', type: OwnerNotificationType.productReview, createdAt: DateTime.now(), productId: p.id));
+          changed = true;
+        }
       }
     }
-
-    final nextSnapshot = {
-      for (final product in products) product.id: product.status.value,
-    };
-    await prefs.setString(_productSnapshotKey, jsonEncode(nextSnapshot));
+    await prefs.setString(_kProdSnap, jsonEncode({for (final p in products) p.id: p.status.value}));
 
     if (maxProducts != null && maxProducts > 0) {
-      final count = products.length;
-      final warned = prefs.getBool(_planWarnKey) ?? false;
-      if (count >= maxProducts) {
-        if (!warned) {
-          _prepend(
-            OwnerNotification(
-              id: 'plan-limit-$maxProducts',
-              title: 'Product limit reached',
-              body:
-                  'You have $count of $maxProducts products on your plan. Upgrade to add more.',
-              type: OwnerNotificationType.planLimit,
-              createdAt: DateTime.now(),
-            ),
-          );
-          changed = true;
-          await prefs.setBool(_planWarnKey, true);
-        }
-      } else if (count >= (maxProducts * 0.85).ceil()) {
-        final warnId = 'plan-near-$maxProducts-$count';
-        if (!_notifications.any((n) => n.id == warnId)) {
-          _prepend(
-            OwnerNotification(
-              id: warnId,
-              title: 'Almost at product limit',
-              body: '$count of $maxProducts slots used on your current plan.',
-              type: OwnerNotificationType.planLimit,
-              createdAt: DateTime.now(),
-            ),
-          );
-          changed = true;
-        }
-      } else {
-        await prefs.setBool(_planWarnKey, false);
+      final warned = prefs.getBool(_kWarn) ?? false;
+      if (products.length >= maxProducts && !warned) {
+        _prepend(OwnerNotification(id: 'plan-$maxProducts', title: 'Product limit reached', body: 'You have used $maxProducts slots on your plan.', type: OwnerNotificationType.planLimit, createdAt: DateTime.now()));
+        changed = true;
+        await prefs.setBool(_kWarn, true);
+      } else if (products.length < maxProducts) {
+        await prefs.setBool(_kWarn, false);
       }
     }
 
-    if (changed) {
-      await _persist();
-      notifyListeners();
-    }
+    await fetchRemote();
+    if (changed) { await _persist(); notifyListeners(); }
   }
 
   Future<void> markRead(String id) async {
-    final index = _notifications.indexWhere((n) => n.id == id);
-    if (index < 0 || _notifications[index].read) return;
-    _notifications[index] = _notifications[index].copyWith(read: true);
+    final i = _notifications.indexWhere((n) => n.id == id);
+    if (i < 0 || _notifications[i].read) return;
+    _notifications[i] = _notifications[i].copyWith(read: true);
     await _persist();
     notifyListeners();
+    await _service.markRead(id);
   }
 
   Future<void> markAllRead() async {
-    _notifications =
-        _notifications.map((n) => n.copyWith(read: true)).toList();
+    _notifications = _notifications.map((n) => n.copyWith(read: true)).toList();
     await _persist();
     notifyListeners();
+    await _service.markAllRead();
   }
 
-  Map<String, int> _readProductSnapshot(SharedPreferences prefs) {
-    final raw = prefs.getString(_productSnapshotKey);
-    if (raw == null) return {};
-    final map = jsonDecode(raw) as Map<String, dynamic>;
-    return map.map((key, value) => MapEntry(key, value as int));
+  Map<String, int> _readSnapshot(SharedPreferences p, String key) {
+    try {
+      final raw = p.getString(key);
+      return raw == null ? {} : (jsonDecode(raw) as Map<String, dynamic>).map((k, v) => MapEntry(k, v as int));
+    } catch (_) { return {}; }
   }
 
-  void _prepend(OwnerNotification notification) {
-    if (_notifications.any((n) => n.id == notification.id)) return;
-    _notifications = [notification, ..._notifications].take(50).toList();
+  void _prepend(OwnerNotification n) {
+    if (!_notifications.any((item) => item.id == n.id)) _notifications = [n, ..._notifications].take(50).toList();
   }
 
   Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
-    final encoded = jsonEncode(_notifications.map((n) => n.toJson()).toList());
-    await prefs.setString(_notificationsKey, encoded);
+    await prefs.setString(_kNotifs, jsonEncode(_notifications.map((n) => n.toJson()).toList()));
   }
 }

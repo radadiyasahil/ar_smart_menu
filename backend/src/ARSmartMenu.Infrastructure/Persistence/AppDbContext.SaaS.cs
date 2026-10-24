@@ -142,5 +142,20 @@ public partial class AppDbContext
                 .HasForeignKey(v => v.ProductId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
+
+        modelBuilder.Entity<AppNotification>(e =>
+        {
+            e.HasIndex(n => n.BusinessId);
+            e.HasIndex(n => n.CreatedAt);
+            e.HasIndex(n => n.IsRead);
+            e.HasOne(n => n.Business)
+                .WithMany()
+                .HasForeignKey(n => n.BusinessId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(n => n.Product)
+                .WithMany()
+                .HasForeignKey(n => n.ProductId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
     }
 }

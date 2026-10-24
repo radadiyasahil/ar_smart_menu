@@ -5,6 +5,7 @@ D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Dom
 D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.AssemblyInfoInputs.cache
 D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.AssemblyInfo.cs
 D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.csproj.CoreCompileInputs.cache
+D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.sourcelink.json
 D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.dll
 D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\refint\ARSmartMenu.Domain.dll
 D:\ar_smart_menu\backend\src\ARSmartMenu.Domain\obj\Debug\net9.0\ARSmartMenu.Domain.pdb

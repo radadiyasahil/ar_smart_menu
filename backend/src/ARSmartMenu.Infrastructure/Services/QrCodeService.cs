@@ -26,6 +26,98 @@ public class QrCodeService : IQrCodeService
     public string BuildDishWebUrl(string slug) =>
         $"{_dishBaseUrl.TrimEnd('/')}/{slug}";
 
+    public string BuildMenuWebUrl(string slug, int? tableNumber = null)
+    {
+        var baseWeb = _dishBaseUrl.Replace("/dish", "");
+        var url = $"{baseWeb.TrimEnd('/')}/menu/{slug}";
+        if (tableNumber.HasValue && tableNumber.Value > 0)
+            url += $"?table={tableNumber.Value}";
+        return url;
+    }
+
+    public async Task<QrCodeDto> GetOrCreateMasterQrAsync(Guid businessId, CancellationToken ct = default)
+    {
+        var existing = await _db.QrCodes
+            .Include(q => q.Product)
+            .FirstOrDefaultAsync(q => q.BusinessId == businessId && q.QrType == QrType.Menu && q.IsActive, ct);
+
+        if (existing is not null)
+            return MapQr(existing, "Restaurant Master Menu");
+
+        var business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == businessId, ct)
+            ?? throw new NotFoundException("Business not found.");
+
+        var slug = await GenerateUniqueSlugAsync(business.BusinessName + "-menu", ct);
+        var webUrl = BuildMenuWebUrl(slug);
+        var qrImageUrl = $"{_dishBaseUrl.TrimEnd('/')}/qr/{slug}.png";
+
+        var qr = new QrCode
+        {
+            BusinessId = businessId,
+            ProductId = null,
+            QrType = QrType.Menu,
+            Slug = slug,
+            WebUrl = webUrl,
+            QrImageUrl = qrImageUrl,
+            QrImageS3Key = $"qr-codes/{businessId}/{slug}.png",
+            IsActive = true,
+        };
+
+        _db.QrCodes.Add(qr);
+        await _db.SaveChangesAsync(ct);
+
+        return MapQr(qr, "Restaurant Master Menu");
+    }
+
+    public async Task<IReadOnlyList<QrCodeDto>> GenerateTableQrsAsync(Guid businessId, int tableCount, CancellationToken ct = default)
+    {
+        if (tableCount < 1 || tableCount > 100)
+            throw new ValidationException("Table count must be between 1 and 100.");
+
+        var master = await GetOrCreateMasterQrAsync(businessId, ct);
+        var baseSlug = master.Slug;
+
+        var existingTables = await _db.QrCodes
+            .Where(q => q.BusinessId == businessId && q.QrType == QrType.Table)
+            .ToListAsync(ct);
+
+        var results = new List<QrCode>();
+        for (var i = 1; i <= tableCount; i++)
+        {
+            var tableNo = i;
+            var tableSlug = $"{baseSlug}-t{tableNo}";
+            var webUrl = BuildMenuWebUrl(baseSlug, tableNo);
+
+            var existing = existingTables.FirstOrDefault(q => q.Slug == tableSlug);
+            if (existing is not null)
+            {
+                existing.IsActive = true;
+                existing.WebUrl = webUrl;
+                existing.UpdatedAt = DateTime.UtcNow;
+                results.Add(existing);
+            }
+            else
+            {
+                var qr = new QrCode
+                {
+                    BusinessId = businessId,
+                    ProductId = null,
+                    QrType = QrType.Table,
+                    Slug = tableSlug,
+                    WebUrl = webUrl,
+                    QrImageUrl = $"{_dishBaseUrl.TrimEnd('/')}/qr/{tableSlug}.png",
+                    QrImageS3Key = $"qr-codes/{businessId}/{tableSlug}.png",
+                    IsActive = true,
+                };
+                _db.QrCodes.Add(qr);
+                results.Add(qr);
+            }
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return results.Select(q => MapQr(q, $"Table {q.Slug.Split("-t").Last()}")).ToList();
+    }
+
     public async Task<QrCodeDto> GenerateForProductAsync(Guid businessId, Guid productId, CancellationToken ct = default)
     {
         var product = await _db.Products

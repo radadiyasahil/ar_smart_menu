@@ -239,6 +239,7 @@ public record AdminBusinessFilter(
 public record ApproveBusinessRequest(string? AdminNotes = null);
 
 public record RejectBusinessRequest(string Reason, string? AdminNotes = null);
+public record RejectProductRequest(string Reason);
 
 // ── Public AR ─────────────────────────────────────────────────────────────────
 
@@ -277,6 +278,38 @@ public record PublicArResponse(
     PublicArBusinessDto Business,
     PublicArModelDto Model,
     IReadOnlyList<PublicArOtherProductDto> OtherProducts);
+
+public record PublicMenuResponse(
+    string Slug,
+    string BusinessName,
+    string? LogoUrl,
+    string City,
+    string? Address,
+    string? WhatsAppNumber,
+    string? OrderingUrl,
+    IReadOnlyList<PublicMenuCategoryDto> Categories);
+
+public record PublicMenuCategoryDto(
+    string CategoryName,
+    int CategoryId,
+    IReadOnlyList<PublicMenuDishDto> Dishes);
+
+public record PublicMenuDishDto(
+    Guid Id,
+    string Name,
+    string? Description,
+    int? PricePaise,
+    int VegStatus,
+    bool IsSpicy,
+    bool IsBestseller,
+    bool IsNew,
+    bool SoldOutToday,
+    string? ThumbnailUrl,
+    IReadOnlyList<string> PhotoUrls,
+    string? GlbUrl,
+    string? UsdzUrl,
+    bool Has3dModel,
+    string DishSlug);
 
 public record LogScanRequest(
     string? SessionId = null,

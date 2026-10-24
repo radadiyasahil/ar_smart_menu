@@ -31,7 +31,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return Consumer<AnalyticsProvider>(
       builder: (context, analytics, _) {
         return Scaffold(
-          backgroundColor: AppColors.lightGray,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           body: RefreshIndicator(
             color: AppColors.primaryOrange,
             onRefresh: analytics.refresh,
@@ -101,7 +101,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       'Menu Analytics',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: AppColors.black,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                     ),
                     const SizedBox(height: AppSpacing.xs),
@@ -138,7 +138,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       const SizedBox(height: AppSpacing.xs),
                       Text(
                         '${conversion.toStringAsFixed(1)}%',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 36,
                           fontWeight: FontWeight.bold,
                           color: AppColors.white,
@@ -446,15 +446,15 @@ class _KpiTile extends StatelessWidget {
           const Spacer(),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: AppColors.black,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               color: AppColors.mediumGray,
             ),
@@ -484,7 +484,7 @@ class _LegendDot extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           label,
-          style: const TextStyle(fontSize: 12, color: AppColors.mediumGray),
+          style: TextStyle(fontSize: 12, color: AppColors.mediumGray),
         ),
       ],
     );
@@ -526,7 +526,7 @@ class _AnalyticsLineChart extends StatelessWidget {
               interval: yMax / 4,
               getTitlesWidget: (value, _) => Text(
                 value.toInt().toString(),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
                   color: AppColors.mediumGray,
                 ),
@@ -551,7 +551,7 @@ class _AnalyticsLineChart extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
                     label,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10,
                       color: AppColors.mediumGray,
                     ),
@@ -678,7 +678,7 @@ class _TopProductRow extends StatelessWidget {
                         product.productName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
                         ),
@@ -686,7 +686,7 @@ class _TopProductRow extends StatelessWidget {
                     ),
                     Text(
                       '${product.scans} scans',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         color: AppColors.mediumGray,
                       ),
@@ -699,14 +699,14 @@ class _TopProductRow extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: progress,
                     minHeight: 6,
-                    backgroundColor: AppColors.lightGray,
+                    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
                     color: AppColors.primaryOrange,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   '${product.views} views · ${product.conversionRate.toStringAsFixed(0)}% conversion',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     color: AppColors.mediumGray,
                   ),
@@ -742,7 +742,7 @@ class _ErrorState extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.mediumGray),
+            style: TextStyle(color: AppColors.mediumGray),
           ),
           const SizedBox(height: AppSpacing.lg),
           FilledButton.icon(
@@ -750,7 +750,7 @@ class _ErrorState extends StatelessWidget {
             icon: const Icon(Icons.refresh),
             label: const Text('Try again'),
             style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primaryOrange,
+              backgroundColor: Theme.of(context).colorScheme.primary,
             ),
           ),
         ],

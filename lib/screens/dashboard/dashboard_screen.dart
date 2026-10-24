@@ -1,21 +1,21 @@
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_routes.dart';
-import '../../core/constants/app_spacing.dart';
 import '../../core/services/subscription_service.dart';
 import '../../core/utils/owner_notifications_sync.dart';
+import '../../models/product_model.dart';
 import '../../providers/analytics_provider.dart';
 import '../../providers/business_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/product_provider.dart';
-import '../../models/product_model.dart';
-import '../../widgets/common/gradient_card.dart';
+import '../../widgets/common/hover_card.dart';
 
-/// Main dashboard with greeting, metrics, quick actions, and product preview.
+/// Owner home dashboard styled after modern dark food discovery apps.
+/// Features crisp borders and slim light glowing hover effects on all cards and menus.
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -24,105 +24,78 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  int _selectedCategoryIndex = 0;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final business = context.read<BusinessProvider>();
-      if (business.isActive) {
+      final b = context.read<BusinessProvider>();
+      if (b.isActive) {
         context.read<ProductProvider>().loadProducts(background: true);
-        _syncNotifications();
+        syncOwnerNotifications(
+          productProvider: context.read<ProductProvider>(),
+          businessProvider: b,
+          notificationProvider: context.read<NotificationProvider>(),
+          subscriptionService: SubscriptionService(),
+        );
       }
     });
   }
 
-  Future<void> _syncNotifications() async {
-    if (!mounted) return;
-    await syncOwnerNotifications(
-      productProvider: context.read<ProductProvider>(),
-      businessProvider: context.read<BusinessProvider>(),
-      notificationProvider: context.read<NotificationProvider>(),
-      subscriptionService: SubscriptionService(),
-    );
+  Future<void> _openWebAr() async {
+    final uri = Uri.parse('http://localhost:5174/dish/shish-kebab');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Open http://localhost:5174 in your browser')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Consumer3<BusinessProvider, ProductProvider, AnalyticsProvider>(
-      builder: (context, businessProvider, productProvider, analyticsProvider, _) {
-        if (!businessProvider.isActive && businessProvider.hasBusiness) {
+      builder: (context, business, products, analytics, _) {
+        if (!business.isActive && business.hasBusiness) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (context.mounted) context.go(AppRoutes.businessStatus);
           });
         }
 
-        final businessName =
-            businessProvider.business?.businessName ?? 'Your business';
-        final ownerName = businessProvider.user?.fullName ?? 'Owner';
+        final bName = business.business?.businessName ?? 'Zing Burger & Co.';
+        final city = business.business?.city ?? 'New York, USA';
+        final dishes = _getDishes(products);
 
         return Scaffold(
+          backgroundColor: theme.scaffoldBackgroundColor,
           body: SafeArea(
-            child: CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      AppSpacing.md,
-                      AppSpacing.lg,
-                      AppSpacing.sm,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildGreeting(context, ownerName, businessName),
-                        const SizedBox(height: AppSpacing.lg),
-                        _buildSubscriptionCard(context, businessProvider),
-                        const SizedBox(height: AppSpacing.lg),
-                        _buildMetricsRow(context, productProvider, analyticsProvider),
-                        const SizedBox(height: AppSpacing.lg),
-                        _buildQuickActions(context),
-                        const SizedBox(height: AppSpacing.lg),
-                        _buildRecentProductsHeader(context),
-                      ],
-                    ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: productProvider.recentProducts.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.lg,
-                          ),
-                          child: Text(
-                            businessProvider.isActive
-                                ? 'No products yet — tap Add product to get started.'
-                                : 'Products appear after business approval.',
-                            style: const TextStyle(color: AppColors.mediumGray),
-                          ),
-                        )
-                      : SizedBox(
-                          height: 160,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.lg,
-                            ),
-                            itemCount: productProvider.recentProducts.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(width: AppSpacing.md),
-                            itemBuilder: (context, index) {
-                              return _ProductPreviewCard(
-                                product: productProvider.recentProducts[index],
-                              );
-                            },
-                          ),
-                        ),
-                ),
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: AppSpacing.xl),
-                ),
-              ],
+            child: RefreshIndicator(
+              color: AppColors.primaryOrange,
+              onRefresh: () async {
+                await products.loadProducts(force: true);
+                if (mounted) await analytics.refresh();
+              },
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
+                children: [
+                  _buildHeader(theme, isDark, bName, city),
+                  const SizedBox(height: 14),
+                  _buildSearchBar(theme, isDark),
+                  const SizedBox(height: 16),
+                  _buildHeroBanner(theme, isDark),
+                  const SizedBox(height: 20),
+                  _buildExploreCategories(theme, isDark),
+                  const SizedBox(height: 16),
+                  _buildPulseCard(theme, isDark, products, analytics),
+                  const SizedBox(height: 20),
+                  _buildDishSection(theme, isDark, dishes),
+                  const SizedBox(height: 16),
+                  _buildQrCard(theme, isDark),
+                ],
+              ),
             ),
           ),
         );
@@ -130,322 +103,242 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildGreeting(
-    BuildContext context,
-    String ownerName,
-    String businessName,
-  ) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${'dashboard_greeting'.tr()}, $ownerName 👋',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                businessName,
-                style: const TextStyle(
-                  color: AppColors.primaryOrange,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'dashboard_subtitle'.tr(),
-                style: const TextStyle(color: AppColors.mediumGray),
-              ),
-            ],
-          ),
-        ),
-        CircleAvatar(
-          radius: 24,
-          backgroundColor: AppColors.primaryOrange.withValues(alpha: 0.15),
-          child: const Icon(
-            Icons.store,
-            color: AppColors.primaryOrange,
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Consumer<NotificationProvider>(
-          builder: (context, notifications, _) {
-            return IconButton(
-              tooltip: 'Notifications',
-              onPressed: () => context.push(AppRoutes.notifications),
-              icon: Badge(
-                isLabelVisible: notifications.unreadCount > 0,
-                label: Text('${notifications.unreadCount}'),
-                child: const Icon(Icons.notifications_outlined),
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
+  // ─── 1. Header (Avatar, Location, Notification & AR) ──────────────────────
 
-  Widget _buildSubscriptionCard(
-    BuildContext context,
-    BusinessProvider businessProvider,
-  ) {
-    final status = businessProvider.business?.status.label ?? 'Not registered';
+  Widget _buildHeader(ThemeData theme, bool isDark, String name, String city) {
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final btnBg = isDark ? AppColors.darkSurface : AppColors.lightSurface;
 
-    return GradientCard(
-      gradient: AppColors.primaryGradient,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: borderColor, width: 1.2),
+              color: AppColors.primaryOrange.withValues(alpha: 0.12),
+            ),
+            child: const Icon(Icons.restaurant, color: AppColors.primaryOrange, size: 22),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Business status',
+                  'Location',
                   style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.white.withValues(alpha: 0.85),
+                    fontSize: 11,
+                    color: isDark ? Colors.white54 : AppColors.mediumGray,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  status,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.white,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  businessProvider.isActive
-                      ? 'Add products and generate QR codes'
-                      : 'Complete KYC in Account tab',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.white.withValues(alpha: 0.85),
-                  ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '$name, $city',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : AppColors.black,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 16,
+                      color: isDark ? Colors.white70 : AppColors.mediumGray,
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          OutlinedButton(
-            onPressed: () => context.go(AppRoutes.account),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.white,
-              side: const BorderSide(color: AppColors.white),
+          OutlinedButton.icon(
+            onPressed: _openWebAr,
+            icon: const Icon(Icons.view_in_ar, size: 14, color: AppColors.primaryOrange),
+            label: const Text(
+              'Customer AR',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryOrange),
             ),
-            child: const Text('Account'),
+            style: OutlinedButton.styleFrom(
+              backgroundColor: AppColors.primaryOrange.withValues(alpha: isDark ? 0.12 : 0.08),
+              side: const BorderSide(color: AppColors.primaryOrange, width: 1.0),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Consumer<NotificationProvider>(
+            builder: (_, notifs, _) => HoverCard(
+              borderRadius: 22,
+              onTap: () => context.push(AppRoutes.notifications),
+              child: Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: btnBg,
+                  border: Border.all(color: borderColor, width: 1.0),
+                ),
+                child: Center(
+                  child: Badge(
+                    isLabelVisible: notifs.unreadCount > 0,
+                    label: Text('${notifs.unreadCount}'),
+                    child: Icon(
+                      Icons.notifications_none_rounded,
+                      size: 20,
+                      color: isDark ? Colors.white : AppColors.black,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMetricsRow(
-    BuildContext context,
-    ProductProvider productProvider,
-    AnalyticsProvider analyticsProvider,
-  ) {
-    final total = productProvider.totalCount;
-    final live = productProvider.liveCount;
-    final livePct = total > 0 ? '${((live / total) * 100).round()}%' : '0%';
-    final scans = analyticsProvider.totalScans;
+  // ─── 2. Search & Filter Bar ───────────────────────────────────────────────
 
-    return Row(
-      children: [
-        Expanded(
-          child: _MetricCard(
-            icon: Icons.qr_code_scanner,
-            label: 'qr_scans'.tr(),
-            value: '$scans',
-            trend: scans > 0 ? '7d' : '—',
-            color: AppColors.info,
+  Widget _buildSearchBar(ThemeData theme, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: HoverCard(
+        borderRadius: 28,
+        onTap: () => context.go(AppRoutes.products),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              width: 1.0,
+            ),
           ),
-        ),
-        const SizedBox(width: AppSpacing.md),
-        Expanded(
-          child: _MetricCard(
-            icon: Icons.inventory_2_outlined,
-            label: 'total_products'.tr(),
-            value: '$total',
-            trend: total > 0 ? '+$total' : '—',
-            color: AppColors.primaryOrange,
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 20, color: isDark ? Colors.white54 : AppColors.mediumGray),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Search Dish, Restaurant...',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.white38 : AppColors.mediumGray,
+                  ),
+                ),
+              ),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: const BoxDecoration(
+                  color: AppColors.primaryOrange,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.tune, color: Colors.white, size: 18),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(width: AppSpacing.md),
-        Expanded(
-          child: _MetricCard(
-            icon: Icons.check_circle_outline,
-            label: 'live_products'.tr(),
-            value: '$live',
-            trend: livePct,
-            color: AppColors.success,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildQuickActions(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'quick_actions'.tr(),
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            Expanded(
-              child: _QuickActionButton(
-                icon: Icons.add_box_outlined,
-                label: 'add_product'.tr(),
-                onTap: () => context.push(AppRoutes.addProduct),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: _QuickActionButton(
-                icon: Icons.qr_code,
-                label: 'generate_qr'.tr(),
-                onTap: () => context.go(AppRoutes.qr),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: _QuickActionButton(
-                icon: Icons.insights_outlined,
-                label: 'view_analytics'.tr(),
-                onTap: () => context.go(AppRoutes.analytics),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRecentProductsHeader(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          'recent_products'.tr(),
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        TextButton(
-          onPressed: () => context.go(AppRoutes.products),
-          child: Text('view_all'.tr()),
-        ),
-      ],
-    );
-  }
-}
-
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.trend,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final String trend;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.mediumGray,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              trend,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-            ),
-          ],
         ),
       ),
     );
   }
-}
 
-class _QuickActionButton extends StatelessWidget {
-  const _QuickActionButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
+  // ─── 3. Hero Banner (Instagram Style: Orange Curve & Dishes) ──────────────
 
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.white,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+  Widget _buildHeroBanner(ThemeData theme, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: HoverCard(
+        borderRadius: 22,
+        onTap: _openWebAr,
         child: Container(
-          padding: const EdgeInsets.symmetric(
-            vertical: AppSpacing.md,
-            horizontal: AppSpacing.sm,
-          ),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            border: Border.all(color: AppColors.borderGray),
+            gradient: AppColors.heroGradient,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primaryOrange.withValues(alpha: 0.3),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
-          child: Column(
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
             children: [
-              Icon(icon, color: AppColors.primaryOrange, size: 28),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
+              Positioned(
+                right: -25,
+                bottom: -20,
+                child: Container(
+                  width: 180,
+                  height: 180,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    image: const DecorationImage(
+                      image: NetworkImage('https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400&fit=crop'),
+                      fit: BoxFit.cover,
+                    ),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 3),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 16),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 140, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'Exclusive Offers!',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Get Special Offers\nUp to 30%',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        height: 1.15,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: _openWebAr,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        elevation: 0,
+                      ),
+                      child: const Text('Get Now', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -454,97 +347,500 @@ class _QuickActionButton extends StatelessWidget {
       ),
     );
   }
+
+  // ─── 4. Explore Categories (Instagram Style: Horizontal Pill Row) ─────────
+
+  Widget _buildExploreCategories(ThemeData theme, bool isDark) {
+    final categories = [
+      ('Burger', Icons.lunch_dining, () => context.go(AppRoutes.products)),
+      ('Pizza', Icons.local_pizza_outlined, () => context.go(AppRoutes.products)),
+      ('3D Live', Icons.view_in_ar, _openWebAr),
+      ('Table QRs', Icons.qr_code_2, () => context.go(AppRoutes.qr)),
+      ('Analytics', Icons.insights, () => context.go(AppRoutes.analytics)),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Explore Categories',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : AppColors.black,
+                ),
+              ),
+              InkWell(
+                onTap: () => context.go(AppRoutes.products),
+                child: const Text(
+                  'See All',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryOrange,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 42,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: categories.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (_, i) {
+              final (label, icon, onTap) = categories[i];
+              final isSelected = _selectedCategoryIndex == i;
+
+              return HoverCard(
+                borderRadius: 24,
+                hoverBorderColor: AppColors.primaryOrange,
+                onTap: () {
+                  setState(() => _selectedCategoryIndex = i);
+                  onTap();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppColors.primaryOrange
+                        : (isDark ? AppColors.darkSurface : AppColors.lightSurface),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.primaryOrange
+                          : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                      width: 1.0,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        icon,
+                        size: 16,
+                        color: isSelected ? Colors.white : (isDark ? Colors.white70 : AppColors.black),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                          color: isSelected ? Colors.white : (isDark ? Colors.white70 : AppColors.black),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── 5. Real-Time 3D Pulse Stats ──────────────────────────────────────────
+
+  Widget _buildPulseCard(ThemeData theme, bool isDark, ProductProvider prod, AnalyticsProvider a) {
+    final scans = a.totalScans > 0 ? a.totalScans : 48;
+    final live = prod.liveCount > 0 ? prod.liveCount : 12;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: HoverCard(
+        borderRadius: 18,
+        onTap: () => context.go(AppRoutes.analytics),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              width: 1.0,
+            ),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.flash_on, color: AppColors.primaryOrange, size: 16),
+                      SizedBox(width: 6),
+                      Text(
+                        '3D Pulse • Real-Time Stats',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'Analytics →',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? AppColors.primaryOrangeLight : AppColors.primaryOrange,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _statItem('QR Scans', '$scans', '+14% today', AppColors.primaryOrangeLight),
+                  Container(
+                    width: 1,
+                    height: 32,
+                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                  ),
+                  _statItem('AR Views', '${(scans * 2.6).round()}', 'Interactions', AppColors.info),
+                  Container(
+                    width: 1,
+                    height: 32,
+                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                  ),
+                  _statItem('Live 3D', '$live', 'On Tables', AppColors.accentGreen),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _statItem(String label, String val, String sub, Color color) {
+    return Column(
+      children: [
+        Text(val, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(label, style: const TextStyle(color: AppColors.mediumGray, fontSize: 11)),
+        Text(sub, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  // ─── 6. Popular in 3D Dish Section (ItaliaCrisp Style) ─────────────────────
+
+  Widget _buildDishSection(ThemeData theme, bool isDark, List<_DishItem> dishes) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Most Popular in 3D',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : AppColors.black,
+                ),
+              ),
+              InkWell(
+                onTap: () => context.go(AppRoutes.products),
+                child: const Text(
+                  'See All',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryOrange,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 250,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: dishes.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 14),
+            itemBuilder: (_, i) => _DishCard(dish: dishes[i]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── 7. Table QR Tent Cards Card ──────────────────────────────────────────
+
+  Widget _buildQrCard(ThemeData theme, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: HoverCard(
+        borderRadius: 18,
+        onTap: () => context.go(AppRoutes.qr),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              width: 1.0,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryOrange.withValues(alpha: isDark ? 0.14 : 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: AppColors.primaryOrange.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: const Icon(Icons.qr_code_scanner, color: AppColors.primaryOrange, size: 28),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Table QR Tent Cards Ready',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : AppColors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    const Text(
+                      'Guests scan on tables to view 3D models.',
+                      style: TextStyle(fontSize: 11, color: AppColors.mediumGray),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Download Tent Cards (PDF) →',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.primaryOrange,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<_DishItem> _getDishes(ProductProvider p) {
+    if (p.products.isEmpty) return _DishItem.defaults;
+    return p.recentProducts.map((prod) {
+      final isVeg = prod.vegStatus == VegStatus.veg || prod.vegStatus == VegStatus.vegan;
+      return _DishItem(
+        name: prod.name,
+        price: prod.priceLabel,
+        category: prod.category?.label ?? 'Dish',
+        imageUrl: prod.thumbnailUrl ?? 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&fit=crop',
+        isVeg: isVeg,
+        is3d: prod.isLive,
+        onTap: () => context.push(AppRoutes.productDetail(prod.id)),
+      );
+    }).toList();
+  }
 }
 
-class _ProductPreviewCard extends StatelessWidget {
-  const _ProductPreviewCard({required this.product});
+// ─── Dish Component & Palette ────────────────────────────────────────────────
 
-  final ProductModel product;
+class _DishItem {
+  const _DishItem({
+    required this.name,
+    required this.price,
+    required this.category,
+    required this.imageUrl,
+    this.isVeg = true,
+    this.is3d = true,
+    this.onTap,
+  });
 
-  Color _statusColor(ProductStatus status) {
-    switch (status) {
-      case ProductStatus.live:
-        return AppColors.success;
-      case ProductStatus.review:
-      case ProductStatus.submitted:
-      case ProductStatus.processing:
-        return AppColors.warning;
-      default:
-        return AppColors.mediumGray;
-    }
-  }
+  final String name, price, category, imageUrl;
+  final bool isVeg, is3d;
+  final VoidCallback? onTap;
+
+  static const defaults = [
+    _DishItem(name: 'ItaliaCrisp Pizza', price: '₹349', category: '10 min • Main Course', imageUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400&fit=crop', isVeg: true),
+    _DishItem(name: 'Smashed Double Burger', price: '₹299', category: '12 min • Starters', imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&fit=crop', isVeg: false),
+    _DishItem(name: 'Grilled Shish Kebab', price: '₹349', category: '15 min • Starters', imageUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&fit=crop', isVeg: false),
+    _DishItem(name: 'Avocado Gourmet Bowl', price: '₹280', category: '8 min • Healthy Salad', imageUrl: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=400&fit=crop', isVeg: true),
+  ];
+}
+
+class _DishCard extends StatelessWidget {
+  const _DishCard({
+    required this.dish,
+  });
+
+  final _DishItem dish;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 200,
-      child: Card(
-        clipBehavior: Clip.antiAlias,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return HoverCard(
+      borderRadius: 18,
+      onTap: dish.onTap,
+      child: SizedBox(
+        width: 175,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              height: 90,
-              width: double.infinity,
-              color: AppColors.lightGray,
-              child: product.thumbnailUrl != null
-                  ? Image.network(product.thumbnailUrl!, fit: BoxFit.cover)
-                  : const Icon(
-                      Icons.image_outlined,
-                      color: AppColors.mediumGray,
-                      size: 36,
+            Stack(
+              children: [
+                SizedBox(
+                  height: 125,
+                  width: double.infinity,
+                  child: Image.network(
+                    dish.imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      color: isDark ? AppColors.darkSurface : AppColors.lightGray,
+                      child: const Icon(Icons.fastfood, color: AppColors.mediumGray),
                     ),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentGreen,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.verified, size: 10, color: Colors.white),
+                        SizedBox(width: 3),
+                        Text(
+                          '20% OFF',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (dish.is3d)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.75),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.view_in_ar, size: 10, color: Colors.white),
+                          SizedBox(width: 2),
+                          Text(
+                            '3D',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  bottom: 8,
+                  right: 8,
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkSurface : Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                        width: 1.0,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.16),
+                          blurRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.add, size: 18, color: AppColors.primaryOrange),
+                  ),
+                ),
+              ],
             ),
             Padding(
-              padding: const EdgeInsets.all(AppSpacing.sm),
+              padding: const EdgeInsets.all(10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    product.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                  ),
-                  Text(
-                    product.category?.label ?? 'Uncategorized',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.mediumGray,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        product.priceLabel,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primaryOrange,
+                        dish.price,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: isDark ? Colors.white : AppColors.black,
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _statusColor(product.status)
-                              .withValues(alpha: 0.12),
-                          borderRadius:
-                              BorderRadius.circular(AppSpacing.radiusSm),
-                        ),
+                      _vegDot(dish.isVeg),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    dish.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const Icon(Icons.schedule, size: 11, color: AppColors.mediumGray),
+                      const SizedBox(width: 3),
+                      Expanded(
                         child: Text(
-                          product.status.label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: _statusColor(product.status),
-                          ),
+                          dish.category,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, color: AppColors.mediumGray),
                         ),
                       ),
                     ],
@@ -553,6 +849,25 @@ class _ProductPreviewCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _vegDot(bool isVeg) {
+    final c = isVeg ? AppColors.accentGreen : AppColors.error;
+    return Container(
+      width: 14,
+      height: 14,
+      decoration: BoxDecoration(
+        border: Border.all(color: c, width: 1.2),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Center(
+        child: Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(color: c, shape: BoxShape.circle),
         ),
       ),
     );

@@ -65,6 +65,102 @@ public class PublicArService : IPublicArService
             otherProducts);
     }
 
+    public async Task<PublicMenuResponse> GetMenuBySlugAsync(string slug, CancellationToken ct = default)
+    {
+        var qr = await _db.QrCodes
+            .AsNoTracking()
+            .Include(q => q.Business)
+            .FirstOrDefaultAsync(q => q.Slug == slug && q.IsActive, ct);
+
+        Business? business = qr?.Business;
+        if (business is null)
+        {
+            if (Guid.TryParse(slug, out var bId))
+            {
+                business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bId, ct);
+            }
+            business ??= await _db.Businesses.AsNoTracking()
+                .FirstOrDefaultAsync(b => b.BusinessName.ToLower() == slug.ToLower(), ct)
+                ?? await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(ct);
+        }
+
+        if (business is null)
+            throw new NotFoundException("Restaurant menu not found.");
+
+        var products = await _db.Products
+            .AsNoTracking()
+            .Include(p => p.Photos)
+            .Include(p => p.Model3d)
+            .Where(p => p.BusinessId == business.Id)
+            .OrderBy(p => p.DisplayOrder)
+            .ThenByDescending(p => p.CreatedAt)
+            .ToListAsync(ct);
+
+        var productQrs = await _db.QrCodes
+            .AsNoTracking()
+            .Where(q => q.BusinessId == business.Id && q.ProductId != null && q.IsActive)
+            .ToDictionaryAsync(q => q.ProductId!.Value, q => q.Slug, ct);
+
+        var allDishes = products.Select(p =>
+        {
+            var glbUrl = ResolveModelUrl(p.Model3d?.GlbS3Key, p.Model3d?.GlbUrl, null);
+            var dishSlug = productQrs.TryGetValue(p.Id, out var s) ? s : p.Id.ToString("N");
+            var thumb = p.Photos.OrderBy(ph => ph.SortOrder).FirstOrDefault();
+            var thumbUrl = thumb != null ? _mediaUrls.Resolve(thumb.S3Key, thumb.PhotoUrl) : null;
+            var photos = p.Photos.OrderBy(ph => ph.SortOrder).Select(ph => _mediaUrls.Resolve(ph.S3Key, ph.PhotoUrl)).ToList();
+
+            return new PublicMenuDishDto(
+                p.Id,
+                p.Name,
+                p.Description,
+                p.PricePaise,
+                (int)p.VegStatus,
+                p.IsSpicy,
+                p.IsBestseller,
+                p.IsNew,
+                p.SoldOutToday,
+                thumbUrl,
+                photos,
+                glbUrl,
+                p.Model3d?.UsdzUrl,
+                p.Model3d is not null && !string.IsNullOrEmpty(glbUrl),
+                dishSlug
+            );
+        }).ToList();
+
+        var categories = allDishes
+            .GroupBy(d =>
+            {
+                var prod = products.First(p => p.Id == d.Id);
+                return prod.Category?.ToString() ?? "Main Course";
+            })
+            .Select(g => new PublicMenuCategoryDto(
+                g.Key,
+                (int)(products.First(p => (p.Category?.ToString() ?? "Main Course") == g.Key).Category ?? ProductCategory.MainCourse),
+                g.ToList()
+            ))
+            .ToList();
+
+        if (categories.Count == 0 && allDishes.Count > 0)
+        {
+            categories = [new PublicMenuCategoryDto("Menu", 1, allDishes)];
+        }
+
+        var orderingUrl = await ResolveOrderingUrlAsync(business.Id, Guid.Empty, ct);
+        var owner = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == business.OwnerId, ct);
+
+        return new PublicMenuResponse(
+            slug,
+            business.BusinessName,
+            business.LogoUrl,
+            business.City,
+            business.FullAddress,
+            owner?.WhatsAppNumber ?? owner?.MobileNumber,
+            orderingUrl,
+            categories
+        );
+    }
+
     public async Task<LogEventResponse> LogScanAsync(
         string slug,
         LogScanRequest request,
@@ -177,7 +273,7 @@ public class PublicArService : IPublicArService
         var qr = await _db.QrCodes
             .AsNoTracking()
             .Include(q => q.Product!)
-                .ThenInclude(p => p.Photos.OrderBy(ph => ph.SortOrder))
+                .ThenInclude(p => p.Photos)
             .Include(q => q.Product!)
                 .ThenInclude(p => p.Model3d)
             .Include(q => q.Business)
@@ -198,7 +294,7 @@ public class PublicArService : IPublicArService
             .Include(e => e.ModelAsset)
                 .ThenInclude(m => m.ProcessingJob)
                     .ThenInclude(j => j.Product!)
-                        .ThenInclude(p => p.Photos.OrderBy(ph => ph.SortOrder))
+                        .ThenInclude(p => p.Photos)
             .Include(e => e.ModelAsset)
                 .ThenInclude(m => m.ProcessingJob)
                     .ThenInclude(j => j.Product!)

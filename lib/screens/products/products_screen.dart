@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common/hover_card.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -201,7 +202,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
             onPressed: () => context.push(AppRoutes.addProduct),
             icon: const Icon(Icons.add),
             label: const Text('Add product'),
-            backgroundColor: AppColors.primaryOrange,
+            backgroundColor: Theme.of(context).colorScheme.primary,
             foregroundColor: AppColors.white,
           ),
           body: Column(
@@ -279,7 +280,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
               Icon(
                 Icons.inventory_2_outlined,
                 size: 64,
-                color: AppColors.primaryOrange.withValues(alpha: 0.5),
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
@@ -301,6 +302,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       return RefreshIndicator(
         onRefresh: () => provider.loadProducts(force: true),
         child: ReorderableListView.builder(
+          buildDefaultDragHandles: false,
           padding: const EdgeInsets.fromLTRB(
             AppSpacing.lg,
             AppSpacing.sm,
@@ -337,7 +339,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
     return RefreshIndicator(
       onRefresh: () => provider.loadProducts(force: true),
-      child: ListView.separated(
+      child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg,
           AppSpacing.md,
@@ -345,7 +347,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
           88,
         ),
         itemCount: products.length,
-        separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
         itemBuilder: (context, index) {
           final product = products[index];
           return _ProductListTile(
@@ -407,8 +408,8 @@ class _FilterSortBar extends StatelessWidget {
                     selected: selected,
                     onSelected: (_) => onFilterChanged(option),
                     selectedColor:
-                        AppColors.primaryOrange.withValues(alpha: 0.15),
-                    checkmarkColor: AppColors.primaryOrange,
+                        Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                    checkmarkColor: Theme.of(context).colorScheme.primary,
                   ),
                 );
               }).toList(),
@@ -511,31 +512,19 @@ class _ProductListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Theme.of(context).colorScheme.surface,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: bulkMode
-            ? () => onSelected?.call(!selected)
-            : onTap,
-        child: Container(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            border: Border.all(
-              color: selected
-                  ? AppColors.primaryOrange
-                  : AppColors.borderGray,
-            ),
-          ),
-          child: Row(
+    return HoverCard(
+      borderRadius: AppSpacing.radiusMd,
+      margin: const EdgeInsets.only(bottom: 12),
+      onTap: bulkMode ? () => onSelected?.call(!selected) : onTap,
+      borderColor: selected ? AppColors.primaryOrange : null,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Row(
             children: [
               if (bulkMode)
                 Checkbox(
                   value: selected,
                   onChanged: (value) => onSelected?.call(value ?? false),
-                  activeColor: AppColors.primaryOrange,
+                  activeColor: Theme.of(context).colorScheme.primary,
                 ),
               if (showDragHandle) ...[
                 ReorderableDragStartListener(
@@ -548,7 +537,7 @@ class _ProductListTile extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: AppColors.primaryOrange.withValues(alpha: 0.1),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
                   image: product.thumbnailUrl != null
                       ? DecorationImage(
@@ -558,7 +547,7 @@ class _ProductListTile extends StatelessWidget {
                       : null,
                 ),
                 child: product.thumbnailUrl == null
-                    ? const Icon(Icons.restaurant, color: AppColors.primaryOrange)
+                    ? Icon(Icons.restaurant, color: Theme.of(context).colorScheme.primary)
                     : null,
               ),
               const SizedBox(width: AppSpacing.md),
@@ -609,8 +598,6 @@ class _ProductListTile extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
     );
   }
 }

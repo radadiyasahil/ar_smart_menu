@@ -6,6 +6,14 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   server: {
     port: 5174,
+    host: true,
+    open: '/dish/shish-kebab',
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5232',
+        changeOrigin: true,
+      },
+    },
   },
   plugins: [react(), tailwindcss()],
   resolve: {

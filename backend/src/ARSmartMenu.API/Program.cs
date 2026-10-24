@@ -13,6 +13,14 @@ using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Bind to 0.0.0.0 so mobile devices on LAN/USB tethering can reach the API
+var configuredUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") 
+    ?? builder.Configuration["Urls"] 
+    ?? "http://0.0.0.0:5232";
+builder.WebHost.UseUrls(configuredUrls);
+
+builder.Services.AddHttpContextAccessor();
+
 builder.Services.AddControllers();
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -103,7 +111,7 @@ builder.Services.AddCors(options =>
             {
                 if (string.IsNullOrEmpty(origin)) return false;
                 if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
-                return uri.Host is "localhost" or "127.0.0.1";
+                return true; // Allow local dev origins including mobile devices on LAN/tethering
             });
         }
         else

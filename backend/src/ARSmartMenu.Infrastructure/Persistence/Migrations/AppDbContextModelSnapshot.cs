@@ -22,6 +22,55 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("ARSmartMenu.Domain.Entities.AppNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsRead")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("IsRead");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("Notifications");
+                });
+
             modelBuilder.Entity("ARSmartMenu.Domain.Entities.ApprovalReview", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1116,6 +1165,24 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("ARSmartMenu.Domain.Entities.AppNotification", b =>
+                {
+                    b.HasOne("ARSmartMenu.Domain.Entities.Business", "Business")
+                        .WithMany()
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ARSmartMenu.Domain.Entities.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Business");
+
+                    b.Navigation("Product");
                 });
 
             modelBuilder.Entity("ARSmartMenu.Domain.Entities.ApprovalReview", b =>

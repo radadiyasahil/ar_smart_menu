@@ -96,4 +96,35 @@ public class AdminController : ControllerBase
         await _pipeline.AdvanceStuckJobToReviewAsync(jobId);
         return Ok(ApiResponse<object>.Ok(new { jobId }, "Job moved to review"));
     }
+
+    /// <summary>Approve a product and notify the owner.</summary>
+    [HttpPost("products/{productId:guid}/approve")]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> ApproveProduct(
+        Guid productId,
+        CancellationToken ct)
+    {
+        var result = await _admin.ApproveProductAsync(_currentUser.GetUserId(), productId, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, "Product approved and notification sent"));
+    }
+
+    /// <summary>Reject a product with reason and notify the owner.</summary>
+    [HttpPost("products/{productId:guid}/reject")]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> RejectProduct(
+        Guid productId,
+        [FromBody] RejectProductRequest request,
+        CancellationToken ct)
+    {
+        var result = await _admin.RejectProductAsync(_currentUser.GetUserId(), productId, request.Reason, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, "Product rejected and notification sent"));
+    }
+
+    /// <summary>Publish a product directly to Live in AR and notify the owner.</summary>
+    [HttpPost("products/{productId:guid}/make-live")]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> MakeProductLive(
+        Guid productId,
+        CancellationToken ct)
+    {
+        var result = await _admin.MakeProductLiveAsync(_currentUser.GetUserId(), productId, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, "Product is now Live and notification sent"));
+    }
 }

@@ -2,6 +2,19 @@
 backend/src/ARSmartMenu.API/uploads/**
 !backend/src/ARSmartMenu.API/uploads/.gitkeep
 
+# .NET / Visual Studio
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.userosscache
+*.suo
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+
 *.class
 *.log
 *.pyc
@@ -20,11 +33,6 @@ migrate_working_dir/
 *.ipr
 *.iws
 .idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
 
 # Flutter/Dart/Pub related
 **/doc/api/

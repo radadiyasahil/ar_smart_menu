@@ -240,6 +240,36 @@ class ProductProvider extends ChangeNotifier {
     );
   }
 
+  Future<ProductModel> uploadModel({
+    required String productId,
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final updated = await _productService.uploadModel(
+      productId: productId,
+      bytes: bytes,
+      filename: filename,
+    );
+    _replaceLocal(updated);
+    await _persistProducts();
+    return updated;
+  }
+
+  Future<ProductModel> uploadVideo({
+    required String productId,
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final updated = await _productService.uploadVideo(
+      productId: productId,
+      bytes: bytes,
+      filename: filename,
+    );
+    _replaceLocal(updated);
+    await _persistProducts();
+    return updated;
+  }
+
   void clear() {
     _products = [];
     _isLoaded = false;

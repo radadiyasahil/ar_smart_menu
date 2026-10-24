@@ -3,8 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 enum ThemePreference {
   light('light', 'Light'),
-  dark('dark', 'Dark'),
-  system('system', 'System');
+  dark('dark', 'Dark');
 
   const ThemePreference(this.storageKey, this.label);
 
@@ -13,21 +12,20 @@ enum ThemePreference {
 
   static ThemePreference fromKey(String? key) => ThemePreference.values.firstWhere(
         (e) => e.storageKey == key,
-        orElse: () => ThemePreference.system,
+        orElse: () => ThemePreference.light,
       );
 }
 
 class ThemeProvider extends ChangeNotifier {
   static const _prefKey = 'theme_preference';
 
-  ThemePreference _preference = ThemePreference.system;
+  ThemePreference _preference = ThemePreference.light;
 
   ThemePreference get preference => _preference;
 
   ThemeMode get themeMode => switch (_preference) {
         ThemePreference.light => ThemeMode.light,
         ThemePreference.dark => ThemeMode.dark,
-        ThemePreference.system => ThemeMode.system,
       };
 
   Future<void> hydrate() async {

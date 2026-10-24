@@ -55,7 +55,7 @@ public class ProductService : IProductService
     {
         var products = await _db.Products
             .AsNoTracking()
-            .Include(p => p.Photos.OrderBy(ph => ph.SortOrder))
+            .Include(p => p.Photos)
             .Include(p => p.Model3d)
             .Where(p => p.BusinessId == businessId)
             .OrderBy(p => p.DisplayOrder)
@@ -289,6 +289,103 @@ public class ProductService : IProductService
             MapProduct(refreshed));
     }
 
+    public async Task<ProductDto> UploadModelAsync(
+        Guid businessId,
+        Guid productId,
+        IFormFile file,
+        CancellationToken ct = default)
+    {
+        var product = await _db.Products
+            .Include(p => p.Photos)
+            .Include(p => p.Model3d)
+            .FirstOrDefaultAsync(p => p.BusinessId == businessId && p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (ext != ".glb")
+            throw new ValidationException("Only .glb 3D files are supported.");
+
+        var storageKey = StoragePaths.BuildPath(
+            StoragePaths.Glb,
+            businessId.ToString(),
+            $"{productId:N}-{Guid.NewGuid():N}.glb");
+
+        await _storage.GetSignedUploadUrlAsync(storageKey, "model/gltf-binary", ct);
+        await LocalMediaStorage.SaveUploadAsync(_env, storageKey, file, _localRoot, ct);
+
+        var glbUrl = _mediaUrls.Resolve(storageKey, null);
+
+        if (product.Model3d is null)
+        {
+            product.Model3d = new Model3d
+            {
+                ProductId = productId,
+                GlbUrl = glbUrl,
+                GlbS3Key = storageKey,
+                GlbSizeBytes = (int)file.Length,
+                ProcessingStatus = ModelProcessingStatus.Approved,
+                ApprovedAt = DateTime.UtcNow,
+            };
+            _db.Models3d.Add(product.Model3d);
+        }
+        else
+        {
+            product.Model3d.GlbUrl = glbUrl;
+            product.Model3d.GlbS3Key = storageKey;
+            product.Model3d.GlbSizeBytes = (int)file.Length;
+            product.Model3d.ProcessingStatus = ModelProcessingStatus.Approved;
+            product.Model3d.ApprovedAt = DateTime.UtcNow;
+            product.Model3d.UpdatedAt = DateTime.UtcNow;
+        }
+
+        product.Status = ProductStatus.Live;
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        var refreshed = await LoadProductAsync(businessId, productId, ct);
+        return MapProduct(refreshed);
+    }
+
+    public async Task<ProductDto> UploadVideoAsync(
+        Guid businessId,
+        Guid productId,
+        IFormFile file,
+        CancellationToken ct = default)
+    {
+        var product = await _db.Products
+            .Include(p => p.Photos)
+            .Include(p => p.Model3d)
+            .FirstOrDefaultAsync(p => p.BusinessId == businessId && p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        if (file.Length > 35 * 1024 * 1024)
+            throw new ValidationException("Video file must be under 35 MB to conserve storage.");
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (ext != ".mp4" && ext != ".mov" && ext != ".webm")
+            throw new ValidationException("Only .mp4, .mov, or .webm videos are supported.");
+
+        var storageKey = StoragePaths.BuildPath(
+            "videos",
+            businessId.ToString(),
+            $"{productId:N}-{Guid.NewGuid():N}{ext}");
+
+        await _storage.GetSignedUploadUrlAsync(storageKey, file.ContentType, ct);
+        await LocalMediaStorage.SaveUploadAsync(_env, storageKey, file, _localRoot, ct);
+
+        if (product.Status == ProductStatus.Draft)
+        {
+            product.Status = ProductStatus.Processing;
+        }
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        var refreshed = await LoadProductAsync(businessId, productId, ct);
+        return MapProduct(refreshed);
+    }
+
     private static bool HasAllRequiredAngles(IEnumerable<ProductPhoto> photos)
     {
         var used = photos.Select(p => p.AngleType).ToHashSet();
@@ -299,7 +396,7 @@ public class ProductService : IProductService
     {
         return await _db.Products
             .AsNoTracking()
-            .Include(p => p.Photos.OrderBy(ph => ph.SortOrder))
+            .Include(p => p.Photos)
             .Include(p => p.Model3d)
             .FirstOrDefaultAsync(p => p.BusinessId == businessId && p.Id == productId, ct)
             ?? throw new NotFoundException("Product not found.");

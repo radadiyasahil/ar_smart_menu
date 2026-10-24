@@ -91,6 +91,30 @@ public class ProductsController : ControllerBase
         return Ok(ApiResponse<UploadPhotoResponse>.Ok(result, message));
     }
 
+    [HttpPost("{id:guid}/model")]
+    [RequestSizeLimit(35 * 1024 * 1024)]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> UploadModel(
+        Guid id,
+        IFormFile file,
+        CancellationToken ct = default)
+    {
+        var businessId = RequireBusinessId();
+        var result = await _products.UploadModelAsync(businessId, id, file, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, "3D Model (.glb) uploaded successfully! Product is now Live in AR."));
+    }
+
+    [HttpPost("{id:guid}/video")]
+    [RequestSizeLimit(35 * 1024 * 1024)]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> UploadVideo(
+        Guid id,
+        IFormFile file,
+        CancellationToken ct = default)
+    {
+        var businessId = RequireBusinessId();
+        var result = await _products.UploadVideoAsync(businessId, id, file, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, "Walkaround video uploaded successfully."));
+    }
+
     private Guid RequireBusinessId()
     {
         return _currentUser.GetBusinessId()

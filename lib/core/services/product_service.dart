@@ -134,6 +134,42 @@ class ProductService {
     );
   }
 
+  /// POST /api/products/{id}/model — direct upload of .glb 3D model.
+  Future<ProductModel> uploadModel({
+    required String productId,
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: filename),
+    });
+
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/products/$productId/model',
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+    return _parseOne(response.data!);
+  }
+
+  /// POST /api/products/{id}/video — walkaround video (under 35MB).
+  Future<ProductModel> uploadVideo({
+    required String productId,
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: filename),
+    });
+
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/products/$productId/video',
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+    return _parseOne(response.data!);
+  }
+
   List<ProductModel> _parseList(Map<String, dynamic> envelope) {
     _ensureSuccess(envelope);
     final data = envelope['data'] as List<dynamic>;

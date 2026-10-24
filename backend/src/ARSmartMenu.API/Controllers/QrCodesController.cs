@@ -28,6 +28,24 @@ public class QrCodesController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<QrCodeDto>>.Ok(result));
     }
 
+    [HttpGet("master")]
+    public async Task<ActionResult<ApiResponse<QrCodeDto>>> GetMaster(CancellationToken ct)
+    {
+        var businessId = RequireBusinessId();
+        var result = await _qrCodes.GetOrCreateMasterQrAsync(businessId, ct);
+        return Ok(ApiResponse<QrCodeDto>.Ok(result));
+    }
+
+    [HttpPost("tables")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<QrCodeDto>>>> GenerateTables(
+        [FromQuery] int count = 10,
+        CancellationToken ct = default)
+    {
+        var businessId = RequireBusinessId();
+        var result = await _qrCodes.GenerateTableQrsAsync(businessId, count, ct);
+        return Ok(ApiResponse<IReadOnlyList<QrCodeDto>>.Ok(result, $"{count} table QR codes generated."));
+    }
+
     [HttpPost("generate")]
     public async Task<ActionResult<ApiResponse<QrCodeDto>>> Generate(
         [FromBody] GenerateQrRequest request,

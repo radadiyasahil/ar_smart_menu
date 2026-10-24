@@ -1,12 +1,9 @@
 import {
   Building2,
   Box,
-  Camera,
   ClipboardCheck,
-  CreditCard,
   LayoutDashboard,
   Package,
-  Plug,
   ShieldCheck,
 } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
@@ -19,10 +16,7 @@ const navItems = [
   { to: '/kyc', label: 'KYC Review', icon: ShieldCheck },
   { to: '/plans', label: 'Plans', icon: Package },
   { to: '/products', label: 'Product Review', icon: ClipboardCheck },
-  { to: '/photographers', label: 'Photographers', icon: Camera },
   { to: '/processing', label: '3D Processing', icon: Box },
-  { to: '/payments', label: 'Payments', icon: CreditCard },
-  { to: '/integrations', label: 'Integrations', icon: Plug },
 ]
 
 interface SidebarProps {

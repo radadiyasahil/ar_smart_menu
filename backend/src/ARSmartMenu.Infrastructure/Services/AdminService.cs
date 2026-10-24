@@ -11,8 +11,15 @@ namespace ARSmartMenu.Infrastructure.Services;
 public class AdminService : IAdminService
 {
     private readonly AppDbContext _db;
+    private readonly INotificationService _notifications;
+    private readonly IProductService _products;
 
-    public AdminService(AppDbContext db) => _db = db;
+    public AdminService(AppDbContext db, INotificationService notifications, IProductService products)
+    {
+        _db = db;
+        _notifications = notifications;
+        _products = products;
+    }
 
     public async Task<AdminDashboardDto> GetDashboardAsync(CancellationToken ct = default)
     {
@@ -109,6 +116,15 @@ public class AdminService : IAdminService
         business.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync(ct);
+
+        await _notifications.CreateNotificationAsync(
+            business.Id,
+            "Business approved",
+            $"{business.BusinessName} has been approved by admin. You can now add products and generate AR menus.",
+            "businessApproved",
+            null,
+            ct);
+
         return BusinessService.MapBusiness(business);
     }
 
@@ -133,6 +149,15 @@ public class AdminService : IAdminService
         business.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync(ct);
+
+        await _notifications.CreateNotificationAsync(
+            business.Id,
+            "Business needs changes",
+            $"Admin rejected registration: {request.Reason.Trim()}",
+            "businessRejected",
+            null,
+            ct);
+
         return BusinessService.MapBusiness(business);
     }
 
@@ -201,5 +226,89 @@ public class AdminService : IAdminService
                 i.JobStatus == ProcessingJobStatus.Approved).ToList(),
             _ => items.Where(i => i.JobStatus == jobStatus).ToList(),
         };
+    }
+
+    public async Task<ProductDto> ApproveProductAsync(Guid adminUserId, Guid productId, CancellationToken ct = default)
+    {
+        var product = await _db.Products
+            .Include(p => p.Model3d)
+            .FirstOrDefaultAsync(p => p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        product.Status = product.Model3d?.GlbUrl != null ? ProductStatus.Live : ProductStatus.Review;
+        product.RejectionReason = null;
+        product.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        await _notifications.CreateNotificationAsync(
+            product.BusinessId,
+            $"{product.Name} approved",
+            $"Admin approved {product.Name}. It is ready for your 3D menu.",
+            product.Status == ProductStatus.Live ? "productLive" : "productReview",
+            product.Id,
+            ct);
+
+        return await _products.GetByIdAsync(product.BusinessId, product.Id, ct);
+    }
+
+    public async Task<ProductDto> RejectProductAsync(Guid adminUserId, Guid productId, string reason, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ValidationException("Rejection reason is required.");
+
+        var product = await _db.Products
+            .FirstOrDefaultAsync(p => p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        product.Status = ProductStatus.Rejected;
+        product.RejectionReason = reason.Trim();
+        product.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        await _notifications.CreateNotificationAsync(
+            product.BusinessId,
+            $"{product.Name} rejected",
+            $"Admin requested changes for {product.Name}: {reason.Trim()}",
+            "productRejected",
+            product.Id,
+            ct);
+
+        return await _products.GetByIdAsync(product.BusinessId, product.Id, ct);
+    }
+
+    public async Task<ProductDto> MakeProductLiveAsync(Guid adminUserId, Guid productId, CancellationToken ct = default)
+    {
+        var product = await _db.Products
+            .Include(p => p.Model3d)
+            .FirstOrDefaultAsync(p => p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        product.Status = ProductStatus.Live;
+        product.RejectionReason = null;
+        product.UpdatedAt = DateTime.UtcNow;
+
+        if (product.Model3d is null)
+        {
+            product.Model3d = new Model3d
+            {
+                ProductId = product.Id,
+                GlbUrl = "https://modelviewer.dev/shared-assets/models/Astronaut.glb",
+                ProcessingStatus = ModelProcessingStatus.Done,
+                ApprovedAt = DateTime.UtcNow,
+            };
+            _db.Models3d.Add(product.Model3d);
+        }
+
+        await _db.SaveChangesAsync(ct);
+
+        await _notifications.CreateNotificationAsync(
+            product.BusinessId,
+            $"{product.Name} is now LIVE in AR!",
+            "Your dish 3D model is published and active. Customers can scan the QR code to view it in 3D AR.",
+            "productLive",
+            product.Id,
+            ct);
+
+        return await _products.GetByIdAsync(product.BusinessId, product.Id, ct);
     }
 }

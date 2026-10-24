@@ -14,6 +14,14 @@ public class PublicArController : ControllerBase
 
     public PublicArController(IPublicArService publicAr) => _publicAr = publicAr;
 
+    [HttpGet("menu/{slug}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<PublicMenuResponse>>> GetMenuBySlug(string slug, CancellationToken ct)
+    {
+        var result = await _publicAr.GetMenuBySlugAsync(slug, ct);
+        return Ok(ApiResponse<PublicMenuResponse>.Ok(result));
+    }
+
     [HttpGet("{slug}")]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<PublicArResponse>>> GetBySlug(string slug, CancellationToken ct)

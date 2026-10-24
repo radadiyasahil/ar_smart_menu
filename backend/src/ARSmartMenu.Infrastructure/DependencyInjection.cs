@@ -39,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminService, AdminService>();
         services.AddScoped<IPublicArService, PublicArService>();
         services.AddScoped<IModel3dService, Model3dService>();
+        services.AddScoped<INotificationService, NotificationService>();
 
         // Storage — swap MockStorageService for AwsS3StorageService in production
         services.AddScoped<IStorageService, MockStorageService>();

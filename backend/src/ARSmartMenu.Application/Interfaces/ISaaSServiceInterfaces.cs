@@ -35,6 +35,16 @@ public interface IProductService
         IFormFile file,
         PhotoAngleType angleType,
         CancellationToken ct = default);
+    Task<ProductDto> UploadModelAsync(
+        Guid businessId,
+        Guid productId,
+        IFormFile file,
+        CancellationToken ct = default);
+    Task<ProductDto> UploadVideoAsync(
+        Guid businessId,
+        Guid productId,
+        IFormFile file,
+        CancellationToken ct = default);
 }
 
 public interface ISubscriptionService
@@ -48,7 +58,10 @@ public interface ISubscriptionService
 public interface IQrCodeService
 {
     string BuildDishWebUrl(string slug);
+    string BuildMenuWebUrl(string slug, int? tableNumber = null);
     Task<QrCodeDto> GenerateForProductAsync(Guid businessId, Guid productId, CancellationToken ct = default);
+    Task<QrCodeDto> GetOrCreateMasterQrAsync(Guid businessId, CancellationToken ct = default);
+    Task<IReadOnlyList<QrCodeDto>> GenerateTableQrsAsync(Guid businessId, int tableCount, CancellationToken ct = default);
     Task<IReadOnlyList<QrCodeDto>> ListAsync(Guid businessId, CancellationToken ct = default);
     Task<QrCodeDto> DeactivateAsync(Guid businessId, Guid qrCodeId, CancellationToken ct = default);
 }
@@ -72,11 +85,15 @@ public interface IAdminService
     Task<IReadOnlyList<AdminProductReviewItemDto>> GetProductReviewQueueAsync(
         ProcessingJobStatus? jobStatus = null,
         CancellationToken ct = default);
+    Task<ProductDto> ApproveProductAsync(Guid adminUserId, Guid productId, CancellationToken ct = default);
+    Task<ProductDto> RejectProductAsync(Guid adminUserId, Guid productId, string reason, CancellationToken ct = default);
+    Task<ProductDto> MakeProductLiveAsync(Guid adminUserId, Guid productId, CancellationToken ct = default);
 }
 
 public interface IPublicArService
 {
     Task<PublicArResponse> GetBySlugAsync(string slug, CancellationToken ct = default);
+    Task<PublicMenuResponse> GetMenuBySlugAsync(string slug, CancellationToken ct = default);
     Task<LogEventResponse> LogScanAsync(string slug, LogScanRequest request, string? userAgent, string? ipAddress, CancellationToken ct = default);
     Task<LogEventResponse> LogViewEventAsync(string slug, LogViewEventRequest request, string? userAgent, CancellationToken ct = default);
 }

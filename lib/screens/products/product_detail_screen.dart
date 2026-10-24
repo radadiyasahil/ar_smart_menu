@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -10,8 +11,9 @@ import '../../core/utils/api_error_utils.dart';
 import '../../core/utils/ar_preview.dart';
 import '../../models/product_model.dart';
 import '../../providers/product_provider.dart';
-import '../../widgets/common/primary_button.dart';
+import 'dart:typed_data';
 import '../../widgets/products/edit_product_sheet.dart';
+import '../../widgets/products/four_photo_uploader.dart';
 
 /// Product detail — photos, draft → submitted flow, sold-out, delete.
 class ProductDetailScreen extends StatefulWidget {
@@ -60,17 +62,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
   }
 
-  Future<void> _pickAndUpload(PhotoAngleType angle) async {
+  Future<void> _uploadPhotoBytes(
+    PhotoAngleType angle,
+    Uint8List bytes,
+    String filename,
+  ) async {
     final product = _product;
     if (product == null || _isUploading) return;
-
-    final picked = await _picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 2048,
-      maxHeight: 2048,
-      imageQuality: 85,
-    );
-    if (picked == null || !mounted) return;
 
     setState(() {
       _isUploading = true;
@@ -78,13 +76,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     });
 
     try {
-      final bytes = await picked.readAsBytes();
-      final filename = picked.name.isNotEmpty ? picked.name : 'photo.jpg';
-      final productId = product.id;
-
-      if (!mounted) return;
       final result = await context.read<ProductProvider>().uploadPhoto(
-            productId: productId,
+            productId: product.id,
             bytes: bytes,
             filename: filename,
             angleType: angle,
@@ -101,9 +94,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         final count = _product?.photos.length ?? 0;
         final message = result.autoSubmitted
             ? 'All 4 photos uploaded — product submitted for AR processing!'
-            : (result.message ?? 'Photo uploaded ($count/${ProductModel.photosRequiredForSubmit})');
+            : (result.message ??
+                'Photo uploaded ($count/${ProductModel.photosRequiredForSubmit})');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
+          SnackBar(
+            content: Text(message),
+            backgroundColor: result.autoSubmitted ? AppColors.success : null,
+          ),
         );
       }
     } catch (e) {
@@ -122,10 +119,110 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
   }
 
-  Future<void> _uploadNextSuggested() async {
-    final angle = _product?.nextSuggestedAngle;
-    if (angle != null) {
-      await _pickAndUpload(angle);
+  Future<void> _pickAndUploadGlb() async {
+    final product = _product;
+    if (product == null || _isUploading) return;
+
+    try {
+      final file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: ['glb'],
+      );
+
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not read 3D file data')),
+          );
+        }
+        return;
+      }
+
+      setState(() => _isUploading = true);
+
+      if (!mounted) return;
+      final updated = await context.read<ProductProvider>().uploadModel(
+            productId: product.id,
+            bytes: bytes,
+            filename: file.name.isNotEmpty ? file.name : 'model.glb',
+          );
+
+      if (mounted) {
+        setState(() {
+          _product = updated;
+          _isUploading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('3D Model uploaded successfully! Dish is now Live in AR.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(formatApiError(e))),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickAndUploadVideo() async {
+    final product = _product;
+    if (product == null || _isUploading) return;
+
+    try {
+      final picked = await _picker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(seconds: 30),
+      );
+
+      if (picked == null || !mounted) return;
+
+      final bytes = await picked.readAsBytes();
+      if (bytes.length > 35 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Video must be under 35 MB to conserve storage.'),
+            ),
+          );
+        }
+        return;
+      }
+
+      setState(() => _isUploading = true);
+
+      if (!mounted) return;
+      final updated = await context.read<ProductProvider>().uploadVideo(
+            productId: product.id,
+            bytes: bytes,
+            filename: picked.name.isNotEmpty ? picked.name : 'walkaround.mp4',
+          );
+
+      if (mounted) {
+        setState(() {
+          _product = updated;
+          _isUploading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Walkaround video uploaded! Status updated to Processing.'),
+            backgroundColor: AppColors.primaryOrange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(formatApiError(e))),
+        );
+      }
     }
   }
 
@@ -242,7 +339,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
     final product = _product!;
     final photoCount = product.photos.length;
-    final progress = photoCount / ProductModel.photosRequiredForSubmit;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -270,81 +366,81 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           _InfoRow(label: 'Veg status', value: product.vegStatus.label),
           if (product.isLive || product.canUploadPhotos) ...[
             const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    product.isLive ? 'Replace AR photos' : 'AR photos ($photoCount/${ProductModel.photosRequiredForSubmit})',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
-                  ),
+            FourPhotoUploader(
+              title: product.isLive ? 'Replace AR photos' : 'AR photos (4 Required)',
+              remotePhotoUrls: {
+                for (final angle in PhotoAngleType.requiredForSubmit)
+                  angle: product.photoForAngle(angle)?.photoUrl,
+              },
+              isUploading: _isUploading,
+              uploadingAngle: _uploadingAngle,
+              showReplaceHint: product.isLive,
+              onPhotoSelected: (angle, bytes, filename) =>
+                  _uploadPhotoBytes(angle, bytes, filename),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? AppColors.darkSurface
+                    : AppColors.lightSurface,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? AppColors.darkBorder
+                      : AppColors.lightBorder,
                 ),
-                if (!product.isLive)
-                  Text(
-                    '${(progress * 100).round()}%',
-                    style: const TextStyle(
-                      color: AppColors.primaryOrange,
-                      fontWeight: FontWeight.w600,
-                    ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.bolt, color: AppColors.primaryOrange, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Direct 3D & Video Upload',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                    ],
                   ),
-              ],
-            ),
-            if (!product.isLive) ...[
-              const SizedBox(height: AppSpacing.sm),
-              LinearProgressIndicator(
-                value: progress.clamp(0, 1),
-                backgroundColor: AppColors.lightGray,
-                color: AppColors.primaryOrange,
-                minHeight: 6,
-                borderRadius: BorderRadius.circular(999),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Upload a ready .glb 3D scan (instant live) or a short 10s walkaround video (<35MB).',
+                    style: TextStyle(fontSize: 12, color: AppColors.mediumGray),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.view_in_ar, size: 18),
+                          label: const Text('Upload .glb (3D)'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primaryOrange,
+                            side: const BorderSide(color: AppColors.primaryOrange),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onPressed: _isUploading ? null : _pickAndUploadGlb,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.videocam_outlined, size: 18),
+                          label: const Text('Upload Video'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onPressed: _isUploading ? null : _pickAndUploadVideo,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              product.isLive
-                  ? 'Tap any photo below to replace it (front, top, left, right).'
-                  : product.missingPhotoSlots > 0
-                      ? 'Tap each empty slot below to upload — ${product.missingPhotoSlots} angle(s) left (front, top, left, right).'
-                      : 'All 4 angles uploaded. Product will auto-submit for 3D processing.',
-              style: const TextStyle(fontSize: 13, color: AppColors.mediumGray, height: 1.4),
             ),
-            const SizedBox(height: AppSpacing.md),
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: AppSpacing.sm,
-              crossAxisSpacing: AppSpacing.sm,
-              childAspectRatio: 1.1,
-              children: PhotoAngleType.requiredForSubmit.map((angle) {
-                final existing = product.photoForAngle(angle);
-                final isSlotUploading =
-                    _isUploading && _uploadingAngle == angle;
-                return _PhotoSlot(
-                  angle: angle,
-                  photoUrl: existing?.photoUrl,
-                  isUploading: isSlotUploading,
-                  isEmpty: existing == null,
-                  showReplaceHint: product.isLive && existing != null,
-                  onTap: _isUploading
-                      ? null
-                      : () => _pickAndUpload(angle),
-                );
-              }).toList(),
-            ),
-            if (!product.isLive) ...[
-              const SizedBox(height: AppSpacing.md),
-              PrimaryButton(
-                label: _isUploading ? 'Uploading...' : 'Upload next photo',
-                icon: Icons.add_photo_alternate_outlined,
-                isLoading: _isUploading,
-                onPressed: _isUploading || product.nextSuggestedAngle == null
-                    ? null
-                    : _uploadNextSuggested,
-              ),
-            ],
           ] else if (product.photos.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.lg),
             const Text(
@@ -551,153 +647,6 @@ class _StatusBanner extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PhotoSlot extends StatelessWidget {
-  const _PhotoSlot({
-    required this.angle,
-    this.photoUrl,
-    required this.isUploading,
-    required this.isEmpty,
-    this.showReplaceHint = false,
-    required this.onTap,
-  });
-
-  final PhotoAngleType angle;
-  final String? photoUrl;
-  final bool isUploading;
-  final bool isEmpty;
-  final bool showReplaceHint;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasPhoto = photoUrl != null;
-
-    return Material(
-      color: isEmpty
-          ? AppColors.primaryOrange.withValues(alpha: 0.08)
-          : AppColors.lightGray.withValues(alpha: 0.5),
-      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (hasPhoto)
-              Image.network(
-                photoUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const Center(
-                  child: Icon(Icons.broken_image_outlined),
-                ),
-              )
-            else
-              Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.add_a_photo_outlined,
-                      size: 32,
-                      color: AppColors.primaryOrange.withValues(alpha: 0.9),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      'Tap to upload',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.primaryOrange.withValues(alpha: 0.9),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      angle.label,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (showReplaceHint)
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryOrange,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    'Replace',
-                    style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-            if (isEmpty)
-              Positioned(
-                top: 6,
-                left: 6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryOrange,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    'Required',
-                    style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Container(
-                color: Colors.black54,
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text(
-                  angle.label,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-            if (isUploading)
-              Container(
-                color: Colors.black38,
-                child: const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-              ),
-            if (hasPhoto)
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: const BoxDecoration(
-                    color: AppColors.success,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.check, size: 14, color: Colors.white),
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }

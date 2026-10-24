@@ -12,6 +12,7 @@ import '../../providers/notification_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/common/primary_button.dart';
+import '../../widgets/common/hover_card.dart';
 
 /// Owner account — business details, KYC, logout.
 class AccountScreen extends StatefulWidget {
@@ -150,12 +151,15 @@ class _AccountScreenState extends State<AccountScreen> {
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
                 _SectionHeader(title: 'Profile', icon: Icons.person_outline),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(user?.mobileNumber ?? '—'),
-                  subtitle: Text(user?.fullName ?? 'Owner'),
-                  trailing: Chip(
-                    label: Text(_kycLabel(user?.kycStatus ?? 0)),
+                HoverCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(user?.mobileNumber ?? '—', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text(user?.fullName ?? 'Owner'),
+                    trailing: Chip(
+                      label: Text(_kycLabel(user?.kycStatus ?? 0)),
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
@@ -218,7 +222,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                 switch (option) {
                                   ThemePreference.light => Icons.light_mode,
                                   ThemePreference.dark => Icons.dark_mode,
-                                  ThemePreference.system => Icons.brightness_auto,
+                                  
                                 },
                               ),
                             ),
@@ -234,21 +238,24 @@ class _AccountScreenState extends State<AccountScreen> {
                 const SizedBox(height: AppSpacing.md),
                 Consumer<NotificationProvider>(
                   builder: (context, notifications, _) {
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.notifications_outlined),
-                      title: const Text('Notifications'),
-                      subtitle: Text(
-                        notifications.unreadCount > 0
-                            ? '${notifications.unreadCount} unread'
-                            : 'Product & business alerts',
-                      ),
-                      trailing: notifications.unreadCount > 0
-                          ? Badge(
-                              label: Text('${notifications.unreadCount}'),
-                            )
-                          : const Icon(Icons.chevron_right),
+                    return HoverCard(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                       onTap: () => context.push(AppRoutes.notifications),
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.notifications_outlined, color: AppColors.primaryOrange),
+                        title: const Text('Notifications', style: TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text(
+                          notifications.unreadCount > 0
+                              ? '${notifications.unreadCount} unread'
+                              : 'Product & business alerts',
+                        ),
+                        trailing: notifications.unreadCount > 0
+                            ? Badge(
+                                label: Text('${notifications.unreadCount}'),
+                              )
+                            : const Icon(Icons.chevron_right),
+                      ),
                     );
                   },
                 ),
@@ -305,7 +312,7 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: AppColors.primaryOrange),
+          Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: AppSpacing.sm),
           Text(
             title,

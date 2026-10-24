@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ARSmartMenu.Domain")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+88cbad4f5d6a190351a7fb5bb0f675ef606fe1d1")]
 [assembly: System.Reflection.AssemblyProductAttribute("ARSmartMenu.Domain")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ARSmartMenu.Domain")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

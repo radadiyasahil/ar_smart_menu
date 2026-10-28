@@ -38,7 +38,7 @@ public class QrCodesController : ControllerBase
 
     [HttpPost("tables")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<QrCodeDto>>>> GenerateTables(
-        [FromQuery] int count = 10,
+        [FromQuery] int count = 3,
         CancellationToken ct = default)
     {
         var businessId = RequireBusinessId();

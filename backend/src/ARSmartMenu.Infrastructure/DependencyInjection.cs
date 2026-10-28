@@ -19,7 +19,10 @@ public static class DependencyInjection
             ?? "Server=SAHIL\\mssqllocaldb;Database=ARSmartMenu;Trusted_Connection=True;TrustServerCertificate=True";
 
         services.AddDbContext<AppDbContext>(options =>
-            options.UseSqlServer(connectionString));
+        {
+            options.UseSqlServer(connectionString);
+            options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+        });
 
         services.AddHttpContextAccessor();
 

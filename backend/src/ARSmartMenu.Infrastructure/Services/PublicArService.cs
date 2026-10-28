@@ -91,7 +91,7 @@ public class PublicArService : IPublicArService
             .AsNoTracking()
             .Include(p => p.Photos)
             .Include(p => p.Model3d)
-            .Where(p => p.BusinessId == business.Id)
+            .Where(p => p.BusinessId == business.Id && p.Status == ProductStatus.Live)
             .OrderBy(p => p.DisplayOrder)
             .ThenByDescending(p => p.CreatedAt)
             .ToListAsync(ct);
@@ -157,7 +157,9 @@ public class PublicArService : IPublicArService
             business.FullAddress,
             owner?.WhatsAppNumber ?? owner?.MobileNumber,
             orderingUrl,
-            categories
+            categories,
+            business.Status == BusinessStatus.Active,
+            business.Status == BusinessStatus.Active ? null : "This restaurant is temporarily paused / closed."
         );
     }
 
@@ -281,6 +283,12 @@ public class PublicArService : IPublicArService
 
         if (qr?.Product is not null)
         {
+            if (qr.Product.Status != ProductStatus.Live)
+                throw new NotFoundException("This dish is currently unavailable or paused.");
+
+            if (qr.Business.Status == BusinessStatus.Deactivated)
+                throw new NotFoundException("This restaurant is currently closed or paused.");
+
             return new ResolvedArExperience(
                 qr.Slug,
                 qr.Product,

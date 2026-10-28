@@ -16,17 +16,20 @@ public class AdminController : ControllerBase
     private readonly IProductProcessingService _productProcessing;
     private readonly ARSmartMenu.Infrastructure.Jobs.PipelineJobRunner _pipeline;
     private readonly ICurrentUserService _currentUser;
+    private readonly ISubscriptionService _subscriptions;
 
     public AdminController(
         IAdminService admin,
         IProductProcessingService productProcessing,
         ARSmartMenu.Infrastructure.Jobs.PipelineJobRunner pipeline,
-        ICurrentUserService currentUser)
+        ICurrentUserService currentUser,
+        ISubscriptionService subscriptions)
     {
         _admin = admin;
         _productProcessing = productProcessing;
         _pipeline = pipeline;
         _currentUser = currentUser;
+        _subscriptions = subscriptions;
     }
 
     [HttpGet("dashboard")]
@@ -126,5 +129,52 @@ public class AdminController : ControllerBase
     {
         var result = await _admin.MakeProductLiveAsync(_currentUser.GetUserId(), productId, ct);
         return Ok(ApiResponse<ProductDto>.Ok(result, "Product is now Live and notification sent"));
+    }
+
+    /// <summary>Change business status (Active, Suspended, Deactivated, Rejected) with notes.</summary>
+    [HttpPost("businesses/{id:guid}/set-status")]
+    public async Task<ActionResult<ApiResponse<BusinessDto>>> SetBusinessStatus(
+        Guid id,
+        [FromBody] AdminSetBusinessStatusRequest request,
+        CancellationToken ct)
+    {
+        var result = await _admin.SetBusinessStatusAsync(
+            _currentUser.GetUserId(),
+            id,
+            request.Status,
+            request.Reason,
+            request.AdminNotes,
+            ct);
+        return Ok(ApiResponse<BusinessDto>.Ok(result, $"Business status updated to {request.Status}"));
+    }
+
+    /// <summary>Change product status (Live, Paused, Draft, Review, Rejected).</summary>
+    [HttpPost("products/{productId:guid}/set-status")]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> SetProductStatus(
+        Guid productId,
+        [FromBody] UpdateProductStatusRequest request,
+        CancellationToken ct)
+    {
+        var result = await _admin.SetProductStatusAsync(_currentUser.GetUserId(), productId, request.Status, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, $"Product status updated to {request.Status}"));
+    }
+
+    [HttpPost("businesses/{id:guid}/grant-subscription")]
+    public async Task<ActionResult<ApiResponse<SubscriptionDto>>> GrantSubscription(
+        Guid id,
+        [FromBody] AdminGrantSubscriptionRequest request,
+        CancellationToken ct)
+    {
+        var result = await _subscriptions.AdminGrantPlanAsync(id, request, ct);
+        return Ok(ApiResponse<SubscriptionDto>.Ok(result, "Subscription plan granted successfully"));
+    }
+
+    [HttpPost("businesses/{id:guid}/cancel-subscription")]
+    public async Task<ActionResult<ApiResponse<SubscriptionDto>>> CancelSubscription(
+        Guid id,
+        CancellationToken ct)
+    {
+        var result = await _subscriptions.AdminCancelPlanAsync(id, ct);
+        return Ok(ApiResponse<SubscriptionDto>.Ok(result, "Subscription cancelled successfully"));
     }
 }

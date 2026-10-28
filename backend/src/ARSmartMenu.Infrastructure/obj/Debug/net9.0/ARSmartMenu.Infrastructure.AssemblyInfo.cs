@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ARSmartMenu.Infrastructure")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+88cbad4f5d6a190351a7fb5bb0f675ef606fe1d1")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+99dce538fd53887e352f5f08a6f774383c4d0739")]
 [assembly: System.Reflection.AssemblyProductAttribute("ARSmartMenu.Infrastructure")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ARSmartMenu.Infrastructure")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

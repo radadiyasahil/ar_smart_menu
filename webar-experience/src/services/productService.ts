@@ -31,6 +31,8 @@ export interface PublicMenuResponse {
   whatsAppNumber?: string
   orderingUrl?: string
   categories: PublicMenuCategory[]
+  isBusinessActive?: boolean
+  inactiveMessage?: string
 }
 
 import { apiClient, type ApiEnvelope } from './apiClient'

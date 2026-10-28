@@ -5,6 +5,7 @@ using ARSmartMenu.Application.Interfaces;
 using ARSmartMenu.Domain.Entities;
 using ARSmartMenu.Domain.Enums;
 using ARSmartMenu.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
@@ -13,26 +14,69 @@ namespace ARSmartMenu.Infrastructure.Services;
 public class QrCodeService : IQrCodeService
 {
     private readonly AppDbContext _db;
-    private readonly string _dishBaseUrl;
+    private readonly IConfiguration _config;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
-    public QrCodeService(AppDbContext db, IConfiguration config)
+    public QrCodeService(AppDbContext db, IConfiguration config, IHttpContextAccessor? httpContextAccessor = null)
     {
         _db = db;
-        var embedBase = config["Embed:BaseUrl"];
-        var webArBase = config["WebAr:BaseUrl"] ?? "https://ar.ar-smartmenu.com";
-        _dishBaseUrl = embedBase ?? $"{webArBase.TrimEnd('/')}/dish";
+        _config = config;
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    private string GetWebArBaseUrl()
+    {
+        var httpContext = _httpContextAccessor?.HttpContext;
+        if (httpContext != null && httpContext.Request.Host.HasValue)
+        {
+            var host = httpContext.Request.Host.Host;
+            if (host != "localhost" && host != "127.0.0.1")
+            {
+                return $"{httpContext.Request.Scheme}://{host}:5174";
+            }
+        }
+
+        var embedBase = _config["Embed:BaseUrl"];
+        if (!string.IsNullOrWhiteSpace(embedBase))
+            return embedBase.Replace("/dish", "").TrimEnd('/');
+
+        var webArBase = _config["WebAr:BaseUrl"] ?? "http://localhost:5174";
+        return webArBase.TrimEnd('/');
     }
 
     public string BuildDishWebUrl(string slug) =>
-        $"{_dishBaseUrl.TrimEnd('/')}/{slug}";
+        $"{GetWebArBaseUrl()}/dish/{slug}";
 
     public string BuildMenuWebUrl(string slug, int? tableNumber = null)
     {
-        var baseWeb = _dishBaseUrl.Replace("/dish", "");
-        var url = $"{baseWeb.TrimEnd('/')}/menu/{slug}";
+        var baseWeb = GetWebArBaseUrl();
+        var url = $"{baseWeb}/menu/{slug}";
         if (tableNumber.HasValue && tableNumber.Value > 0)
             url += $"?table={tableNumber.Value}";
         return url;
+    }
+
+    public string BuildQrWebUrl(QrType qrType, string slug, int? tableNumber = null)
+    {
+        switch (qrType)
+        {
+            case QrType.Menu:
+                return BuildMenuWebUrl(slug);
+            case QrType.Table:
+            {
+                var match = Regex.Match(slug, @"^(.*)-t(\d+)$");
+                if (match.Success)
+                {
+                    var baseSlug = match.Groups[1].Value;
+                    var tNo = int.Parse(match.Groups[2].Value);
+                    return BuildMenuWebUrl(baseSlug, tNo);
+                }
+                return BuildMenuWebUrl(slug, tableNumber);
+            }
+            case QrType.Product:
+            default:
+                return BuildDishWebUrl(slug);
+        }
     }
 
     public async Task<QrCodeDto> GetOrCreateMasterQrAsync(Guid businessId, CancellationToken ct = default)
@@ -42,14 +86,23 @@ public class QrCodeService : IQrCodeService
             .FirstOrDefaultAsync(q => q.BusinessId == businessId && q.QrType == QrType.Menu && q.IsActive, ct);
 
         if (existing is not null)
+        {
+            var expectedUrl = BuildQrWebUrl(QrType.Menu, existing.Slug);
+            if (existing.WebUrl != expectedUrl)
+            {
+                existing.WebUrl = expectedUrl;
+                existing.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync(ct);
+            }
             return MapQr(existing, "Restaurant Master Menu");
+        }
 
         var business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == businessId, ct)
             ?? throw new NotFoundException("Business not found.");
 
         var slug = await GenerateUniqueSlugAsync(business.BusinessName + "-menu", ct);
-        var webUrl = BuildMenuWebUrl(slug);
-        var qrImageUrl = $"{_dishBaseUrl.TrimEnd('/')}/qr/{slug}.png";
+        var webUrl = BuildQrWebUrl(QrType.Menu, slug);
+        var qrImageUrl = $"{GetWebArBaseUrl()}/dish/qr/{slug}.png";
 
         var qr = new QrCode
         {
@@ -71,6 +124,13 @@ public class QrCodeService : IQrCodeService
 
     public async Task<IReadOnlyList<QrCodeDto>> GenerateTableQrsAsync(Guid businessId, int tableCount, CancellationToken ct = default)
     {
+        var business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == businessId, ct)
+            ?? throw new NotFoundException("Business not found.");
+        if (business.Status == BusinessStatus.Deactivated)
+            throw new ValidationException("Your restaurant operations are currently paused / deactivated. Please reactivate your business to generate table QR codes.");
+        if (business.Status == BusinessStatus.Suspended)
+            throw new ValidationException("Your business account is suspended. Please contact support.");
+
         if (tableCount < 1 || tableCount > 100)
             throw new ValidationException("Table count must be between 1 and 100.");
 
@@ -82,11 +142,24 @@ public class QrCodeService : IQrCodeService
             .ToListAsync(ct);
 
         var results = new List<QrCode>();
+        // Remove extra tables beyond tableCount so only the requested tableCount exists
+        foreach (var extra in existingTables)
+        {
+            var match = Regex.Match(extra.Slug, @"-t(\d+)$");
+            if (match.Success && int.TryParse(match.Groups[1].Value, out var tNum))
+            {
+                if (tNum > tableCount)
+                {
+                    _db.QrCodes.Remove(extra);
+                }
+            }
+        }
+
         for (var i = 1; i <= tableCount; i++)
         {
             var tableNo = i;
             var tableSlug = $"{baseSlug}-t{tableNo}";
-            var webUrl = BuildMenuWebUrl(baseSlug, tableNo);
+            var webUrl = BuildQrWebUrl(QrType.Table, tableSlug, tableNo);
 
             var existing = existingTables.FirstOrDefault(q => q.Slug == tableSlug);
             if (existing is not null)
@@ -105,7 +178,7 @@ public class QrCodeService : IQrCodeService
                     QrType = QrType.Table,
                     Slug = tableSlug,
                     WebUrl = webUrl,
-                    QrImageUrl = $"{_dishBaseUrl.TrimEnd('/')}/qr/{tableSlug}.png",
+                    QrImageUrl = $"{GetWebArBaseUrl()}/dish/qr/{tableSlug}.png",
                     QrImageS3Key = $"qr-codes/{businessId}/{tableSlug}.png",
                     IsActive = true,
                 };
@@ -129,8 +202,8 @@ public class QrCodeService : IQrCodeService
             throw new ValidationException("Product must be submitted before generating a QR code.");
 
         var slug = await GenerateUniqueSlugAsync(product.Name, ct);
-        var webUrl = BuildDishWebUrl(slug);
-        var qrImageUrl = $"{_dishBaseUrl.TrimEnd('/')}/qr/{slug}.png";
+        var webUrl = BuildQrWebUrl(QrType.Product, slug);
+        var qrImageUrl = $"{GetWebArBaseUrl()}/dish/qr/{slug}.png";
 
         var qr = new QrCode
         {
@@ -154,14 +227,14 @@ public class QrCodeService : IQrCodeService
     {
         var codes = await _db.QrCodes
             .Include(q => q.Product)
-            .Where(q => q.BusinessId == businessId)
+            .Where(q => q.BusinessId == businessId && q.IsActive)
             .OrderByDescending(q => q.CreatedAt)
             .ToListAsync(ct);
 
         var dirty = false;
         foreach (var qr in codes)
         {
-            var expected = BuildDishWebUrl(qr.Slug);
+            var expected = BuildQrWebUrl(qr.QrType, qr.Slug);
             if (qr.WebUrl != expected)
             {
                 qr.WebUrl = expected;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants/app_spacing.dart';
@@ -71,16 +72,35 @@ class _EditProductSheetState extends State<_EditProductSheet> {
   }
 
   Future<void> _save() async {
+    final businessProvider = context.read<BusinessProvider>();
+    if (businessProvider.isDeactivated || businessProvider.isSuspended) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Restaurant is deactivated. Reactivate to edit dishes.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
     final name = _nameController.text.trim();
-    if (name.isEmpty) return;
+    if (name.isEmpty || name.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Product name must be at least 2 characters')),
+      );
+      return;
+    }
 
     int? pricePaise;
     final priceText = _priceController.text.trim();
     if (priceText.isNotEmpty) {
       final parsed = double.tryParse(priceText);
-      if (parsed == null) {
+      if (parsed == null || parsed <= 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enter a valid price')),
+          const SnackBar(content: Text('Enter a valid price greater than 0')),
+        );
+        return;
+      }
+      if (parsed > 100000) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Price cannot exceed ₹1,00,000')),
         );
         return;
       }
@@ -139,26 +159,31 @@ class _EditProductSheetState extends State<_EditProductSheet> {
           const SizedBox(height: AppSpacing.md),
           TextField(
             controller: _nameController,
-            decoration: const InputDecoration(labelText: 'Name'),
+            maxLength: 100,
+            decoration: const InputDecoration(labelText: 'Name *', counterText: ''),
           ),
           const SizedBox(height: AppSpacing.sm),
           TextField(
             controller: _descriptionController,
             maxLines: 3,
-            decoration: const InputDecoration(labelText: 'Description'),
+            maxLength: 500,
+            decoration: const InputDecoration(labelText: 'Description', counterText: ''),
           ),
           const SizedBox(height: AppSpacing.sm),
           TextField(
             controller: _priceController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+            ],
             decoration: const InputDecoration(
-              labelText: 'Price (₹)',
+              labelText: 'Price (₹) *',
               prefixText: '₹ ',
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
           DropdownButtonFormField<ProductCategory>(
-            value: _category,
+            initialValue: _category,
             decoration: const InputDecoration(labelText: 'Category'),
             items: categories
                 .map(

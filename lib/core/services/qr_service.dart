@@ -29,7 +29,7 @@ class QrService {
     return QrCodeModel.fromJson(envelope['data'] as Map<String, dynamic>);
   }
 
-  Future<List<QrCodeModel>> generateTableQrs({int count = 10}) async {
+  Future<List<QrCodeModel>> generateTableQrs({int count = 3}) async {
     final response = await _dio.post<Map<String, dynamic>>(
       '/qrcodes/tables',
       queryParameters: {'count': count},

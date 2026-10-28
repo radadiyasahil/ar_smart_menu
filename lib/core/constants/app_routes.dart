@@ -16,4 +16,6 @@ class AppRoutes {
   static const String analytics = '/analytics';
   static const String account = '/account';
   static const String notifications = '/notifications';
+  static const String billing = '/billing';
+  static const String subscription = '/subscription';
 }

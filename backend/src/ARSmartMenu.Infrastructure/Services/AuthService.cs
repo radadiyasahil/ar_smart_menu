@@ -201,6 +201,24 @@ public class AuthService : IAuthService
             business is null ? null : MapBusiness(business));
     }
 
+    public async Task<UserDto> UpdateMeAsync(Guid userId, UpdateUserRequest request, CancellationToken ct = default)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct)
+            ?? throw new NotFoundException("User not found.");
+
+        if (request.FullName != null)
+            user.FullName = string.IsNullOrWhiteSpace(request.FullName) ? null : request.FullName.Trim();
+        if (request.WhatsAppNumber != null)
+            user.WhatsAppNumber = string.IsNullOrWhiteSpace(request.WhatsAppNumber) ? null : request.WhatsAppNumber.Trim();
+        if (!string.IsNullOrWhiteSpace(request.LanguagePreference))
+            user.LanguagePreference = request.LanguagePreference.Trim();
+
+        user.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return MapUser(user);
+    }
+
     public Task<bool> IsTokenRevokedAsync(string tokenId, CancellationToken ct = default) =>
         _db.RevokedTokens.AnyAsync(r => r.TokenId == tokenId, ct);
 

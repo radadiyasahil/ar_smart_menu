@@ -72,11 +72,32 @@ public class AdminService : IAdminService
 
         var total = await query.CountAsync(ct);
 
-        var items = await query
+        var businesses = await query
+            .Include(b => b.Subscriptions)
+                .ThenInclude(s => s.Plan)
             .OrderByDescending(b => b.CreatedAt)
             .Skip(pagination.Skip)
             .Take(Math.Clamp(pagination.Limit, 1, 100))
-            .Select(b => new AdminBusinessListItemDto(
+            .ToListAsync(ct);
+
+        var now = DateTime.UtcNow;
+        var items = businesses.Select(b =>
+        {
+            var latestSub = b.Subscriptions
+                .OrderByDescending(s => s.EndsAt)
+                .FirstOrDefault();
+
+            var isSubActive = latestSub != null && latestSub.Status == SubscriptionStatus.Active && latestSub.EndsAt > now;
+            var daysRem = isSubActive ? Math.Max(0, (int)Math.Ceiling((latestSub!.EndsAt - now).TotalDays)) : 0;
+            var subStatus = latestSub == null
+                ? "None"
+                : (isSubActive
+                    ? (latestSub.Plan?.Slug == "trial-7-days" ? "Trial" : "Active")
+                    : "Expired");
+
+            var hasUsedTrial = b.Subscriptions.Any(s => s.Plan?.Slug == "trial-7-days");
+
+            return new AdminBusinessListItemDto(
                 b.Id,
                 b.BusinessName,
                 b.BusinessType,
@@ -86,8 +107,26 @@ public class AdminService : IAdminService
                 b.Owner.FullName,
                 b.Owner.KycStatus,
                 b.Products.Count,
-                b.CreatedAt))
-            .ToListAsync(ct);
+                b.CreatedAt,
+                b.FullAddress,
+                b.FssaiNumber,
+                b.GstNumber,
+                b.UpiId,
+                b.BankAccountNumber,
+                b.BankIfsc,
+                b.BankPennyVerified,
+                b.Owner.WhatsAppNumber,
+                b.Owner.AadhaarLast4,
+                b.Owner.PanNumber,
+                b.RejectionReason,
+                b.AdminNotes,
+                latestSub?.Plan?.Name,
+                subStatus,
+                latestSub?.StartsAt,
+                latestSub?.EndsAt,
+                daysRem,
+                hasUsedTrial);
+        }).ToList();
 
         return new PagedResult<AdminBusinessListItemDto>
         {
@@ -169,11 +208,16 @@ public class AdminService : IAdminService
             .AsNoTracking()
             .Include(p => p.Business)
             .Include(p => p.Photos)
-            .Where(p => p.Status != ProductStatus.Draft && p.Status != ProductStatus.Paused)
-            // Hide incomplete uploads — owner must finish 4 photos first.
+            .Include(p => p.Model3d)
+            .Where(p => p.Status != ProductStatus.Draft)
+            // Only Hero / 3D AR items are sent for admin approval.
+            // Normal items (auto-approved / live with standard 2D photos) bypass the approval queue.
             .Where(p => p.Photos.Count >= 4
-                || p.Status == ProductStatus.Live
-                || p.Status == ProductStatus.Rejected)
+                || p.Status == ProductStatus.Submitted
+                || p.Status == ProductStatus.Review
+                || p.Status == ProductStatus.Processing
+                || (p.Status == ProductStatus.Live && p.Model3d != null)
+                || (p.Status == ProductStatus.Paused && p.Model3d != null))
             .OrderByDescending(p => p.UpdatedAt)
             .ToListAsync(ct);
 
@@ -197,6 +241,7 @@ public class AdminService : IAdminService
         var items = products.Select(p =>
         {
             latestJobByProduct.TryGetValue(p.Id, out var job);
+            var isHero = p.Photos.Count >= 4 || p.Model3d != null || p.Status == ProductStatus.Submitted || p.Status == ProductStatus.Review || p.Status == ProductStatus.Processing;
             return new AdminProductReviewItemDto(
                 p.Id,
                 p.Name,
@@ -206,7 +251,26 @@ public class AdminService : IAdminService
                 p.Photos.Count,
                 job?.Id,
                 job?.Status,
-                p.UpdatedAt ?? p.CreatedAt);
+                p.UpdatedAt ?? p.CreatedAt,
+                p.Description,
+                p.PricePaise,
+                p.Category,
+                p.VegStatus,
+                p.IsSpicy,
+                p.IsBestseller,
+                p.IsNew,
+                p.Photos.OrderBy(ph => ph.SortOrder).Select(ph => new ProductPhotoDto(
+                    ph.Id,
+                    ph.PhotoUrl,
+                    ph.AngleType,
+                    ph.SortOrder,
+                    ph.MimeType,
+                    ph.FileSizeBytes,
+                    ph.CreatedAt)).ToList(),
+                p.Model3d?.GlbUrl,
+                p.RejectionReason,
+                p.CreatedAt,
+                isHero);
         }).ToList();
 
         if (!jobStatus.HasValue)
@@ -308,6 +372,58 @@ public class AdminService : IAdminService
             "productLive",
             product.Id,
             ct);
+
+        return await _products.GetByIdAsync(product.BusinessId, product.Id, ct);
+    }
+
+    public async Task<BusinessDto> SetBusinessStatusAsync(
+        Guid adminUserId,
+        Guid businessId,
+        BusinessStatus status,
+        string? reason = null,
+        string? adminNotes = null,
+        CancellationToken ct = default)
+    {
+        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct)
+            ?? throw new NotFoundException("Business not found.");
+
+        business.Status = status;
+        business.ApprovedById = adminUserId;
+        if (status == BusinessStatus.Active)
+        {
+            business.ApprovedAt = DateTime.UtcNow;
+            business.RejectionReason = null;
+        }
+        else if (status is BusinessStatus.Rejected or BusinessStatus.Suspended or BusinessStatus.Deactivated)
+        {
+            if (!string.IsNullOrWhiteSpace(reason))
+                business.RejectionReason = reason.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(adminNotes))
+            business.AdminNotes = adminNotes.Trim();
+
+        business.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return BusinessService.MapBusiness(business);
+    }
+
+    public async Task<ProductDto> SetProductStatusAsync(
+        Guid adminUserId,
+        Guid productId,
+        ProductStatus status,
+        CancellationToken ct = default)
+    {
+        var product = await _db.Products
+            .Include(p => p.Photos)
+            .Include(p => p.Model3d)
+            .FirstOrDefaultAsync(p => p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        product.Status = status;
+        product.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
 
         return await _products.GetByIdAsync(product.BusinessId, product.Id, ct);
     }

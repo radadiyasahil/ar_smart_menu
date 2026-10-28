@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using ARSmartMenu.Application.Common;
 using ARSmartMenu.Application.DTOs;
 using ARSmartMenu.Application.Interfaces;
@@ -14,11 +15,26 @@ public class ProductsController : ControllerBase
 {
     private readonly IProductService _products;
     private readonly ICurrentUserService _currentUser;
+    private readonly ARSmartMenu.Infrastructure.Persistence.AppDbContext _db;
 
-    public ProductsController(IProductService products, ICurrentUserService currentUser)
+    public ProductsController(
+        IProductService products,
+        ICurrentUserService currentUser,
+        ARSmartMenu.Infrastructure.Persistence.AppDbContext db)
     {
         _products = products;
         _currentUser = currentUser;
+        _db = db;
+    }
+
+    private async Task RequireActiveSubscriptionAsync(Guid businessId, CancellationToken ct)
+    {
+        var hasActive = await _db.Subscriptions
+            .AnyAsync(s => s.BusinessId == businessId && s.Status == ARSmartMenu.Domain.Enums.SubscriptionStatus.Active && s.EndsAt > DateTime.UtcNow, ct);
+        if (!hasActive)
+        {
+            throw new ValidationException("An active subscription plan or 7-day free trial is required to manage menu products. Please activate a plan in Subscription settings.");
+        }
     }
 
     [HttpGet]
@@ -43,8 +59,20 @@ public class ProductsController : ControllerBase
         CancellationToken ct)
     {
         var businessId = RequireBusinessId();
+        await RequireActiveSubscriptionAsync(businessId, ct);
         var result = await _products.CreateAsync(businessId, request, ct);
         return Ok(ApiResponse<ProductDto>.Ok(result, "Product created"));
+    }
+
+    [HttpPost("bulk")]
+    public async Task<ActionResult<ApiResponse<BulkCreateProductsResponse>>> BulkCreate(
+        [FromBody] BulkCreateProductsRequest request,
+        CancellationToken ct)
+    {
+        var businessId = RequireBusinessId();
+        await RequireActiveSubscriptionAsync(businessId, ct);
+        var result = await _products.BulkCreateAsync(businessId, request, ct);
+        return Ok(ApiResponse<BulkCreateProductsResponse>.Ok(result, $"{result.CreatedCount} products imported successfully"));
     }
 
     [HttpPut("{id:guid}")]
@@ -54,6 +82,7 @@ public class ProductsController : ControllerBase
         CancellationToken ct)
     {
         var businessId = RequireBusinessId();
+        await RequireActiveSubscriptionAsync(businessId, ct);
         var result = await _products.UpdateAsync(businessId, id, request, ct);
         return Ok(ApiResponse<ProductDto>.Ok(result, "Product updated"));
     }
@@ -62,6 +91,7 @@ public class ProductsController : ControllerBase
     public async Task<ActionResult<ApiResponse<object>>> Delete(Guid id, CancellationToken ct)
     {
         var businessId = RequireBusinessId();
+        await RequireActiveSubscriptionAsync(businessId, ct);
         await _products.DeleteAsync(businessId, id, ct);
         return Ok(ApiResponse<object>.Ok(new { message = "Product deleted" }));
     }
@@ -76,6 +106,32 @@ public class ProductsController : ControllerBase
         var result = await _products.SetSoldOutAsync(businessId, id, request.SoldOut, ct);
         return Ok(ApiResponse<ProductDto>.Ok(result));
     }
+
+
+    [HttpPatch("{id:guid}/status")]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> UpdateStatus(
+        Guid id,
+        [FromBody] UpdateProductStatusRequest request,
+        CancellationToken ct)
+    {
+        var businessId = RequireBusinessId();
+        var result = await _products.UpdateStatusAsync(businessId, id, request.Status, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, $"Product status updated to {request.Status}"));
+    }
+
+    [HttpPatch("bulk-status")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<ProductDto>>>> BulkUpdateStatus(
+        [FromBody] BulkUpdateProductStatusRequest request,
+        CancellationToken ct)
+    {
+        var businessId = RequireBusinessId();
+        var result = await _products.BulkUpdateStatusAsync(businessId, request.ProductIds, request.Status, ct);
+        return Ok(ApiResponse<IReadOnlyList<ProductDto>>.Ok(result, $"{result.Count} products updated to {request.Status}"));
+    }
+
+
+
+
 
     [HttpPost("{id:guid}/photos")]
     [RequestSizeLimit(10 * 1024 * 1024)]

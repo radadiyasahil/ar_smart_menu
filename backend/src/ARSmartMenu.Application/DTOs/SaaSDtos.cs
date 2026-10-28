@@ -50,6 +50,9 @@ public record SubmitKycRequest(
     string? AadhaarLast4,
     string? PanNumber);
 
+public record UpdateBusinessStatusRequest(BusinessStatus Status, string? Reason = null);
+public record AdminSetBusinessStatusRequest(BusinessStatus Status, string? Reason = null, string? AdminNotes = null);
+
 // ── Product ─────────────────────────────────────────────────────────────────
 
 public record CreateProductRequest(
@@ -60,7 +63,23 @@ public record CreateProductRequest(
     VegStatus VegStatus = VegStatus.NotApplicable,
     bool IsSpicy = false,
     bool IsBestseller = false,
+    bool IsNew = false,
+    bool Enable3dAr = false,
+    ProductStatus? Status = null);
+
+public record BulkCreateProductItem(
+    string Name,
+    string? Description = null,
+    int? PricePaise = null,
+    ProductCategory? Category = null,
+    VegStatus VegStatus = VegStatus.NotApplicable,
+    bool IsSpicy = false,
+    bool IsBestseller = false,
     bool IsNew = false);
+
+public record BulkCreateProductsRequest(IReadOnlyList<BulkCreateProductItem> Products);
+
+public record BulkCreateProductsResponse(int CreatedCount, IReadOnlyList<ProductDto> CreatedProducts);
 
 public record UpdateProductRequest(
     string? Name = null,
@@ -71,7 +90,11 @@ public record UpdateProductRequest(
     bool? IsSpicy = null,
     bool? IsBestseller = null,
     bool? IsNew = null,
-    int? DisplayOrder = null);
+    int? DisplayOrder = null,
+    ProductStatus? Status = null);
+
+public record UpdateProductStatusRequest(ProductStatus Status);
+public record BulkUpdateProductStatusRequest(IReadOnlyList<Guid> ProductIds, ProductStatus Status);
 
 public record ProductPhotoDto(
     Guid Id,
@@ -130,18 +153,35 @@ public record SubscriptionPlanDto(
     bool ApiIntegration,
     bool AnalyticsExport,
     bool WhatsappSupport,
-    int DisplayOrder);
+    int DisplayOrder,
+    string? Description = null,
+    int DurationDays = 30,
+    int BasePricePaise = 0,
+    int GstPaise = 0,
+    int TotalPricePaise = 0,
+    int? OriginalPricePaise = null,
+    int DiscountPercent = 0,
+    string? Badge = null,
+    IReadOnlyList<string>? Facilities = null);
 
 public record SubscriptionDto(
     Guid Id,
     Guid BusinessId,
-    SubscriptionPlanDto Plan,
+    SubscriptionPlanDto? Plan,
     BillingCycle BillingCycle,
     SubscriptionStatus Status,
     DateTime StartsAt,
     DateTime EndsAt,
     int ShootsUsed,
-    DateTime? CancelledAt);
+    DateTime? CancelledAt,
+    int DaysRemaining = 0,
+    bool IsActive = false,
+    bool IsTrial = false,
+    bool HasUsedTrial = false);
+
+public record ActivatePlanRequest(Guid PlanId, string? PaymentMethod = "UPI", string? TransactionRef = null);
+
+public record AdminGrantSubscriptionRequest(string PlanSlug, int? CustomDays = null, string? Notes = null);
 
 public record CreateOrderRequest(Guid PlanId, BillingCycle BillingCycle);
 
@@ -216,7 +256,19 @@ public record AdminProductReviewItemDto(
     int PhotoCount,
     Guid? ProcessingJobId,
     ProcessingJobStatus? JobStatus,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    string? Description = null,
+    int? PricePaise = null,
+    ProductCategory? Category = null,
+    VegStatus VegStatus = VegStatus.NotApplicable,
+    bool IsSpicy = false,
+    bool IsBestseller = false,
+    bool IsNew = false,
+    IReadOnlyList<ProductPhotoDto>? Photos = null,
+    string? GlbUrl = null,
+    string? RejectionReason = null,
+    DateTime? CreatedAt = null,
+    bool IsHero = true);
 
 public record AdminBusinessListItemDto(
     Guid Id,
@@ -228,7 +280,25 @@ public record AdminBusinessListItemDto(
     string? OwnerName,
     KycStatus OwnerKycStatus,
     int ProductCount,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? FullAddress = null,
+    string? FssaiNumber = null,
+    string? GstNumber = null,
+    string? UpiId = null,
+    string? BankAccountNumber = null,
+    string? BankIfsc = null,
+    bool BankPennyVerified = false,
+    string? OwnerWhatsApp = null,
+    string? OwnerAadhaarLast4 = null,
+    string? OwnerPanNumber = null,
+    string? RejectionReason = null,
+    string? AdminNotes = null,
+    string? SubscriptionPlanName = null,
+    string? SubscriptionStatus = null,
+    DateTime? SubscriptionStartsAt = null,
+    DateTime? SubscriptionEndsAt = null,
+    int? SubscriptionDaysRemaining = null,
+    bool HasUsedTrial = false);
 
 public record AdminBusinessFilter(
     BusinessStatus? Status = null,
@@ -287,7 +357,9 @@ public record PublicMenuResponse(
     string? Address,
     string? WhatsAppNumber,
     string? OrderingUrl,
-    IReadOnlyList<PublicMenuCategoryDto> Categories);
+    IReadOnlyList<PublicMenuCategoryDto> Categories,
+    bool IsBusinessActive = true,
+    string? InactiveMessage = null);
 
 public record PublicMenuCategoryDto(
     string CategoryName,

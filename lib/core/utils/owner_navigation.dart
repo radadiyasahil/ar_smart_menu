@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../constants/app_routes.dart';
 import '../../providers/business_provider.dart';
+import '../../providers/product_provider.dart';
 
 /// Routes owner using cached profile — no network wait.
 void routeOwnerFromCache(BuildContext context, BusinessProvider provider) {
@@ -27,17 +28,13 @@ void routeOwnerFromCache(BuildContext context, BusinessProvider provider) {
   context.go(AppRoutes.businessStatus);
 }
 
-/// After login — cache first if available, then refresh in background.
+/// After login — always load fresh profile and products for the authenticated account.
 Future<void> navigateOwnerAfterAuth(BuildContext context) async {
   final businessProvider = context.read<BusinessProvider>();
-
-  if (businessProvider.isLoaded && businessProvider.hasBusiness) {
-    routeOwnerFromCache(context, businessProvider);
-    unawaited(businessProvider.refreshProfileInBackground());
-    return;
-  }
+  final productProvider = context.read<ProductProvider>();
 
   await businessProvider.loadProfile(forceNetwork: true);
   if (!context.mounted) return;
+  unawaited(productProvider.loadProducts(force: true));
   routeOwnerFromCache(context, businessProvider);
 }

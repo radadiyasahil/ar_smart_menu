@@ -39,6 +39,26 @@ public class SubscriptionsController : ControllerBase
         return Ok(ApiResponse<SubscriptionDto>.Ok(result));
     }
 
+    [HttpPost("activate-trial")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<SubscriptionDto>>> ActivateTrial(CancellationToken ct)
+    {
+        var businessId = RequireBusinessId();
+        var result = await _subscriptions.ActivateTrialAsync(businessId, ct);
+        return Ok(ApiResponse<SubscriptionDto>.Ok(result, "7-Day Free Trial activated successfully!"));
+    }
+
+    [HttpPost("activate-plan")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<SubscriptionDto>>> ActivatePlan(
+        [FromBody] ActivatePlanRequest request,
+        CancellationToken ct)
+    {
+        var businessId = RequireBusinessId();
+        var result = await _subscriptions.ActivatePlanAsync(businessId, request, ct);
+        return Ok(ApiResponse<SubscriptionDto>.Ok(result, "Plan activated successfully!"));
+    }
+
     [HttpPost("create-order")]
     [Authorize]
     public async Task<ActionResult<ApiResponse<CreateOrderResponse>>> CreateOrder(

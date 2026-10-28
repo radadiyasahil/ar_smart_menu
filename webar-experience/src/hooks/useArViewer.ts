@@ -56,6 +56,26 @@ export function useArViewer({ slug }: UseArViewerOptions = {}) {
         await analyticsService.logScan(slug)
         analyticsService.track('ar_open', data.product.id)
       } catch (e) {
+        if (slug) {
+          // Fallback: If this slug is not a dish, check if it's actually a restaurant menu or table QR!
+          try {
+            const tableMatch = slug.match(/^(.*)-t(\d+)$/)
+            const menuSlug = tableMatch ? tableMatch[1] : slug
+            const tableParam = tableMatch
+              ? `?table=${tableMatch[2]}`
+              : (window.location.search || '')
+
+            const menuData = await productService.fetchMenuBySlug(menuSlug)
+            if (menuData && (menuData.slug || menuData.businessName)) {
+              // It is a restaurant menu! Seamlessly redirect to the full menu page
+              navigate(`/menu/${menuSlug}${tableParam}`, { replace: true })
+              return
+            }
+          } catch {
+            // Not a menu either, proceed to normal error display
+          }
+        }
+
         let message = 'Could not load this dish. Please try again.'
         if (e instanceof Error) {
           if (e.message.includes('404') || e.message === 'NOT_FOUND') {

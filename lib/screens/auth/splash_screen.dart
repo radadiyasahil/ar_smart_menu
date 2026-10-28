@@ -2,17 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_routes.dart';
 import '../../core/constants/app_spacing.dart';
-import '../../core/utils/owner_navigation.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/business_provider.dart';
 
-/// Splash — short animation, then route using cached data (no API wait).
+/// Splash — short animation, then route to the owner application dashboard.
+/// When opening without login, the owner application opens and clicking anywhere
+/// prompts for login with a button to open the login page.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -47,24 +44,9 @@ class _SplashScreenState extends State<SplashScreen>
     await Future<void>.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
 
-    final auth = context.read<AuthProvider>();
-    final business = context.read<BusinessProvider>();
-
-    if (auth.isAuthenticated && business.isLoaded) {
-      routeOwnerFromCache(context, business);
-      unawaited(business.refreshProfileInBackground());
-      return;
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    final lang = prefs.getString('language_code');
-    if (!mounted) return;
-
-    if (lang != null) {
-      context.go(AppRoutes.login);
-    } else {
-      context.go(AppRoutes.language);
-    }
+    // Navigate to dashboard: opens the owner application,
+    // and if not logged in, clicking anywhere prompts for login.
+    context.go(AppRoutes.dashboard);
   }
 
   @override
@@ -113,25 +95,25 @@ class _SplashScreenState extends State<SplashScreen>
                 child: const Icon(
                   Icons.view_in_ar,
                   size: 52,
-                  color: AppColors.white,
+                  color: Colors.white,
                 ),
               ),
               const SizedBox(height: AppSpacing.lg),
               const Text(
                 'AR Smart Menu',
                 style: TextStyle(
-                  fontSize: 28,
+                  fontSize: 26,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.white,
-                  letterSpacing: -0.5,
+                  color: Colors.white,
+                  letterSpacing: 0.5,
                 ),
               ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Bring your products to life in AR',
+              const SizedBox(height: AppSpacing.xs),
+              const Text(
+                'Digital Menu for Restaurants',
                 style: TextStyle(
                   fontSize: 14,
-                  color: AppColors.white.withValues(alpha: 0.7),
+                  color: AppColors.mediumGray,
                 ),
               ),
             ],

@@ -73,10 +73,16 @@ public class ProductService : IProductService
 
     public async Task<ProductDto> CreateAsync(Guid businessId, CreateProductRequest request, CancellationToken ct = default)
     {
+        await EnsureBusinessActiveAsync(businessId, ct);
+
         if (string.IsNullOrWhiteSpace(request.Name))
             throw new ValidationException("Product name is required.");
+        if (request.PricePaise.HasValue && request.PricePaise.Value <= 0)
+            throw new ValidationException("Price must be greater than zero.");
 
         await EnsureWithinPlanLimitAsync(businessId, ct);
+
+        var status = request.Status ?? (request.Enable3dAr ? ProductStatus.Draft : ProductStatus.Live);
 
         var product = new Product
         {
@@ -89,7 +95,7 @@ public class ProductService : IProductService
             IsSpicy = request.IsSpicy,
             IsBestseller = request.IsBestseller,
             IsNew = request.IsNew,
-            Status = ProductStatus.Draft,
+            Status = status,
         };
 
         _db.Products.Add(product);
@@ -98,12 +104,74 @@ public class ProductService : IProductService
         return MapProduct(product);
     }
 
+
+    public async Task<BulkCreateProductsResponse> BulkCreateAsync(
+        Guid businessId,
+        BulkCreateProductsRequest request,
+        CancellationToken ct = default)
+    {
+        await EnsureBusinessActiveAsync(businessId, ct);
+
+        if (request.Products == null || request.Products.Count == 0)
+            throw new ValidationException("No products provided in bulk request.");
+
+        var validItems = request.Products
+            .Where(p => !string.IsNullOrWhiteSpace(p.Name))
+            .ToList();
+
+        if (validItems.Count == 0)
+            throw new ValidationException("At least one product with a valid name is required.");
+
+        await EnsureWithinPlanLimitAsync(businessId, validItems.Count, ct);
+
+        var currentMaxOrder = await _db.Products
+            .Where(p => p.BusinessId == businessId)
+            .Select(p => (int?)p.DisplayOrder)
+            .MaxAsync(ct) ?? 0;
+
+        var createdProducts = new List<Product>();
+        var order = currentMaxOrder;
+
+        foreach (var item in validItems)
+        {
+            order++;
+            var product = new Product
+            {
+                BusinessId = businessId,
+                Name = item.Name.Trim(),
+                Description = string.IsNullOrWhiteSpace(item.Description) ? null : item.Description.Trim(),
+                PricePaise = item.PricePaise,
+                Category = item.Category ?? ProductCategory.MainCourse,
+                VegStatus = item.VegStatus,
+                IsSpicy = item.IsSpicy,
+                IsBestseller = item.IsBestseller,
+                IsNew = item.IsNew,
+                Status = ProductStatus.Live,
+                DisplayOrder = order,
+            };
+            createdProducts.Add(product);
+        }
+
+        await _db.Products.AddRangeAsync(createdProducts, ct);
+        await _db.SaveChangesAsync(ct);
+
+        var dtos = createdProducts.Select(MapProduct).ToList();
+        return new BulkCreateProductsResponse(createdProducts.Count, dtos);
+    }
+
+
+
     public async Task<ProductDto> UpdateAsync(
         Guid businessId,
         Guid productId,
         UpdateProductRequest request,
         CancellationToken ct = default)
     {
+        await EnsureBusinessActiveAsync(businessId, ct);
+
+        if (request.PricePaise.HasValue && request.PricePaise.Value <= 0)
+            throw new ValidationException("Price must be greater than zero.");
+
         var product = await _db.Products
             .Include(p => p.Photos)
             .Include(p => p.Model3d)
@@ -128,6 +196,8 @@ public class ProductService : IProductService
             product.IsNew = request.IsNew.Value;
         if (request.DisplayOrder.HasValue)
             product.DisplayOrder = request.DisplayOrder.Value;
+        if (request.Status.HasValue)
+            product.Status = request.Status.Value;
 
         product.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -135,12 +205,115 @@ public class ProductService : IProductService
         return MapProduct(product);
     }
 
-    public async Task DeleteAsync(Guid businessId, Guid productId, CancellationToken ct = default)
+    public async Task<ProductDto> UpdateStatusAsync(Guid businessId, Guid productId, ProductStatus status, CancellationToken ct = default)
     {
+        await EnsureBusinessActiveAsync(businessId, ct);
+
         var product = await _db.Products
+            .Include(p => p.Photos)
+            .Include(p => p.Model3d)
             .FirstOrDefaultAsync(p => p.BusinessId == businessId && p.Id == productId, ct)
             ?? throw new NotFoundException("Product not found.");
 
+        product.Status = status;
+        product.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return MapProduct(product);
+    }
+
+    public async Task<IReadOnlyList<ProductDto>> BulkUpdateStatusAsync(Guid businessId, IReadOnlyList<Guid> productIds, ProductStatus status, CancellationToken ct = default)
+    {
+        await EnsureBusinessActiveAsync(businessId, ct);
+
+        var products = await _db.Products
+            .Include(p => p.Photos)
+            .Include(p => p.Model3d)
+            .Where(p => p.BusinessId == businessId && productIds.Contains(p.Id))
+            .ToListAsync(ct);
+
+        foreach (var product in products)
+        {
+            product.Status = status;
+            product.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return products.Select(MapProduct).ToList();
+    }
+
+    public async Task DeleteAsync(Guid businessId, Guid productId, CancellationToken ct = default)
+    {
+        await EnsureBusinessActiveAsync(businessId, ct);
+
+        var product = await _db.Products
+            .Include(p => p.Photos)
+            .Include(p => p.Model3d)
+            .FirstOrDefaultAsync(p => p.BusinessId == businessId && p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        // 1. Unlink any notifications referencing this product (prevents FK_Notifications_Products_ProductId conflict)
+        await _db.Notifications
+            .Where(n => n.ProductId == productId)
+            .ExecuteUpdateAsync(s => s.SetProperty(n => n.ProductId, (Guid?)null), ct);
+
+        // 2. Unlink any processing jobs referencing this product
+        await _db.ProcessingJobs
+            .Where(j => j.ProductId == productId)
+            .ExecuteUpdateAsync(s => s.SetProperty(j => j.ProductId, (Guid?)null), ct);
+
+        // 3. Unlink scan and view analytics events
+        await _db.ArScanEvents
+            .Where(e => e.ProductId == productId)
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.ProductId, (Guid?)null), ct);
+
+        await _db.ArViewEvents
+            .Where(e => e.ProductId == productId)
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.ProductId, (Guid?)null), ct);
+
+        // 4. Handle associated QR codes: remove standalone product QRs with no scans, or unlink if scanned
+        var qrCodes = await _db.QrCodes
+            .Where(q => q.ProductId == productId)
+            .ToListAsync(ct);
+
+        foreach (var qr in qrCodes)
+        {
+            var hasScans = await _db.ArScanEvents.AnyAsync(e => e.QrCodeId == qr.Id, ct)
+                        || await _db.ArViewEvents.AnyAsync(e => e.QrCodeId == qr.Id, ct);
+            if (!hasScans)
+            {
+                _db.QrCodes.Remove(qr);
+            }
+            else
+            {
+                qr.ProductId = null;
+                qr.IsActive = false;
+            }
+        }
+
+        // 5. Clean up physical storage files for photos
+        foreach (var photo in product.Photos)
+        {
+            if (!string.IsNullOrEmpty(photo.S3Key))
+            {
+                try { await _storage.DeleteAsync(photo.S3Key, ct); } catch { /* ignore storage cleanup error */ }
+            }
+        }
+
+        // 6. Clean up physical storage files for 3D model
+        if (product.Model3d != null)
+        {
+            if (!string.IsNullOrEmpty(product.Model3d.GlbS3Key))
+            {
+                try { await _storage.DeleteAsync(product.Model3d.GlbS3Key, ct); } catch { /* ignore storage cleanup error */ }
+            }
+            if (!string.IsNullOrEmpty(product.Model3d.UsdzS3Key))
+            {
+                try { await _storage.DeleteAsync(product.Model3d.UsdzS3Key, ct); } catch { /* ignore storage cleanup error */ }
+            }
+        }
+
+        // 7. Remove the product
         _db.Products.Remove(product);
         await _db.SaveChangesAsync(ct);
     }
@@ -168,6 +341,8 @@ public class ProductService : IProductService
         PhotoAngleType angleType,
         CancellationToken ct = default)
     {
+        await EnsureBusinessActiveAsync(businessId, ct);
+
         if (file.Length == 0)
             throw new ValidationException("Photo file is required.");
         if (file.Length > 10 * 1024 * 1024)
@@ -190,7 +365,7 @@ public class ProductService : IProductService
         }
 
         var existing = product.Photos.FirstOrDefault(p => p.AngleType == angleType);
-        if (product.Status == ProductStatus.Live && existing is null)
+        if (product.Status == ProductStatus.Live && existing is null && product.Photos.Count >= AutoSubmitPhotoCount)
             throw new ValidationException("Cannot add new photos to a live product. Replace an existing angle instead.");
 
         if (existing is null && product.Photos.Count >= AutoSubmitPhotoCount)
@@ -402,7 +577,24 @@ public class ProductService : IProductService
             ?? throw new NotFoundException("Product not found.");
     }
 
-    private async Task EnsureWithinPlanLimitAsync(Guid businessId, CancellationToken ct)
+    private async Task EnsureBusinessActiveAsync(Guid businessId, CancellationToken ct)
+    {
+        var business = await _db.Businesses
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == businessId, ct)
+            ?? throw new NotFoundException("Business not found.");
+
+        if (business.Status == BusinessStatus.Deactivated)
+            throw new ValidationException("Your restaurant operations are currently paused / deactivated. Please reactivate your business to perform this action.");
+
+        if (business.Status == BusinessStatus.Suspended)
+            throw new ValidationException("Your business account is suspended. Please contact support.");
+    }
+
+    private Task EnsureWithinPlanLimitAsync(Guid businessId, CancellationToken ct) =>
+        EnsureWithinPlanLimitAsync(businessId, 1, ct);
+
+    private async Task EnsureWithinPlanLimitAsync(Guid businessId, int additionalCount, CancellationToken ct = default)
     {
         var subscription = await _db.Subscriptions
             .AsNoTracking()
@@ -414,8 +606,13 @@ public class ProductService : IProductService
         if (subscription is null) return;
 
         var count = await _db.Products.CountAsync(p => p.BusinessId == businessId, ct);
-        if (count >= subscription.Plan.MaxProducts)
-            throw new ValidationException($"Product limit ({subscription.Plan.MaxProducts}) reached for your plan.");
+        if (count + additionalCount > subscription.Plan.MaxProducts)
+        {
+            var msg = additionalCount > 1
+                ? $"Adding {additionalCount} items would exceed your plan product limit ({count}/{subscription.Plan.MaxProducts}). Upgrade your plan to list more items."
+                : $"Product limit ({subscription.Plan.MaxProducts}) reached for your plan.";
+            throw new ValidationException(msg);
+        }
     }
 
     internal ProductDto MapProduct(Product product) => new(

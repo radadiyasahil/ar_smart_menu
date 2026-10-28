@@ -114,6 +114,8 @@ class ProductProvider extends ChangeNotifier {
     bool isSpicy = false,
     bool isBestseller = false,
     bool isNew = false,
+    bool enable3dAr = false,
+    ProductStatus? status,
   }) async {
     final product = await _productService.create(
       name: name,
@@ -124,12 +126,23 @@ class ProductProvider extends ChangeNotifier {
       isSpicy: isSpicy,
       isBestseller: isBestseller,
       isNew: isNew,
+      enable3dAr: enable3dAr,
+      status: status,
     );
     _products = [product, ..._products];
     _isLoaded = true;
     await _persistProducts();
     notifyListeners();
     return product;
+  }
+
+  Future<BulkCreateResult> bulkCreateProducts(List<BulkCreateProductItem> items) async {
+    final result = await _productService.bulkCreate(items);
+    _products = [...result.products, ..._products];
+    _isLoaded = true;
+    await _persistProducts();
+    notifyListeners();
+    return result;
   }
 
   Future<ProductModel> updateProduct({
@@ -166,6 +179,39 @@ class ProductProvider extends ChangeNotifier {
     _products = _products.where((p) => p.id != id).toList();
     await _persistProducts();
     notifyListeners();
+  }
+
+  Future<ProductModel> setProductStatus(String id, ProductStatus status) async {
+    final updated = await _productService.updateStatus(id, status);
+    _replaceLocal(updated);
+    await _persistProducts();
+    notifyListeners();
+    return updated;
+  }
+
+  Future<ProductModel> toggleProductLive(String id) async {
+    final existing = _products.firstWhere((p) => p.id == id);
+    final targetStatus = existing.isLive ? ProductStatus.paused : ProductStatus.live;
+    return await setProductStatus(id, targetStatus);
+  }
+
+  Future<int> bulkSetProductStatus(Iterable<String> ids, ProductStatus status) async {
+    final idList = ids.toList();
+    if (idList.isEmpty) return 0;
+    try {
+      final updatedList = await _productService.bulkUpdateStatus(idList, status);
+      for (final updated in updatedList) {
+        _replaceLocal(updated);
+      }
+    } catch (_) {
+      for (final id in idList) {
+        final updated = await _productService.updateStatus(id, status);
+        _replaceLocal(updated);
+      }
+    }
+    await _persistProducts();
+    notifyListeners();
+    return idList.length;
   }
 
   Future<ProductModel> toggleSoldOut(String id, {required bool soldOut}) async {

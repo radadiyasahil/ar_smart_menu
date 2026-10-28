@@ -14,6 +14,11 @@ public record RefreshTokenResponse(string Token);
 
 public record AuthMeResponse(UserDto User, BusinessSummaryDto? Business);
 
+public record UpdateUserRequest(
+    string? FullName = null,
+    string? WhatsAppNumber = null,
+    string? LanguagePreference = null);
+
 public record UserDto(
     Guid Id,
     string MobileNumber,

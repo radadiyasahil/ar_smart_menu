@@ -230,7 +230,7 @@ public class QualityReviewService : IQualityReviewService
 
         var qr = await _db.QrCodes
             .FirstAsync(q => q.ProductId == product.Id && q.IsActive, ct);
-        qr.WebUrl = _qrCodes.BuildDishWebUrl(qr.Slug);
+        qr.WebUrl = _qrCodes.BuildQrWebUrl(Domain.Enums.QrType.Product, qr.Slug);
         qr.UpdatedAt = DateTime.UtcNow;
     }
 

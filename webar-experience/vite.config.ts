@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     port: 5174,
     host: true,
-    open: '/dish/shish-kebab',
+    open: false,
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:5232',

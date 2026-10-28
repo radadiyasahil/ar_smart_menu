@@ -11,6 +11,7 @@ public interface IAuthService
     Task<RefreshTokenResponse> RefreshTokenAsync(Guid userId, CancellationToken ct = default);
     Task LogoutAsync(string tokenId, DateTime tokenExpiresAt, CancellationToken ct = default);
     Task<AuthMeResponse> GetMeAsync(Guid userId, CancellationToken ct = default);
+    Task<UserDto> UpdateMeAsync(Guid userId, UpdateUserRequest request, CancellationToken ct = default);
     Task<bool> IsTokenRevokedAsync(string tokenId, CancellationToken ct = default);
 }
 

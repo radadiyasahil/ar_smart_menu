@@ -16,6 +16,8 @@ import '../../screens/products/add_product_screen.dart';
 import '../../screens/products/product_detail_screen.dart';
 import '../../screens/products/products_screen.dart';
 import '../../screens/qr/qr_codes_screen.dart';
+import '../../screens/billing/table_billing_screen.dart';
+import '../../screens/subscription/subscription_screen.dart';
 import '../../widgets/navigation/main_shell.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -42,6 +44,16 @@ final GoRouter appRouter = GoRouter(
       path: AppRoutes.notifications,
       parentNavigatorKey: rootNavigatorKey,
       builder: (_, _) => const NotificationsScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.billing,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (_, _) => const TableBillingScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.subscription,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (_, _) => const SubscriptionScreen(),
     ),
     StatefulShellRoute.indexedStack(
       builder: (_, _, shell) => MainShell(navigationShell: shell),

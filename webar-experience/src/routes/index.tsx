@@ -9,7 +9,7 @@ import { MenuPage } from '@/pages/menu/MenuPage'
 export const router = createBrowserRouter([
   {
     path: '/',
-    element: <Navigate to="/menu/tasty-bites" replace />,
+    element: <Navigate to="/home" replace />,
   },
   {
     path: '/home',

@@ -20,8 +20,8 @@ if (-not (Test-Path "$PSScriptRoot\..\webar-experience\node_modules")) {
     npm install
 }
 
-Write-Host "Starting WebAR Customer Experience (http://localhost:5174/dish/shish-kebab)..." -ForegroundColor Green
-Write-Host "Opening in browser automatically..." -ForegroundColor Cyan
+Write-Host "Starting WebAR Customer Experience (http://localhost:5174)..." -ForegroundColor Green
+Write-Host "Ready for AR digital menus and 3D dish previews." -ForegroundColor Cyan
 Write-Host ""
 
 npm run dev

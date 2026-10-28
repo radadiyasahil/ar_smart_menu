@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/auth_service.dart';
 import '../core/services/business_service.dart';
 import '../core/services/local_cache_service.dart';
+import '../core/services/subscription_service.dart';
 import '../models/business_model.dart';
 import '../models/user_model.dart';
 
@@ -11,14 +12,18 @@ class BusinessProvider extends ChangeNotifier {
   BusinessProvider({
     BusinessService? businessService,
     AuthService? authService,
+    SubscriptionService? subscriptionService,
   })  : _businessService = businessService ?? BusinessService(),
-        _authService = authService ?? AuthService();
+        _authService = authService ?? AuthService(),
+        _subscriptionService = subscriptionService ?? SubscriptionService();
 
   final BusinessService _businessService;
   final AuthService _authService;
+  final SubscriptionService _subscriptionService;
 
   BusinessModel? _business;
   UserModel? _user;
+  SubscriptionInfoModel? _subscription;
   bool _isLoading = false;
   bool _isLoaded = false;
   bool _isSyncing = false;
@@ -34,6 +39,14 @@ class BusinessProvider extends ChangeNotifier {
   bool get isPendingApproval => _business?.isPending ?? false;
   bool get isActive => _business?.isActive ?? false;
   bool get isRejected => _business?.isRejected ?? false;
+  bool get isDeactivated => _business?.isDeactivated ?? false;
+  bool get isSuspended => _business?.isSuspended ?? false;
+
+  SubscriptionInfoModel? get subscription => _subscription;
+  bool get hasActiveSubscription => _subscription != null && _subscription!.isActive;
+  bool get isTrial => _subscription != null && _subscription!.isTrial;
+  int get daysRemaining => _subscription?.daysRemaining ?? 0;
+  bool get hasUsedTrial => _subscription?.hasUsedTrial ?? false;
 
   /// Instant startup from local storage — no API calls.
   Future<void> hydrateFromCache() async {
@@ -62,6 +75,7 @@ class BusinessProvider extends ChangeNotifier {
       _business = profile.business;
       _isLoaded = true;
       await _persistProfile();
+      await loadSubscription();
     } catch (e) {
       _error = e.toString().replaceFirst('Exception: ', '');
       _isLoaded = true;
@@ -84,6 +98,7 @@ class BusinessProvider extends ChangeNotifier {
       _business = profile.business;
       _isLoaded = true;
       await _persistProfile();
+      await loadSubscription();
     } catch (_) {
       // Keep showing cached data
     } finally {
@@ -200,11 +215,128 @@ class BusinessProvider extends ChangeNotifier {
     return verified;
   }
 
+  Future<BusinessModel> setBusinessStatus(BusinessStatus status, {String? reason}) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      _business = await _businessService.updateStatus(status: status, reason: reason);
+      await _persistProfile();
+      return _business!;
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateProfile({
+    String? fullName,
+    String? whatsAppNumber,
+    String? languagePreference,
+    String? businessName,
+    BusinessType? businessType,
+    String? city,
+    String? fullAddress,
+    String? fssaiNumber,
+    String? gstNumber,
+    String? upiId,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      if (businessName != null ||
+          businessType != null ||
+          city != null ||
+          fullAddress != null ||
+          fssaiNumber != null ||
+          gstNumber != null ||
+          upiId != null) {
+        _business = await _businessService.update(
+          businessName: businessName,
+          businessType: businessType,
+          city: city,
+          fullAddress: fullAddress,
+          fssaiNumber: fssaiNumber,
+          gstNumber: gstNumber,
+          upiId: upiId,
+        );
+      }
+
+      if (fullName != null || whatsAppNumber != null || languagePreference != null) {
+        _user = await _authService.updateMe(
+          fullName: fullName,
+          whatsAppNumber: whatsAppNumber,
+          languagePreference: languagePreference,
+        );
+      }
+
+      await _persistProfile();
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   void clear() {
     _business = null;
     _user = null;
+    _subscription = null;
     _isLoaded = false;
     _error = null;
     notifyListeners();
+  }
+
+  Future<void> loadSubscription() async {
+    try {
+      _subscription = await _subscriptionService.getCurrent();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> activateTrial() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      _subscription = await _subscriptionService.activateTrial();
+      await loadProfile(forceNetwork: true);
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> activatePlan({
+    required String planId,
+    String paymentMethod = 'UPI',
+    String? transactionRef,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      _subscription = await _subscriptionService.activatePlan(
+        planId: planId,
+        paymentMethod: paymentMethod,
+        transactionRef: transactionRef,
+      );
+      await loadProfile(forceNetwork: true);
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 }

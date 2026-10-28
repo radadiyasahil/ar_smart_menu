@@ -62,4 +62,13 @@ public class BusinessesController : ControllerBase
         var result = await _business.SubmitKycAsync(_currentUser.GetUserId(), request, ct);
         return Ok(ApiResponse<UserDto>.Ok(result, "KYC submitted"));
     }
+
+    [HttpPatch("me/status")]
+    public async Task<ActionResult<ApiResponse<BusinessDto>>> UpdateStatus(
+        [FromBody] UpdateBusinessStatusRequest request,
+        CancellationToken ct)
+    {
+        var result = await _business.UpdateStatusAsync(_currentUser.GetUserId(), request, ct);
+        return Ok(ApiResponse<BusinessDto>.Ok(result, $"Business status updated to {request.Status}"));
+    }
 }

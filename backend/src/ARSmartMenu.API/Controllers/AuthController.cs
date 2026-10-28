@@ -94,6 +94,17 @@ public class AuthController : ControllerBase
         return Ok(ApiResponse<AuthMeResponse>.Ok(result));
     }
 
+    /// <summary>Update current authenticated user's profile.</summary>
+    [HttpPut("me")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<UserDto>>> UpdateMe(
+        [FromBody] UpdateUserRequest request,
+        CancellationToken ct)
+    {
+        var result = await _auth.UpdateMeAsync(GetUserId(), request, ct);
+        return Ok(ApiResponse<UserDto>.Ok(result, "Profile updated successfully"));
+    }
+
     private Guid GetUserId()
     {
         var sub = User.FindFirstValue(ClaimTypes.NameIdentifier)

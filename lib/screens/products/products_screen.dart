@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../widgets/common/hover_card.dart';
+import '../../widgets/products/bulk_import_dialog.dart';
+import '../../core/utils/subscription_guard.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -7,13 +9,17 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_routes.dart';
 import '../../core/constants/app_spacing.dart';
 import '../../core/utils/api_error_utils.dart';
+import '../../models/business_model.dart';
 import '../../models/product_model.dart';
 import '../../providers/business_provider.dart';
 import '../../providers/product_provider.dart';
 
 enum ProductListFilter {
   all('All'),
+  hero('✨ Hero 3D'),
+  normal('Standard (2D)'),
   live('Live'),
+  paused('Paused'),
   draft('Draft'),
   processing('Processing'),
   rejected('Rejected');
@@ -42,6 +48,7 @@ class ProductsScreen extends StatefulWidget {
 class _ProductsScreenState extends State<ProductsScreen> {
   ProductListFilter _filter = ProductListFilter.all;
   ProductListSort _sort = ProductListSort.menuOrder;
+  ProductCategory? _selectedCategory;
   bool _bulkMode = false;
   final Set<String> _selectedIds = {};
   bool _isBulkWorking = false;
@@ -61,10 +68,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
   List<ProductModel> _visibleProducts(ProductProvider provider) {
     var list = provider.sortedByMenuOrder();
 
+    if (_selectedCategory != null) {
+      list = list.where((p) => p.category == _selectedCategory).toList();
+    }
+
     list = switch (_filter) {
       ProductListFilter.all => list,
+      ProductListFilter.hero => list.where((p) => p.isHero).toList(),
+      ProductListFilter.normal => list.where((p) => p.isNormal).toList(),
       ProductListFilter.live =>
         list.where((p) => p.status == ProductStatus.live).toList(),
+      ProductListFilter.paused =>
+        list.where((p) => p.status == ProductStatus.paused).toList(),
       ProductListFilter.draft =>
         list.where((p) => p.status == ProductStatus.draft).toList(),
       ProductListFilter.processing => list
@@ -114,8 +129,50 @@ class _ProductsScreenState extends State<ProductsScreen> {
     }
   }
 
+  Future<void> _bulkChangeStatus(
+    ProductProvider provider,
+    ProductStatus status,
+  ) async {
+    if (_selectedIds.isEmpty) return;
+    setState(() => _isBulkWorking = true);
+    try {
+      final count = await provider.bulkSetProductStatus(_selectedIds, status);
+      if (mounted) {
+        final label = status == ProductStatus.live ? 'Live' : 'Paused';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$count dish(es) updated to $label'),
+            backgroundColor: status == ProductStatus.live ? AppColors.success : null,
+          ),
+        );
+        setState(() {
+          _bulkMode = false;
+          _selectedIds.clear();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(formatApiError(e))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isBulkWorking = false);
+    }
+  }
+
   Future<void> _bulkSoldOut(ProductProvider provider, bool soldOut) async {
     if (_selectedIds.isEmpty) return;
+    final isDeactivated = context.read<BusinessProvider>().isDeactivated;
+    if (isDeactivated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Business is deactivated. Operations are paused until reactivated.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     setState(() => _isBulkWorking = true);
     try {
       final count = await provider.bulkSetSoldOut(
@@ -179,7 +236,34 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       : () => _bulkSoldOut(productProvider, false),
                   child: const Text('Available'),
                 ),
+                TextButton(
+                  onPressed: _isBulkWorking
+                      ? null
+                      : () => _bulkChangeStatus(productProvider, ProductStatus.paused),
+                  child: const Text('Pause (Off Live)'),
+                ),
+                TextButton(
+                  onPressed: _isBulkWorking
+                      ? null
+                      : () => _bulkChangeStatus(productProvider, ProductStatus.live),
+                  child: const Text('Make Live'),
+                ),
               ],
+              FilledButton.tonalIcon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primaryOrange.withValues(alpha: 0.15),
+                  foregroundColor: AppColors.primaryOrange,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.playlist_add, size: 18),
+                label: const Text('Bulk Import', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                onPressed: () {
+                if (!checkSubscriptionGuard(context, featureName: 'Bulk Import Dishes')) return;
+                BulkImportDialog.show(context);
+              },
+              ),
+              const SizedBox(width: 4),
               IconButton(
                 tooltip: _bulkMode ? 'Done selecting' : 'Bulk sold-out',
                 icon: Icon(_bulkMode ? Icons.close : Icons.checklist),
@@ -199,7 +283,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
             ],
           ),
           floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => context.push(AppRoutes.addProduct),
+            onPressed: () {
+            if (!checkSubscriptionGuard(context, featureName: 'Adding Dishes')) return;
+            context.push(AppRoutes.addProduct);
+          },
             icon: const Icon(Icons.add),
             label: const Text('Add product'),
             backgroundColor: Theme.of(context).colorScheme.primary,
@@ -211,8 +298,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
               _FilterSortBar(
                 filter: _filter,
                 sort: _sort,
+                selectedCategory: _selectedCategory,
                 onFilterChanged: (value) => setState(() => _filter = value),
                 onSortChanged: (value) => setState(() => _sort = value),
+                onCategoryChanged: (cat) => setState(() => _selectedCategory = cat),
               ),
               if (canReorder)
                 Padding(
@@ -278,19 +367,54 @@ class _ProductsScreenState extends State<ProductsScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                Icons.inventory_2_outlined,
+                Icons.restaurant_menu_rounded,
                 size: 64,
                 color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                _filter == ProductListFilter.all
-                    ? 'No products yet'
-                    : 'No ${_filter.label.toLowerCase()} products',
+                _filter == ProductListFilter.all && _selectedCategory == null
+                    ? 'No dishes added yet'
+                    : 'No matching dishes found',
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'List your items one-by-one or import your entire menu in seconds.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 13),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                alignment: WrapAlignment.center,
+                children: [
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: AppColors.primaryOrange),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add Single Dish'),
+                    onPressed: () {
+            if (!checkSubscriptionGuard(context, featureName: 'Adding Dishes')) return;
+            context.push(AppRoutes.addProduct);
+          },
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primaryOrange,
+                      side: const BorderSide(color: AppColors.primaryOrange),
+                    ),
+                    icon: const Icon(Icons.playlist_add, size: 18),
+                    label: const Text('Bulk Import 50+ Dishes (CSV / Paste)'),
+                    onPressed: () {
+                if (!checkSubscriptionGuard(context, featureName: 'Bulk Import Dishes')) return;
+                BulkImportDialog.show(context);
+              },
+                  ),
+                ],
               ),
             ],
           ),
@@ -375,14 +499,18 @@ class _FilterSortBar extends StatelessWidget {
   const _FilterSortBar({
     required this.filter,
     required this.sort,
+    required this.selectedCategory,
     required this.onFilterChanged,
     required this.onSortChanged,
+    required this.onCategoryChanged,
   });
 
   final ProductListFilter filter;
   final ProductListSort sort;
+  final ProductCategory? selectedCategory;
   final ValueChanged<ProductListFilter> onFilterChanged;
   final ValueChanged<ProductListSort> onSortChanged;
+  final ValueChanged<ProductCategory?> onCategoryChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -396,6 +524,7 @@ class _FilterSortBar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 1. Status & Dish Type Filters (All, Hero 3D, Normal 2D, Live, Paused, etc.)
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -415,7 +544,40 @@ class _FilterSortBar extends StatelessWidget {
               }).toList(),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: 8),
+
+          // 2. Category Selector Chips (All Categories, Starters, Main Course, Desserts, etc.)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: const Text('All Categories', style: TextStyle(fontSize: 12)),
+                    selected: selectedCategory == null,
+                    onSelected: (_) => onCategoryChanged(null),
+                    selectedColor: AppColors.primaryOrange.withValues(alpha: 0.2),
+                  ),
+                ),
+                ...ProductCategory.values.map((cat) {
+                  final isSel = selectedCategory == cat;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(cat.label, style: const TextStyle(fontSize: 12)),
+                      selected: isSel,
+                      onSelected: (_) => onCategoryChanged(isSel ? null : cat),
+                      selectedColor: AppColors.primaryOrange.withValues(alpha: 0.2),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+
+          // 3. Sort dropdown
           Row(
             children: [
               const Icon(Icons.sort, size: 18, color: AppColors.mediumGray),
@@ -427,7 +589,7 @@ class _FilterSortBar extends StatelessWidget {
                     .map(
                       (option) => DropdownMenuItem(
                         value: option,
-                        child: Text(option.label),
+                        child: Text(option.label, style: const TextStyle(fontSize: 13)),
                       ),
                     )
                     .toList(),
@@ -450,6 +612,8 @@ class _InactiveBusinessView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDeactivated = businessProvider.isDeactivated;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Products')),
       body: Center(
@@ -458,17 +622,39 @@ class _InactiveBusinessView extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.hourglass_top, size: 56, color: AppColors.warning),
+              Icon(
+                isDeactivated ? Icons.pause_circle_filled : Icons.hourglass_top,
+                size: 56,
+                color: isDeactivated ? Colors.orange : AppColors.warning,
+              ),
               const SizedBox(height: AppSpacing.md),
-              const Text(
-                'Business not active yet',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              Text(
+                isDeactivated ? 'Restaurant is Deactivated' : 'Business not active yet',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                isDeactivated
+                    ? 'Your menu is paused and hidden from diners. Reactivate to resume menu management and go live.'
+                    : 'Your business is pending approval or review.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.4),
               ),
               const SizedBox(height: AppSpacing.lg),
-              OutlinedButton(
-                onPressed: () => context.go(AppRoutes.businessStatus),
-                child: const Text('Check status'),
-              ),
+              if (isDeactivated)
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.primaryOrange),
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Reactivate Business & Go Live'),
+                  onPressed: () async {
+                    await businessProvider.setBusinessStatus(BusinessStatus.active);
+                  },
+                )
+              else
+                OutlinedButton(
+                  onPressed: () => context.go(AppRoutes.businessStatus),
+                  child: const Text('Check status'),
+                ),
             ],
           ),
         ),
@@ -501,6 +687,9 @@ class _ProductListTile extends StatelessWidget {
     switch (status) {
       case ProductStatus.live:
         return AppColors.success;
+      case ProductStatus.paused:
+        return Colors.orange.shade700;
+
       case ProductStatus.draft:
         return AppColors.mediumGray;
       case ProductStatus.rejected:
@@ -562,12 +751,70 @@ class _ProductListTile extends StatelessWidget {
                         fontSize: 16,
                       ),
                     ),
-                    Text(
-                      '${product.priceLabel} • ${product.category?.label ?? 'Uncategorized'}',
-                      style: const TextStyle(
-                        color: AppColors.mediumGray,
-                        fontSize: 13,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          product.priceLabel,
+                          style: const TextStyle(
+                            color: AppColors.primaryOrange,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            product.category?.label ?? 'General',
+                            style: const TextStyle(color: Colors.grey, fontSize: 11),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        if (product.isHero)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.purple.withValues(alpha: 0.3)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.auto_awesome, size: 10, color: Colors.purpleAccent),
+                                SizedBox(width: 3),
+                                Text(
+                                  'Hero 3D',
+                                  style: TextStyle(
+                                    color: Colors.purpleAccent,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.blueGrey.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'Standard (2D)',
+                              style: TextStyle(
+                                color: Colors.blueGrey,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     if (product.soldOutToday)
                       const Text(
@@ -581,6 +828,46 @@ class _ProductListTile extends StatelessWidget {
                   ],
                 ),
               ),
+              if (product.isLive)
+                IconButton(
+                  icon: const Icon(Icons.pause_circle_outline, size: 22, color: AppColors.mediumGray),
+                  tooltip: 'Remove from Live (Pause)',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () async {
+                    await context.read<ProductProvider>().setProductStatus(product.id, ProductStatus.paused);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${product.name} removed from Live menu (Paused).'),
+                          action: SnackBarAction(
+                            label: 'Undo',
+                            onPressed: () => context.read<ProductProvider>().setProductStatus(product.id, ProductStatus.live),
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                )
+              else if (product.isPaused)
+                IconButton(
+                  icon: const Icon(Icons.play_circle_fill, size: 24, color: AppColors.success),
+                  tooltip: 'Publish to Live Menu',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () async {
+                    await context.read<ProductProvider>().setProductStatus(product.id, ProductStatus.live);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${product.name} is now LIVE on AR menu!'),
+                          backgroundColor: AppColors.success,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(

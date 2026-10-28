@@ -21,6 +21,7 @@ public partial class AppDbContext : DbContext
     public DbSet<ArScanEvent> ArScanEvents => Set<ArScanEvent>();
     public DbSet<ArViewEvent> ArViewEvents => Set<ArViewEvent>();
     public DbSet<AppNotification> Notifications => Set<AppNotification>();
+    public DbSet<TableOrder> TableOrders => Set<TableOrder>();
 
     // Phase 4 pipeline entities
     public DbSet<Photographer> Photographers => Set<Photographer>();

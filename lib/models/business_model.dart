@@ -17,7 +17,8 @@ enum BusinessStatus {
   pendingApproval(0, 'Pending approval'),
   active(1, 'Active'),
   suspended(2, 'Suspended'),
-  rejected(3, 'Rejected');
+  rejected(3, 'Rejected'),
+  deactivated(4, 'Deactivated');
 
   const BusinessStatus(this.value, this.label);
   final int value;
@@ -69,6 +70,8 @@ class BusinessModel {
   bool get isPending => status == BusinessStatus.pendingApproval;
   bool get isActive => status == BusinessStatus.active;
   bool get isRejected => status == BusinessStatus.rejected;
+  bool get isSuspended => status == BusinessStatus.suspended;
+  bool get isDeactivated => status == BusinessStatus.deactivated;
 
   factory BusinessModel.fromJson(Map<String, dynamic> json) {
     return BusinessModel(

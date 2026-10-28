@@ -4,9 +4,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'core/services/subscription_service.dart';
 import 'core/theme/app_theme.dart';
-import 'core/utils/owner_notifications_sync.dart';
 import 'providers/analytics_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/business_provider.dart';
@@ -29,12 +27,10 @@ Future<void> main() async {
   await themeProvider.hydrate();
   await notificationProvider.hydrate();
 
-  // Fast path: local cache only — UI shows in ~1s, no network blocking startup.
-  await authProvider.hydrateFromCache();
-  if (authProvider.isAuthenticated) {
-    await businessProvider.hydrateFromCache();
-    await productProvider.hydrateFromCache();
-  }
+  // Fresh startup: Require explicit owner login credentials (no stale auto-login).
+  await authProvider.clearSession();
+  businessProvider.clear();
+  productProvider.clear();
 
   runApp(
     EasyLocalization(
@@ -55,19 +51,7 @@ Future<void> main() async {
     ),
   );
 
-  // Background sync after first frame — does not block UI paint.
-  if (authProvider.isAuthenticated) {
-    unawaited(businessProvider.refreshProfileInBackground());
-    unawaited(analyticsProvider.load());
-    unawaited(
-      syncOwnerNotifications(
-        productProvider: productProvider,
-        businessProvider: businessProvider,
-        notificationProvider: notificationProvider,
-        subscriptionService: SubscriptionService(),
-      ),
-    );
-  }
+
 }
 
 /// Root widget — configures theme, localization, and routing.

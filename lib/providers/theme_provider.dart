@@ -22,6 +22,7 @@ class ThemeProvider extends ChangeNotifier {
   ThemePreference _preference = ThemePreference.light;
 
   ThemePreference get preference => _preference;
+  bool get isDark => _preference == ThemePreference.dark;
 
   ThemeMode get themeMode => switch (_preference) {
         ThemePreference.light => ThemeMode.light,

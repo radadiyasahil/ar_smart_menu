@@ -83,6 +83,42 @@ public class BusinessService : IBusinessService
         return MapBusiness(business);
     }
 
+    public async Task<BusinessDto> UpdateStatusAsync(Guid userId, UpdateBusinessStatusRequest request, CancellationToken ct = default)
+    {
+        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.OwnerId == userId, ct)
+            ?? throw new NotFoundException("Business not found.");
+
+        if (request.Status != BusinessStatus.Active && request.Status != BusinessStatus.Deactivated && request.Status != BusinessStatus.Suspended)
+        {
+            throw new ValidationException("Owner can only activate, deactivate, or pause their business.");
+        }
+
+        if (business.Status == BusinessStatus.PendingApproval)
+        {
+            throw new ValidationException("Cannot change status while business is pending admin approval.");
+        }
+        if (business.Status == BusinessStatus.Rejected && request.Status == BusinessStatus.Active)
+        {
+            throw new ValidationException("Cannot activate a rejected business. Please update registration and contact admin.");
+        }
+
+        business.Status = request.Status;
+        if (request.Status is BusinessStatus.Deactivated or BusinessStatus.Suspended)
+        {
+            if (!string.IsNullOrWhiteSpace(request.Reason))
+                business.RejectionReason = request.Reason.Trim();
+        }
+        else if (request.Status == BusinessStatus.Active)
+        {
+            business.RejectionReason = null;
+        }
+
+        business.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return MapBusiness(business);
+    }
+
     public async Task<VerifyBankResponse> VerifyBankAsync(Guid userId, VerifyBankRequest request, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(request.BankAccountNumber) || request.BankAccountNumber.Length < 9)

@@ -212,9 +212,13 @@ class ProductModel {
   final DateTime? createdAt;
 
   bool get isLive => status == ProductStatus.live;
+  bool get isPaused => status == ProductStatus.paused;
   bool get isDraft => status == ProductStatus.draft;
   bool get isSubmitted => status == ProductStatus.submitted;
   bool get isRejected => status == ProductStatus.rejected;
+  /// Hero dishes require 4 angle photos and photogrammetry AR processing
+  bool get isHero => photos.length >= 4 || isSubmitted || isDraft || status == ProductStatus.processing || status == ProductStatus.review;
+  bool get isNormal => !isHero;
 
   static const String _improvementMarker = '\n\nWhat to improve:\n';
 

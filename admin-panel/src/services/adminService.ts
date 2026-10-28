@@ -26,6 +26,7 @@ function statusToApi(status?: BusinessStatusFilter): number | undefined {
     active: 1,
     suspended: 2,
     rejected: 3,
+    deactivated: 4,
   }
   return map[status]
 }
@@ -161,5 +162,60 @@ export const adminService = {
       throw new Error(res.data.error ?? 'Failed to load plans')
     }
     return res.data.data
+  },
+
+  async setBusinessStatus(
+    id: string,
+    status: number,
+    reason?: string,
+    adminNotes?: string,
+  ): Promise<void> {
+    await ensureAdminAuth()
+    const res = await apiClient.post<ApiEnvelope<unknown>>(
+      `/admin/businesses/${id}/set-status`,
+      {
+        status,
+        reason: reason || undefined,
+        adminNotes: adminNotes || undefined,
+      },
+    )
+    if (!res.data.success) {
+      throw new Error(res.data.error ?? 'Failed to update business status')
+    }
+  },
+
+  async setProductStatus(productId: string, status: number): Promise<void> {
+    await ensureAdminAuth()
+    const res = await apiClient.post<ApiEnvelope<unknown>>(
+      `/admin/products/${productId}/set-status`,
+      { status },
+    )
+    if (!res.data.success) {
+      throw new Error(res.data.error ?? 'Failed to update product status')
+    }
+  },
+
+  async grantSubscription(
+    businessId: string,
+    payload: { planSlug: string; customDays?: number; notes?: string },
+  ): Promise<void> {
+    await ensureAdminAuth()
+    const res = await apiClient.post<ApiEnvelope<unknown>>(
+      `/admin/businesses/${businessId}/grant-subscription`,
+      payload,
+    )
+    if (!res.data.success) {
+      throw new Error(res.data.error ?? 'Failed to grant subscription')
+    }
+  },
+
+  async cancelSubscription(businessId: string): Promise<void> {
+    await ensureAdminAuth()
+    const res = await apiClient.post<ApiEnvelope<unknown>>(
+      `/admin/businesses/${businessId}/cancel-subscription`,
+    )
+    if (!res.data.success) {
+      throw new Error(res.data.error ?? 'Failed to cancel subscription')
+    }
   },
 }

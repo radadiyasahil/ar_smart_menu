@@ -11,7 +11,9 @@ import {
   ChevronRight,
   RotateCcw,
   ArrowLeft,
+  PauseCircle,
   X,
+  ChefHat,
 } from 'lucide-react'
 import {
   productService,
@@ -22,6 +24,8 @@ import type { CartItem } from '@/types/cart'
 import { DishCard } from './components/DishCard'
 import { Interactive3dModal } from './components/Interactive3dModal'
 import { CartDrawer, RestaurantInfoModal, TableSelectorModal } from './components/MenuModals'
+import { TableOrderStatusModal } from './components/TableOrderStatusModal'
+import { tableOrderService, type LiveTableOrder } from '@/services/tableOrderService'
 
 export function MenuPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -56,6 +60,60 @@ export function MenuPage() {
     setToast(msg)
     toastTimer.current = window.setTimeout(() => setToast(null), 2500)
   }
+
+  // Live Table Order Status Tracking (Round 1, Round 2, Round 3...)
+  const [activeOrders, setActiveOrders] = useState<LiveTableOrder[]>([])
+  const [isOrderStatusOpen, setIsOrderStatusOpen] = useState(false)
+  const [isRefreshingOrders, setIsRefreshingOrders] = useState(false)
+
+  const fetchOrders = async (silent = false) => {
+    if (!slug) return
+    if (!silent) setIsRefreshingOrders(true)
+    try {
+      const orders = await tableOrderService.fetchTableOrders(slug, table || 'Dine-in')
+      setActiveOrders(orders)
+    } catch (e) {
+      console.warn('Failed to poll table orders:', e)
+    } finally {
+      if (!silent) setIsRefreshingOrders(false)
+    }
+  }
+
+  // Poll table orders every 6 seconds for real-time kitchen status updates
+  useEffect(() => {
+    if (!slug) return
+    fetchOrders(true)
+    const interval = setInterval(() => {
+      fetchOrders(true)
+    }, 6000)
+    return () => clearInterval(interval)
+  }, [slug, table])
+
+  const totalOrderedItemsCount = useMemo(() => {
+    return activeOrders
+      .filter((o) => o.status !== 'CANCELLED')
+      .reduce((sum, o) => sum + (o.items || []).reduce((is, i) => is + (i.quantity || 1), 0), 0)
+  }, [activeOrders])
+
+  const runningBillTotal = useMemo(() => {
+    return activeOrders
+      .filter((o) => o.status !== 'CANCELLED')
+      .reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+  }, [activeOrders])
+
+  const kitchenStatusSummary = useMemo(() => {
+    if (activeOrders.length === 0) return null
+    if (activeOrders.some((o) => o.status === 'PENDING')) {
+      return { status: 'PENDING', label: 'Sent to Kitchen', emoji: '⏳' }
+    }
+    if (activeOrders.some((o) => o.status === 'ACCEPTED')) {
+      return { status: 'ACCEPTED', label: 'Preparing', emoji: '🍳' }
+    }
+    if (activeOrders.every((o) => o.status === 'COMPLETED')) {
+      return { status: 'COMPLETED', label: 'Served', emoji: '✅' }
+    }
+    return { status: 'ACTIVE', label: 'Ordered', emoji: '🍽️' }
+  }, [activeOrders])
 
   const handleSelectTable = (newTable: string) => {
     setTable(newTable)
@@ -159,7 +217,37 @@ export function MenuPage() {
     )
   }
 
+  if (menu.isBusinessActive === false) {
+    return (
+      <div className="h-full w-full bg-[#121319] text-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-4">
+          <PauseCircle className="w-8 h-8 text-amber-500" />
+        </div>
+        <h2 className="text-xl font-bold">{menu.businessName}</h2>
+        <p className="text-sm text-amber-400 font-medium mt-1">Temporarily Closed / Paused</p>
+        <p className="text-xs text-gray-400 mt-2 max-w-xs">
+          {menu.inactiveMessage || 'This restaurant is currently closed or paused. Please check back later!'}
+        </p>
+      </div>
+    )
+  }
+
   const heroDish = allDishes.find((d) => d.has3dModel && d.thumbnailUrl) || allDishes[0]
+
+  const renderDishGrid = (dishes: PublicMenuDish[]) => (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
+      {dishes.map((dish) => (
+        <DishCard
+          key={dish.id}
+          dish={dish}
+          quantity={cart[dish.id]?.quantity || 0}
+          onQuantityChange={handleQty}
+          onOpen3d={(d) => setActive3dDish(d)}
+        />
+      ))}
+    </div>
+  )
+
 
   return (
     <div className="h-full w-full bg-[#121319] text-white overflow-y-auto overscroll-contain">
@@ -191,6 +279,18 @@ export function MenuPage() {
                 <span>{table ? `Table ${table}` : 'Select Table'}</span>
                 <ChevronRight size={12} className="text-gray-400" />
               </button>
+
+              {activeOrders.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsOrderStatusOpen(true)}
+                  className="bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 px-3.5 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition animate-pulse"
+                  title="Click to track live orders for this table"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span>{kitchenStatusSummary?.emoji} {totalOrderedItemsCount} Items ({kitchenStatusSummary?.label})</span>
+                </button>
+              )}
             </div>
 
             <div className="flex items-center gap-2.5">
@@ -382,7 +482,7 @@ export function MenuPage() {
             }`}
           >
             <Sparkles size={12} />
-            <span>3D AR Only</span>
+            <span>3D AR Only ({allDishes.filter((d) => d.has3dModel).length})</span>
           </button>
         </div>
 
@@ -410,26 +510,72 @@ export function MenuPage() {
                 <span>Reset Filters</span>
               </button>
             </div>
+          ) : selectedCategory === 'All' && !searchQuery.trim() && !arOnly && !popularOnly && dietary === 'all' ? (
+            <div className="space-y-10">
+              {menu.categories.map((cat) => {
+                const catDishes = cat.dishes
+                if (catDishes.length === 0) return null
+                return (
+                  <div key={cat.categoryName} className="scroll-mt-24">
+                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/10">
+                      <div className="flex items-center gap-2.5">
+                        <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">
+                          {cat.categoryName}
+                        </h2>
+                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#242735] text-gray-300 font-bold border border-[#34384B]">
+                          {catDishes.length}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCategory(cat.categoryName)}
+                        className="text-xs text-[#FF5353] hover:text-[#ff7043] font-bold flex items-center gap-1 cursor-pointer transition"
+                      >
+                        <span>View only {cat.categoryName}</span>
+                        <ChevronRight size={13} />
+                      </button>
+                    </div>
+                    {renderDishGrid(catDishes)}
+                  </div>
+                )
+              })}
+            </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
-              {filteredDishes.map((dish) => (
-                <DishCard
-                  key={dish.id}
-                  dish={dish}
-                  quantity={cart[dish.id]?.quantity || 0}
-                  onQuantityChange={handleQty}
-                  onOpen3d={(d) => setActive3dDish(d)}
-                />
-              ))}
+            <div>
+              {selectedCategory !== 'All' && (
+                <div className="flex items-center justify-between mb-5 pb-2 border-b border-white/10">
+                  <div className="flex items-center gap-2.5">
+                    <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">
+                      {selectedCategory}
+                    </h2>
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#242735] text-[#FF5353] font-bold border border-[#34384B]">
+                      {filteredDishes.length} dishes
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCategory('All')}
+                    className="text-xs text-gray-400 hover:text-white font-medium cursor-pointer transition"
+                  >
+                    ← View full menu
+                  </button>
+                </div>
+              )}
+              {searchQuery.trim() && (
+                <div className="mb-4 text-xs text-gray-400">
+                  Found <span className="font-bold text-white">{filteredDishes.length}</span> results for &ldquo;{searchQuery}&rdquo;
+                </div>
+              )}
+              {renderDishGrid(filteredDishes)}
             </div>
           )}
         </div>
       </div>
 
       {/* ========================================================= */}
-      {/* 5. FLOATING BOTTOM CART BAR (Reference Coral Red CTA)     */}
+      {/* 5. FLOATING BOTTOM BAR (Cart CTA or Live Order Tracker)   */}
       {/* ========================================================= */}
-      {cartCount > 0 && (
+      {cartCount > 0 ? (
         <div className="floating-cart-glass fixed bottom-4 inset-x-4 max-w-xl mx-auto z-40 p-3.5 rounded-2xl">
           <div className="flex items-center justify-between gap-3">
             <div
@@ -444,7 +590,7 @@ export function MenuPage() {
               </div>
               <div>
                 <p className="text-[11px] text-gray-400 uppercase font-bold tracking-wide">
-                  {table ? `Table ${table} • ${cartCount} items` : `${cartCount} items`}
+                  {table ? `Table ${table} • ${cartCount} items in cart` : `${cartCount} items in cart`}
                 </p>
                 <p className="text-lg font-black text-white">₹{cartTotal.toLocaleString('en-IN')}</p>
               </div>
@@ -455,12 +601,50 @@ export function MenuPage() {
               onClick={() => setIsCartOpen(true)}
               className="btn-order-coral px-6 py-2.5 text-white text-xs sm:text-sm font-bold rounded-full flex items-center gap-1.5 cursor-pointer shadow-lg"
             >
-              <span>View Order</span>
+              <span>View Cart</span>
               <ChevronRight size={15} />
             </button>
           </div>
         </div>
-      )}
+      ) : activeOrders.length > 0 ? (
+        <div className="floating-cart-glass fixed bottom-4 inset-x-4 max-w-xl mx-auto z-40 p-3.5 rounded-2xl border border-emerald-500/30 bg-[#161A1D]/95 backdrop-blur-md shadow-2xl">
+          <div className="flex items-center justify-between gap-3">
+            <div
+              onClick={() => setIsOrderStatusOpen(true)}
+              className="flex items-center gap-3 cursor-pointer"
+            >
+              <div className="relative w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                <ChefHat size={20} className="animate-pulse" />
+                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-white text-emerald-600 text-[11px] font-black flex items-center justify-center shadow">
+                  {totalOrderedItemsCount}
+                </span>
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black text-emerald-400 uppercase tracking-wide">
+                    {kitchenStatusSummary?.emoji} {kitchenStatusSummary?.label}
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300 font-semibold">
+                    {table ? (table.toLowerCase().startsWith('table') ? table : `Table ${table}`) : 'Table'}
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-gray-200 mt-0.5">
+                  {totalOrderedItemsCount} items ordered • ₹{runningBillTotal.toLocaleString('en-IN')}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsOrderStatusOpen(true)}
+              className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-xs font-bold rounded-full flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/25"
+            >
+              <span>Track Order</span>
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Modals */}
       {active3dDish && (
@@ -479,6 +663,18 @@ export function MenuPage() {
         tableNumber={table}
         restaurantName={menu.businessName}
         whatsAppNumber={menu.whatsAppNumber}
+        menuSlug={slug || ''}
+        activeOrdersCount={activeOrders.length}
+        onOpenOrderStatus={() => setIsOrderStatusOpen(true)}
+        onOrderPlaced={(order) => {
+          setActiveOrders((prev) => {
+            const exists = prev.some((o) => o.id === order.id)
+            return exists ? prev.map((o) => (o.id === order.id ? order : o)) : [...prev, order]
+          })
+          setIsOrderStatusOpen(true)
+          showToast('🍳 Order sent to kitchen! Tracking live status...')
+          fetchOrders(true)
+        }}
         onClose={() => setIsCartOpen(false)}
         onQuantityChange={handleQty}
         onClearCart={() => {
@@ -489,6 +685,18 @@ export function MenuPage() {
           setIsCartOpen(false)
           setIsTableOpen(true)
         }}
+      />
+
+      <TableOrderStatusModal
+        isOpen={isOrderStatusOpen}
+        onClose={() => setIsOrderStatusOpen(false)}
+        orders={activeOrders}
+        restaurantName={menu.businessName}
+        tableNumber={table}
+        whatsAppNumber={menu.whatsAppNumber}
+        isRefreshing={isRefreshingOrders}
+        onRefresh={() => fetchOrders(false)}
+        onOrderMore={() => setIsOrderStatusOpen(false)}
       />
 
       <RestaurantInfoModal

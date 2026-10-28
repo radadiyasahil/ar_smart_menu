@@ -6,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_spacing.dart';
 import '../../core/services/qr_service.dart';
+import '../../core/services/table_stand_pdf_service.dart';
 import '../../core/utils/api_error_utils.dart';
 import '../../core/utils/ar_preview.dart';
 import '../../models/qr_code_model.dart';
@@ -32,7 +33,8 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
 
   bool _loading = true;
   bool _generatingTables = false;
-  int _tableCount = 10;
+  bool _hasGeneratedTables = false;
+  int _tableCount = 3;
   String? _error;
   String? _generatingProductId;
 
@@ -57,9 +59,8 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
 
       setState(() {
         _masterQr = master;
-        _tableQrs = allCodes.where((q) => q.isTable).toList()
-          ..sort((a, b) => a.slug.compareTo(b.slug));
         _productQrs = allCodes.where((q) => q.isProduct).toList();
+        // Do not auto-display table scanners until user clicks "Generate QRs"
       });
     } catch (e) {
       _error = formatApiError(e);
@@ -69,11 +70,29 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
   }
 
   Future<void> _generateTables() async {
+    final businessProvider = context.read<BusinessProvider>();
+    if (businessProvider.isDeactivated || businessProvider.isSuspended) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Restaurant operations are deactivated. Please reactivate your business to generate table QRs.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
     setState(() => _generatingTables = true);
     try {
       final tables = await _qrService.generateTableQrs(count: _tableCount);
+      // Sort numerically: Table 1, Table 2, Table 3... (instead of alphabetical t1, t10, t2)
+      tables.sort((a, b) {
+        final na = int.tryParse(TableStandPdfService.extractTableNumber(a.slug, a.productName, webUrl: a.webUrl)) ?? 0;
+        final nb = int.tryParse(TableStandPdfService.extractTableNumber(b.slug, b.productName, webUrl: b.webUrl)) ?? 0;
+        return na.compareTo(nb);
+      });
       setState(() {
         _tableQrs = tables;
+        _hasGeneratedTables = true;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -114,6 +133,44 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
       }
     } finally {
       if (mounted) setState(() => _generatingProductId = null);
+    }
+  }
+
+  Future<void> _downloadAllStands(String businessName) async {
+    try {
+      await TableStandPdfService.instance.downloadAllStands(
+        tableQrs: _tableQrs,
+        businessName: businessName,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Downloaded all Table Stands PDF!'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to download stands: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _printAllStands(String businessName) async {
+    try {
+      await TableStandPdfService.instance.printAllStands(
+        tableQrs: _tableQrs,
+        businessName: businessName,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to print stands: $e')),
+        );
+      }
     }
   }
 
@@ -242,7 +299,7 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
                           const SizedBox(width: AppSpacing.sm),
                           FilledButton(
                             style: FilledButton.styleFrom(backgroundColor: AppColors.primaryOrange),
-                            onPressed: _generatingTables ? null : _generateTables,
+                            onPressed: _generatingTables || (context.read<BusinessProvider>().isDeactivated || context.read<BusinessProvider>().isSuspended) ? null : _generateTables,
                             child: Text(_generatingTables ? 'Generating...' : 'Generate QRs'),
                           ),
                         ],
@@ -251,26 +308,86 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
 
                     const SizedBox(height: AppSpacing.lg),
 
-                    if (_tableQrs.isEmpty)
+                    if (!_hasGeneratedTables) ...[
+                      // Shown BEFORE user clicks "Generate QRs"
                       Center(
                         child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.xl),
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+                          child: Column(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryOrange.withValues(alpha: 0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.table_restaurant_outlined, size: 48, color: AppColors.primaryOrange),
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'No Table Scanners Generated Yet',
+                                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Select the number of tables (default is 3) and click "Generate QRs" above to create and view your table scanners.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: AppColors.mediumGray, fontSize: 13, height: 1.4),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ] else if (_tableQrs.isEmpty) ...[
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(AppSpacing.xl),
                           child: Text(
-                            'No table QRs generated yet. Click "Generate QRs" above.',
+                            'No table QRs found. Click "Generate QRs" above.',
                             style: TextStyle(color: AppColors.mediumGray),
                           ),
                         ),
-                      )
-                    else ...[
+                      ),
+                    ] else ...[
+                      // Batch Actions Bar
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.primaryOrange,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                            icon: const Icon(Icons.picture_as_pdf, size: 18),
+                            label: Text('Download All (${_tableQrs.length}) Stands (PDF)'),
+                            onPressed: () => _downloadAllStands(businessName),
+                          ),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                            icon: const Icon(Icons.print, size: 18),
+                            label: const Text('Print All Stands'),
+                            onPressed: () => _printAllStands(businessName),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
                       Text(
                         'Generated Table Stands (${_tableQrs.length})',
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      ..._tableQrs.map((tQr) => _TableQrCard(
-                            qr: tQr,
-                            businessName: businessName,
-                          )),
+                      Column(
+                        children: _tableQrs
+                            .map((tQr) => _TableQrCard(
+                                  qr: tQr,
+                                  businessName: businessName,
+                                ))
+                            .toList(),
+                      ),
                     ],
                   ],
 
@@ -296,7 +413,7 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
                           children: products.map((product) {
                             final existing = _productQrs.firstWhere(
                               (q) => q.productId == product.id && q.isActive,
-                              orElse: () => QrCodeModel(
+                              orElse: () => const QrCodeModel(
                                 id: '',
                                 businessId: '',
                                 slug: '',
@@ -349,7 +466,8 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
   }
 }
 
-/// Standalone acrylic table tent preview card for Master Restaurant QR
+/// Standalone preview card for Master Restaurant QR
+/// Includes direct options to Download Stand (PDF), Print Stand, Open Menu, and Copy Link.
 class _MasterQrStandCard extends StatelessWidget {
   const _MasterQrStandCard({
     required this.businessName,
@@ -450,7 +568,7 @@ class _MasterQrStandCard extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            // Action Buttons
+            // Primary Actions: Download Stand (PDF) & Print Stand
             Row(
               children: [
                 Expanded(
@@ -459,9 +577,12 @@ class _MasterQrStandCard extends StatelessWidget {
                       backgroundColor: AppColors.primaryOrange,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    icon: const Icon(Icons.open_in_browser, size: 18),
-                    label: const Text('Open Menu'),
-                    onPressed: () => openArMenuUrl(qr.webUrl),
+                    icon: const Icon(Icons.picture_as_pdf, size: 18),
+                    label: const Text('Download Stand', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () => TableStandPdfService.instance.downloadStand(
+                      qr: qr,
+                      businessName: businessName,
+                    ),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
@@ -470,7 +591,38 @@ class _MasterQrStandCard extends StatelessWidget {
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    icon: const Icon(Icons.copy, size: 18),
+                    icon: const Icon(Icons.print, size: 18),
+                    label: const Text('Print Stand', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () => TableStandPdfService.instance.printStand(
+                      qr: qr,
+                      businessName: businessName,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+
+            // Secondary Actions: Open AR Preview & Copy Link
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                    ),
+                    icon: const Icon(Icons.open_in_browser, size: 17),
+                    label: const Text('Open Menu'),
+                    onPressed: () => openArMenuUrl(qr.webUrl),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                    ),
+                    icon: const Icon(Icons.copy, size: 17),
                     label: const Text('Copy Link'),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: qr.webUrl));
@@ -489,7 +641,8 @@ class _MasterQrStandCard extends StatelessWidget {
   }
 }
 
-/// Stand for Table 1, Table 2...
+/// Existing clean horizontal card design for each Table QR in the Owner App.
+/// Includes direct actions to Download Stand (PDF), Print Stand, Preview in AR, and Copy Link.
 class _TableQrCard extends StatelessWidget {
   const _TableQrCard({
     required this.qr,
@@ -501,10 +654,13 @@ class _TableQrCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tableTitle = qr.productName ?? 'Table';
+    final tableNumber = TableStandPdfService.extractTableNumber(qr.slug, qr.productName, webUrl: qr.webUrl);
+    final tableTitle = qr.productName != null && qr.productName!.isNotEmpty
+        ? qr.productName!
+        : 'Table $tableNumber';
 
     return HoverCard(
-      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.all(AppSpacing.md),
       borderRadius: AppSpacing.radiusMd,
       child: Row(
@@ -519,13 +675,13 @@ class _TableQrCard extends StatelessWidget {
             ),
             child: QrImageView(
               data: qr.webUrl,
-              size: 70,
+              size: 56,
               backgroundColor: Colors.white,
             ),
           ),
           const SizedBox(width: AppSpacing.md),
 
-          // Details
+          // Table Details
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -546,30 +702,56 @@ class _TableQrCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(businessName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                Text(qr.webUrl,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11, color: AppColors.mediumGray)),
+                Text(
+                  businessName,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                Text(
+                  qr.webUrl,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: AppColors.mediumGray),
+                ),
               ],
             ),
           ),
+          const SizedBox(width: AppSpacing.sm),
 
-          // Actions
+          // Actions: Download Stand (PDF) with new golden yellow design, Print, Preview, Copy
+          FilledButton.tonalIcon(
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            ),
+            icon: const Icon(Icons.download, size: 16),
+            label: const Text('Download Stand', style: TextStyle(fontSize: 12)),
+            onPressed: () => TableStandPdfService.instance.downloadStand(
+              qr: qr,
+              businessName: businessName,
+            ),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: 'Print Stand',
+            icon: const Icon(Icons.print, size: 20),
+            onPressed: () => TableStandPdfService.instance.printStand(
+              qr: qr,
+              businessName: businessName,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Preview AR Menu',
+            icon: const Icon(Icons.open_in_browser, color: AppColors.primaryOrange, size: 20),
+            onPressed: () => openArMenuUrl(qr.webUrl),
+          ),
           IconButton(
             tooltip: 'Copy Table Link',
-            icon: const Icon(Icons.copy, size: 20),
+            icon: const Icon(Icons.copy, size: 19),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: qr.webUrl));
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('$tableTitle link copied!')),
               );
             },
-          ),
-          IconButton(
-            tooltip: 'Preview Table Menu',
-            icon: const Icon(Icons.open_in_browser, color: AppColors.primaryOrange, size: 20),
-            onPressed: () => openArMenuUrl(qr.webUrl),
           ),
         ],
       ),

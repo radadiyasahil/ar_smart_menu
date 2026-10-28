@@ -11,6 +11,7 @@ import '../../core/utils/api_error_utils.dart';
 import '../../core/utils/ar_preview.dart';
 import '../../models/product_model.dart';
 import '../../providers/product_provider.dart';
+import '../../providers/business_provider.dart';
 import 'dart:typed_data';
 import '../../widgets/products/edit_product_sheet.dart';
 import '../../widgets/products/four_photo_uploader.dart';
@@ -226,9 +227,56 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
   }
 
+  Future<void> _toggleLiveStatus(ProductStatus targetStatus) async {
+    final product = _product;
+    if (product == null) return;
+    final isDeactivated = context.read<BusinessProvider>().isDeactivated;
+    if (isDeactivated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Business is deactivated. Reactivate business to change live status.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final updated = await context.read<ProductProvider>().setProductStatus(product.id, targetStatus);
+      setState(() => _product = updated);
+      if (mounted) {
+        final isLive = targetStatus == ProductStatus.live;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isLive
+                ? '${product.name} is now LIVE on AR menu!'
+                : '${product.name} removed from Live menu (Paused).'),
+            backgroundColor: isLive ? AppColors.success : null,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(formatApiError(e))),
+        );
+      }
+    }
+  }
+
   Future<void> _toggleSoldOut() async {
     final product = _product;
     if (product == null) return;
+    final isDeactivated = context.read<BusinessProvider>().isDeactivated;
+    if (isDeactivated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Business is deactivated. Reactivate business to update availability.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
     try {
       final updated = await context.read<ProductProvider>().toggleSoldOut(
@@ -246,6 +294,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _delete() async {
+    final isDeactivated = context.read<BusinessProvider>().isDeactivated;
+    if (isDeactivated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Business is deactivated. Reactivate business to delete products.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -268,15 +326,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (confirmed != true || !mounted) return;
 
     try {
+      setState(() => _isLoading = true);
       await context.read<ProductProvider>().deleteProduct(widget.productId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Product deleted')),
+          const SnackBar(content: Text('Product deleted successfully')),
         );
         context.go(AppRoutes.products);
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(formatApiError(e))),
         );
@@ -312,6 +372,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 product: _product!,
                 onSaved: (updated) => setState(() => _product = updated),
               ),
+            ),
+          if (_product != null && _product!.isLive)
+            IconButton(
+              tooltip: 'Remove from Live (Pause)',
+              icon: const Icon(Icons.pause_circle_outline),
+              onPressed: () => _toggleLiveStatus(ProductStatus.paused),
+            ),
+          if (_product != null && _product!.isPaused)
+            IconButton(
+              tooltip: 'Publish to Live Menu',
+              icon: const Icon(Icons.play_circle_fill, color: AppColors.success),
+              onPressed: () => _toggleLiveStatus(ProductStatus.live),
             ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -360,7 +432,62 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               fontWeight: FontWeight.w600,
             ),
           ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: product.isHero
+                      ? Colors.purple.withValues(alpha: 0.15)
+                      : Colors.blueGrey.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: product.isHero
+                        ? Colors.purple.withValues(alpha: 0.4)
+                        : Colors.blueGrey.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      product.isHero ? Icons.auto_awesome : Icons.restaurant,
+                      size: 13,
+                      color: product.isHero ? Colors.purpleAccent : Colors.blueGrey,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      product.isHero
+                          ? 'Hero / Signature Dish (3D AR)'
+                          : 'Normal Dish (Standard 2D)',
+                      style: TextStyle(
+                        color: product.isHero ? Colors.purpleAccent : Colors.blueGrey,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (product.category != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    product.category!.label,
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                  ),
+                ),
+            ],
+          ),
           const SizedBox(height: AppSpacing.md),
+          _InfoRow(label: 'Dish Type', value: product.isHero ? 'Hero 3D AR Dish' : 'Normal / Standard (2D)'),
           _InfoRow(label: 'Status', value: product.status.label),
           _InfoRow(label: 'Category', value: product.category?.label ?? '—'),
           _InfoRow(label: 'Veg status', value: product.vegStatus.label),
@@ -543,22 +670,82 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ),
             ),
           ],
-          if (product.isLive) ...[
+          if (product.isLive || product.isPaused) ...[
             const SizedBox(height: AppSpacing.md),
-            OutlinedButton.icon(
-              onPressed: () => previewProductInAr(
-                context,
-                productId: product.id,
-                productName: product.name,
+            if (product.isLive)
+              OutlinedButton.icon(
+                onPressed: () => previewProductInAr(
+                  context,
+                  productId: product.id,
+                  productName: product.name,
+                ),
+                icon: const Icon(Icons.view_in_ar_outlined),
+                label: const Text('Preview in AR browser'),
               ),
-              icon: const Icon(Icons.view_in_ar_outlined),
-              label: const Text('Preview in AR browser'),
+            const SizedBox(height: AppSpacing.md),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: (product.isLive ? AppColors.success : Colors.orange.shade700).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(
+                  color: (product.isLive ? AppColors.success : Colors.orange.shade700).withValues(alpha: 0.3),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        product.isLive ? Icons.check_circle_rounded : Icons.pause_circle_filled_rounded,
+                        color: product.isLive ? AppColors.success : Colors.orange.shade700,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        product.isLive ? 'Live on Diner Menu' : 'Removed from Live (Paused)',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: product.isLive ? AppColors.success : Colors.orange.shade800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    product.isLive
+                        ? 'This dish is currently visible and orderable by diners scanning table QR codes.'
+                        : 'This dish is hidden from diners. All photos and 3D models are fully preserved. You can make it live again anytime with 1 click.',
+                    style: const TextStyle(fontSize: 12, color: AppColors.mediumGray, height: 1.35),
+                  ),
+                  const SizedBox(height: 12),
+                  if (product.isLive)
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange.shade800,
+                        side: BorderSide(color: Colors.orange.shade400),
+                      ),
+                      icon: const Icon(Icons.pause_circle_outline, size: 18),
+                      label: const Text('Remove from Live (Pause Dish)'),
+                      onPressed: () => _toggleLiveStatus(ProductStatus.paused),
+                    )
+                  else
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(backgroundColor: AppColors.success),
+                      icon: const Icon(Icons.play_circle_fill, size: 18),
+                      label: const Text('Publish back to Live Menu'),
+                      onPressed: () => _toggleLiveStatus(ProductStatus.live),
+                    ),
+                ],
+              ),
             ),
-            const SizedBox(height: AppSpacing.xl),
+            const SizedBox(height: AppSpacing.lg),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Sold out today'),
-              subtitle: const Text('Hide this item from today\'s menu'),
+              subtitle: const Text('Hide this item from today''s menu temporarily'),
               value: product.soldOutToday,
               onChanged: (_) => _toggleSoldOut(),
             ),
@@ -593,6 +780,13 @@ class _StatusBanner extends StatelessWidget {
         color: AppColors.info,
         icon: Icons.send_outlined,
         text: 'Submitted for AR processing — 3D model generation in progress.',
+      );
+    }
+    if (product.isPaused) {
+      return _banner(
+        color: Colors.orange.shade700,
+        icon: Icons.pause_circle_outline,
+        text: 'Paused (Off Menu) â€” hidden from customers. Click "Publish back to Live" anytime to restore.',
       );
     }
     if (product.isLive) {

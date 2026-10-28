@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_routes.dart';
 import '../../core/services/subscription_service.dart';
+import '../../core/utils/ar_preview.dart';
 import '../../core/utils/owner_notifications_sync.dart';
+import '../../core/utils/subscription_guard.dart';
 import '../../models/product_model.dart';
 import '../../providers/analytics_provider.dart';
 import '../../providers/business_provider.dart';
@@ -44,12 +45,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _openWebAr() async {
-    final uri = Uri.parse('http://localhost:5174/dish/shish-kebab');
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Open http://localhost:5174 in your browser')),
-      );
-    }
+    await openHorecaMenuAr(context);
   }
 
   @override
@@ -82,10 +78,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
                 children: [
                   _buildHeader(theme, isDark, bName, city),
+                  _buildSubscriptionStatusBanner(business, isDark),
                   const SizedBox(height: 14),
                   _buildSearchBar(theme, isDark),
                   const SizedBox(height: 16),
                   _buildHeroBanner(theme, isDark),
+                  const SizedBox(height: 16),
+                  _buildTableBillingCard(theme, isDark),
                   const SizedBox(height: 20),
                   _buildExploreCategories(theme, isDark),
                   const SizedBox(height: 16),
@@ -100,6 +99,97 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSubscriptionStatusBanner(BusinessProvider business, bool isDark) {
+    final sub = business.subscription;
+    final isSubActive = business.hasActiveSubscription;
+    final isTrial = business.isTrial;
+    final days = business.daysRemaining;
+
+    if (isSubActive) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.12 : 0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              Icon(isTrial ? Icons.stars_rounded : Icons.check_circle_rounded, color: const Color(0xFF10B981), size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isTrial ? '7-Day Free Trial Active • $days days left' : '${sub?.planName ?? "Plan Active"} • $days days left',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                ),
+              ),
+              InkWell(
+                onTap: () => context.push(AppRoutes.subscription),
+                child: Text(
+                  isTrial ? 'Upgrade' : 'Manage',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.white70),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final isExpired = sub != null && sub.status == 'Expired';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: (isExpired ? const Color(0xFFEF4444) : const Color(0xFFFF5353)).withValues(alpha: isDark ? 0.14 : 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: (isExpired ? const Color(0xFFEF4444) : const Color(0xFFFF5353)).withValues(alpha: 0.35),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isExpired ? Icons.lock_clock_rounded : Icons.flash_on_rounded,
+              color: isExpired ? const Color(0xFFEF4444) : const Color(0xFFFF5353),
+              size: 17,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                isExpired
+                    ? '⚠️ Plan Expired — Renew to restore diner ordering'
+                    : '⚡ Start 7-Day Free Trial (₹0) to unlock full features',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                  color: isExpired ? const Color(0xFFEF4444) : const Color(0xFFFF5353),
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => context.push(AppRoutes.subscription),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isExpired ? const Color(0xFFEF4444) : const Color(0xFFFF5353),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: Text(
+                business.hasUsedTrial ? 'Renew' : 'Start Trial',
+                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -341,6 +431,111 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── 3b. Table Billing & WhatsApp Receipts ─────────────────────────────────
+
+  Widget _buildTableBillingCard(ThemeData theme, bool isDark) {
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final cardBg = isDark ? AppColors.darkSurface : Colors.white;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: HoverCard(
+        borderRadius: 18,
+        onTap: () {
+          if (!checkSubscriptionGuard(context, featureName: 'Table Billing & Kitchen POS')) return;
+          context.push(AppRoutes.billing);
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: borderColor, width: 1.0),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF25D366), Color(0xFF128C7E)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF25D366).withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.receipt_long, color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'Table Billing & WhatsApp Bills',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : AppColors.black,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF25D366).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'NEW',
+                            style: TextStyle(
+                              color: Color(0xFF25D366),
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Add unlisted items (Water Bottle), record payment & share bill',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white60 : AppColors.mediumGray,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
             ],
           ),
         ),
@@ -648,8 +843,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   List<_DishItem> _getDishes(ProductProvider p) {
-    if (p.products.isEmpty) return _DishItem.defaults;
-    return p.recentProducts.map((prod) {
+    final live = p.products.where((x) => x.isLive).toList();
+    if (live.isEmpty) return _DishItem.defaults;
+    return live.take(5).map((prod) {
       final isVeg = prod.vegStatus == VegStatus.veg || prod.vegStatus == VegStatus.vegan;
       return _DishItem(
         name: prod.name,
@@ -684,7 +880,7 @@ class _DishItem {
   static const defaults = [
     _DishItem(name: 'ItaliaCrisp Pizza', price: '₹349', category: '10 min • Main Course', imageUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400&fit=crop', isVeg: true),
     _DishItem(name: 'Smashed Double Burger', price: '₹299', category: '12 min • Starters', imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&fit=crop', isVeg: false),
-    _DishItem(name: 'Grilled Shish Kebab', price: '₹349', category: '15 min • Starters', imageUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&fit=crop', isVeg: false),
+    _DishItem(name: 'Grilled Paneer Tikka', price: '₹349', category: '15 min • Starters', imageUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&fit=crop', isVeg: false),
     _DishItem(name: 'Avocado Gourmet Bowl', price: '₹280', category: '8 min • Healthy Salad', imageUrl: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=400&fit=crop', isVeg: true),
   ];
 }

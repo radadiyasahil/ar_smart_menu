@@ -90,7 +90,7 @@ public partial class AppDbContext
             e.HasOne(q => q.Product)
                 .WithMany(p => p.QrCodes)
                 .HasForeignKey(q => q.ProductId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<OtpRecord>(e =>

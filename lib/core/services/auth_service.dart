@@ -89,6 +89,28 @@ class AuthService {
     return profile.user;
   }
 
+  Future<UserModel> updateMe({
+    String? fullName,
+    String? whatsAppNumber,
+    String? languagePreference,
+  }) async {
+    final payload = <String, dynamic>{};
+    if (fullName != null) payload['fullName'] = fullName;
+    if (whatsAppNumber != null) payload['whatsAppNumber'] = whatsAppNumber;
+    if (languagePreference != null) payload['languagePreference'] = languagePreference;
+
+    final response = await _dio.put<Map<String, dynamic>>(
+      '/auth/me',
+      data: payload,
+    );
+    final envelope = response.data!;
+    if (envelope['success'] != true) {
+      throw Exception(envelope['error'] ?? 'Failed to update profile');
+    }
+    final data = envelope['data'] as Map<String, dynamic>;
+    return UserModel.fromJson(data);
+  }
+
   Future<String> refreshToken() async {
     final response = await _dio.post<Map<String, dynamic>>('/auth/refresh-token');
     final envelope = response.data!;
@@ -97,5 +119,13 @@ class AuthService {
     }
     final data = envelope['data'] as Map<String, dynamic>;
     return data['token'] as String;
+  }
+
+  Future<void> logout() async {
+    try {
+      await _dio.post<Map<String, dynamic>>('/auth/logout');
+    } catch (_) {
+      // Best effort
+    }
   }
 }

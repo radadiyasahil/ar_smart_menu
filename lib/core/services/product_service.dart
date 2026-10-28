@@ -17,6 +17,50 @@ class UploadPhotoResult {
   final String? message;
 }
 
+class BulkCreateProductItem {
+  const BulkCreateProductItem({
+    required this.name,
+    this.description,
+    this.pricePaise,
+    this.category,
+    this.vegStatus = VegStatus.notApplicable,
+    this.isSpicy = false,
+    this.isBestseller = false,
+    this.isNew = false,
+  });
+
+  final String name;
+  final String? description;
+  final int? pricePaise;
+  final ProductCategory? category;
+  final VegStatus vegStatus;
+  final bool isSpicy;
+  final bool isBestseller;
+  final bool isNew;
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        if (description != null && description!.isNotEmpty) 'description': description,
+        if (pricePaise != null) 'pricePaise': pricePaise,
+        if (category != null) 'category': category!.value,
+        'vegStatus': vegStatus.value,
+        'isSpicy': isSpicy,
+        'isBestseller': isBestseller,
+        'isNew': isNew,
+      };
+}
+
+class BulkCreateResult {
+  const BulkCreateResult({
+    required this.createdCount,
+    required this.products,
+  });
+
+  final int createdCount;
+  final List<ProductModel> products;
+}
+
+
 class ProductService {
   ProductService({Dio? dio}) : _dio = dio ?? ApiClient.dio;
 
@@ -41,6 +85,8 @@ class ProductService {
     bool isSpicy = false,
     bool isBestseller = false,
     bool isNew = false,
+    bool enable3dAr = false,
+    ProductStatus? status,
   }) async {
     final response = await _dio.post<Map<String, dynamic>>(
       '/products',
@@ -53,9 +99,28 @@ class ProductService {
         'isSpicy': isSpicy,
         'isBestseller': isBestseller,
         'isNew': isNew,
+        'enable3dAr': enable3dAr,
+        if (status != null) 'status': status.value,
       },
     );
     return _parseOne(response.data!);
+  }
+
+  Future<BulkCreateResult> bulkCreate(List<BulkCreateProductItem> items) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/products/bulk',
+      data: {
+        'products': items.map((i) => i.toJson()).toList(),
+      },
+    );
+    final data = response.data!['data'] as Map<String, dynamic>;
+    final createdCount = data['createdCount'] as int? ?? 0;
+    final rawList = data['createdProducts'] as List<dynamic>? ?? [];
+    final products = rawList
+        .whereType<Map<String, dynamic>>()
+        .map(ProductModel.fromJson)
+        .toList();
+    return BulkCreateResult(createdCount: createdCount, products: products);
   }
 
   Future<ProductModel> update({
@@ -90,6 +155,27 @@ class ProductService {
   Future<void> delete(String id) async {
     final response = await _dio.delete<Map<String, dynamic>>('/products/$id');
     _ensureSuccess(response.data!);
+  }
+
+  Future<ProductModel> updateStatus(String id, ProductStatus status) async {
+    final response = await _dio.patch<Map<String, dynamic>>(
+      '/products/$id/status',
+      data: {'status': status.value},
+    );
+    return _parseOne(response.data!);
+  }
+
+  Future<List<ProductModel>> bulkUpdateStatus(List<String> ids, ProductStatus status) async {
+    final response = await _dio.patch<Map<String, dynamic>>(
+      '/products/bulk-status',
+      data: {
+        'productIds': ids,
+        'status': status.value,
+      },
+    );
+    final envelope = response.data!;
+    final list = envelope['data'] as List<dynamic>? ?? [];
+    return list.whereType<Map<String, dynamic>>().map(ProductModel.fromJson).toList();
   }
 
   Future<ProductModel> setSoldOut(String id, {required bool soldOut}) async {

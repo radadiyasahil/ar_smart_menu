@@ -160,11 +160,15 @@ class _LoginScreenState extends State<LoginScreen> {
                           prefixIcon: const Icon(Icons.phone_android),
                         ),
                         validator: (value) {
-                          if (value == null || value.isEmpty) {
+                          if (value == null || value.trim().isEmpty) {
                             return 'Please enter your mobile number';
                           }
-                          if (value.length != 10) {
-                            return 'Enter a valid 10-digit number';
+                          final trimmed = value.trim();
+                          if (trimmed.length != 10) {
+                            return 'Mobile number must be exactly 10 digits';
+                          }
+                          if (!RegExp(r'^[6-9]\d{9}$').hasMatch(trimmed)) {
+                            return 'Enter a valid 10-digit mobile number (starts with 6-9)';
                           }
                           return null;
                         },

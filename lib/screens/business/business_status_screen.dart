@@ -24,6 +24,8 @@ class BusinessStatusScreen extends StatelessWidget {
         return AppColors.error;
       case BusinessStatus.suspended:
         return AppColors.mediumGray;
+      case BusinessStatus.deactivated:
+        return Colors.orange.shade700;
     }
   }
 
@@ -37,6 +39,8 @@ class BusinessStatusScreen extends StatelessWidget {
         return Icons.cancel_outlined;
       case BusinessStatus.suspended:
         return Icons.pause_circle_outline;
+      case BusinessStatus.deactivated:
+        return Icons.pause_circle_filled;
     }
   }
 
@@ -53,6 +57,8 @@ class BusinessStatusScreen extends StatelessWidget {
             'Your business was not approved. Please update details and contact support.';
       case BusinessStatus.suspended:
         return 'Your business account is suspended. Contact support for help.';
+      case BusinessStatus.deactivated:
+        return 'Your restaurant is currently paused / deactivated. Diners scanning QR codes will see that the restaurant is closed. Click "Reactivate Business" below to resume anytime!';
     }
   }
 
@@ -137,7 +143,24 @@ class BusinessStatusScreen extends StatelessWidget {
                       icon: Icons.dashboard_outlined,
                       onPressed: () => context.go(AppRoutes.dashboard),
                     )
-                  else ...[
+                  else if (business?.isDeactivated == true) ...[
+                    PrimaryButton(
+                      label: 'Reactivate Business & Go Live',
+                      icon: Icons.play_arrow_rounded,
+                      isLoading: provider.isLoading,
+                      onPressed: () async {
+                        await provider.setBusinessStatus(BusinessStatus.active);
+                        if (context.mounted && provider.isActive) {
+                          context.go(AppRoutes.dashboard);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    OutlinedButton(
+                      onPressed: () => context.go(AppRoutes.account),
+                      child: const Text('Go to Account & Settings'),
+                    ),
+                  ] else ...[
                     PrimaryButton(
                       label: provider.isLoading ? 'Checking...' : 'Refresh status',
                       icon: Icons.refresh,

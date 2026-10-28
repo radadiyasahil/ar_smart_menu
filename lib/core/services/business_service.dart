@@ -94,6 +94,20 @@ class BusinessService {
     return data['verified'] as bool? ?? false;
   }
 
+  Future<BusinessModel> updateStatus({
+    required BusinessStatus status,
+    String? reason,
+  }) async {
+    final response = await _dio.patch<Map<String, dynamic>>(
+      '/businesses/me/status',
+      data: {
+        'status': status.value,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      },
+    );
+    return _parseBusiness(response.data!);
+  }
+
   BusinessModel _parseBusiness(Map<String, dynamic> envelope) {
     if (envelope['success'] != true) {
       throw Exception(envelope['error'] ?? 'Business request failed');

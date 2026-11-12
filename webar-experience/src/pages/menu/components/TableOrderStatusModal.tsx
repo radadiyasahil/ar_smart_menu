@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { tableOrderService, type LiveTableOrder } from '@/services/tableOrderService'
+import { soundAlerts } from '@/utils/soundAlerts'
 
 interface TableOrderStatusModalProps {
   isOpen: boolean
@@ -67,12 +68,14 @@ export function TableOrderStatusModal({
       sessionStorage.removeItem('ar_declined_dismissed')
 
       onClearOrders?.()
+      soundAlerts.playBillSettled()
       onClose()
     } catch (e) {
       console.warn('Could not clear cancelled orders:', e)
       tableOrderService.clearStoredOrderIds(tableNumber)
       sessionStorage.setItem('ar_order_round', '1')
       onClearOrders?.()
+      soundAlerts.playBillSettled()
       onClose()
     } finally {
       setIsClearing(false)
@@ -89,6 +92,7 @@ export function TableOrderStatusModal({
     try {
       const res = await tableOrderService.cancelOrder(orderId, tableNumber)
       if (res.success) {
+        soundAlerts.playOrderCancelled()
         if (onRefresh) {
           await onRefresh()
         }
@@ -240,6 +244,7 @@ export function TableOrderStatusModal({
       if (slug) {
         const result = await tableOrderService.requestBill(slug, tableNumber)
         if (result.success) {
+          soundAlerts.playBillRequested()
           setBillRequestSent(true)
           setBillErrorMessage(null)
           onBillRequested?.()
@@ -262,6 +267,7 @@ export function TableOrderStatusModal({
     try {
       const ok = await tableOrderService.callWaiter(slug, tableNumber || 'Dine-in', 'Need water or help')
       if (ok) {
+        soundAlerts.playWaiterCalled()
         setWaiterRingSent(true)
         setTimeout(() => setWaiterRingSent(false), 5000)
       }

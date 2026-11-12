@@ -28,6 +28,7 @@ import { Interactive3dModal } from './components/Interactive3dModal'
 import { CartDrawer, RestaurantInfoModal, TableSelectorModal } from './components/MenuModals'
 import { TableOrderStatusModal } from './components/TableOrderStatusModal'
 import { tableOrderService, type LiveTableOrder } from '@/services/tableOrderService'
+import { soundAlerts } from '@/utils/soundAlerts'
 
 export function MenuPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -105,6 +106,8 @@ export function MenuPage() {
     return sessionStorage.getItem('ar_declined_dismissed') === 'true'
   })
   const previousOrdersCount = useRef(0)
+  const knownOrderStatuses = useRef<Map<string, string>>(new Map())
+  const isFirstOrderPoll = useRef(true)
 
   const fetchOrders = async (silent = false) => {
     if (!slug) return
@@ -130,11 +133,39 @@ export function MenuPage() {
           setIsOrderStatusOpen(false)
           setIsCartOpen(false)
           showToast('✨ Bill settled & table closed! View is fresh for new orders.')
+          soundAlerts.playBillSettled()
         }
-      } else if (orders.some((o) => o.status !== 'CANCELLED')) {
-        setIsDeclinedBannerDismissed(false)
-        sessionStorage.removeItem('ar_declined_dismissed')
+        knownOrderStatuses.current.clear()
+      } else {
+        if (orders.some((o) => o.status !== 'CANCELLED')) {
+          setIsDeclinedBannerDismissed(false)
+          sessionStorage.removeItem('ar_declined_dismissed')
+        }
+
+        // Real-time audio alerts for customer status changes
+        if (!isFirstOrderPoll.current) {
+          for (const o of orders) {
+            const prevStatus = knownOrderStatuses.current.get(o.id)
+            if (prevStatus && prevStatus !== o.status) {
+              if (o.status === 'ACCEPTED') {
+                soundAlerts.playOrderAccepted()
+                showToast(`🍳 Kitchen accepted Round ${o.round || 1}! Cooking now...`)
+              } else if (o.status === 'COMPLETED') {
+                soundAlerts.playOrderServed()
+                showToast(`✨ Round ${o.round || 1} is served! Enjoy your meal.`)
+              } else if (o.status === 'CANCELLED') {
+                soundAlerts.playOrderCancelled()
+                showToast(`❌ Round ${o.round || 1} was cancelled.`)
+              }
+            }
+          }
+        }
+
+        for (const o of orders) {
+          knownOrderStatuses.current.set(o.id, o.status)
+        }
       }
+      isFirstOrderPoll.current = false
       previousOrdersCount.current = orders.length
       setActiveOrders(orders)
     } catch (e) {
@@ -887,6 +918,7 @@ export function MenuPage() {
         canRequestBill={hasAcceptedOrCompleted}
         onOpenOrderStatus={() => setIsOrderStatusOpen(true)}
         onOrderPlaced={(order) => {
+          soundAlerts.playOrderPlaced()
           setIsDeclinedBannerDismissed(false)
           sessionStorage.removeItem('ar_declined_dismissed')
           setActiveOrders((prev) => {
@@ -941,6 +973,7 @@ export function MenuPage() {
           showToast(`🛒 Re-ordered dishes added to cart! Tap Send to submit Round ${nextRoundNumber}.`)
         }}
         onBillRequested={() => {
+          soundAlerts.playBillRequested()
           fetchOrders(true)
           showToast('🔔 Bill requested! Restaurant staff notified.')
         }}

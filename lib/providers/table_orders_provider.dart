@@ -18,6 +18,9 @@ class TableOrdersProvider extends ChangeNotifier {
 
   final Set<String> _knownPendingOrderIds = {};
   final Set<String> _knownWaiterCallIds = {};
+  final Set<String> _knownBillRequestOrderIds = {};
+  final Map<String, String> _knownOrderStatuses = {};
+  int _previousActiveBillsCount = 0;
   bool _isFirstLoad = true;
 
   Timer? _pollingTimer;
@@ -65,6 +68,9 @@ class TableOrdersProvider extends ChangeNotifier {
     _isFirstLoad = true;
     _knownPendingOrderIds.clear();
     _knownWaiterCallIds.clear();
+    _knownBillRequestOrderIds.clear();
+    _knownOrderStatuses.clear();
+    _previousActiveBillsCount = 0;
   }
 
   Future<void> refresh() async {
@@ -86,9 +92,14 @@ class TableOrdersProvider extends ChangeNotifier {
               (o.isAccepted || o.isCompleted))
           .toList();
 
-      // Detect brand new pending orders to trigger kitchen audio alert
-      bool hasNewOrder = false;
       String? alertMsg;
+      bool hasNewOrder = false;
+      bool hasNewCall = false;
+      bool hasNewBillReq = false;
+      bool hasStatusChange = false;
+      String? changedStatus;
+
+      // 1. Detect brand new pending orders
       for (final ord in newPending) {
         if (!_knownPendingOrderIds.contains(ord.id)) {
           _knownPendingOrderIds.add(ord.id);
@@ -99,26 +110,74 @@ class TableOrdersProvider extends ChangeNotifier {
         }
       }
 
-      // Detect brand new waiter calls to trigger audio alert
-      bool hasNewCall = false;
+      // 2. Detect brand new waiter calls
       for (final call in calls) {
         final callId = '${call.tableNumber}_${call.createdAt}';
         if (!_knownWaiterCallIds.contains(callId)) {
           _knownWaiterCallIds.add(callId);
           if (!_isFirstLoad) {
             hasNewCall = true;
-            alertMsg = '🔔 Waiter call at ${call.tableNumber}';
+            alertMsg = '🙋 Waiter call at ${call.tableNumber}';
           }
         }
       }
 
+      // 3. Detect brand new bill requests
+      for (final req in newBillReqs) {
+        if (!_knownBillRequestOrderIds.contains(req.id)) {
+          _knownBillRequestOrderIds.add(req.id);
+          if (!_isFirstLoad) {
+            hasNewBillReq = true;
+            alertMsg = '🧾 Bill requested for ${req.tableNumber}';
+          }
+        }
+      }
+
+      // 4. Detect order status transitions (e.g. accepted, completed, cancelled)
+      if (!_isFirstLoad) {
+        for (final ord in all) {
+          final oldStatus = _knownOrderStatuses[ord.id];
+          if (oldStatus != null && oldStatus != ord.status) {
+            hasStatusChange = true;
+            changedStatus = ord.status;
+            if (ord.status == 'ACCEPTED') {
+              alertMsg = '🍳 Table ${ord.tableNumber} order accepted to kitchen';
+            } else if (ord.status == 'COMPLETED') {
+              alertMsg = '✅ Table ${ord.tableNumber} order marked served';
+            } else if (ord.status == 'CANCELLED') {
+              alertMsg = '❌ Table ${ord.tableNumber} order was cancelled';
+            }
+          }
+        }
+      }
+
+      // 5. Detect settled bills / closed tables
+      bool hasSettledBill = false;
+      if (!_isFirstLoad && _previousActiveBillsCount > 0 && bills.length < _previousActiveBillsCount) {
+        hasSettledBill = true;
+        alertMsg = '💰 Table bill settled & closed';
+      }
+
+      // Play the highest-priority audio tone
       if (hasNewOrder) {
         KitchenSoundAlert.playNewOrderAlert();
       } else if (hasNewCall) {
         KitchenSoundAlert.playWaiterCallAlert();
+      } else if (hasNewBillReq) {
+        KitchenSoundAlert.playBillRequestAlert();
+      } else if (hasStatusChange && changedStatus != null) {
+        KitchenSoundAlert.playOrderStatusChangedAlert(status: changedStatus);
+      } else if (hasSettledBill) {
+        KitchenSoundAlert.playBillSettledTone();
       }
 
+      // Record known states
+      for (final ord in all) {
+        _knownOrderStatuses[ord.id] = ord.status;
+      }
+      _previousActiveBillsCount = bills.length;
       _isFirstLoad = false;
+
       _pendingOrders = newPending;
       _kitchenOrders = newKitchen;
       _billRequests = newBillReqs;

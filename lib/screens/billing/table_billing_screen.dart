@@ -10,6 +10,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_spacing.dart';
 import '../../core/services/billing_service.dart';
 import '../../core/services/bill_receipt_pdf_service.dart';
+import '../../core/utils/kitchen_sound_alert.dart';
 import '../../models/bill_model.dart';
 import '../../providers/business_provider.dart';
 import '../../providers/product_provider.dart';
@@ -370,6 +371,9 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
   Future<void> _markOrderServed(PendingTableOrder order) async {
     final success = await _billingService.markOrderServed(order.id);
+    if (success) {
+      KitchenSoundAlert.playOrderServedChime();
+    }
 
     await _loadPendingOrders();
 
@@ -409,6 +413,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     await _loadPendingOrders();
 
     if (mounted && success) {
+      KitchenSoundAlert.playOrderServedChime();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -439,6 +444,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     }
 
     await _billingService.acceptOrder(order.id);
+    KitchenSoundAlert.playOrderAcceptedChime();
 
     final canonicalOrderTable = _canonicalTableName(order.tableNumber);
 
@@ -499,6 +505,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
   Future<void> _discardPendingOrder(PendingTableOrder order) async {
     await _billingService.cancelOrder(order.id);
+    KitchenSoundAlert.playOrderCancelledTone();
 
     _billRequests.removeWhere(
       (o) => _isSameTable(o.tableNumber, order.tableNumber),
@@ -2674,6 +2681,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     await _loadBills();
 
     if (mounted) {
+      KitchenSoundAlert.playBillSettledTone();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -5394,6 +5402,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     await _loadPendingOrders();
 
     if (mounted) {
+      KitchenSoundAlert.playBillSettledTone();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(

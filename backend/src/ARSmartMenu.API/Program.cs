@@ -149,6 +149,7 @@ if (app.Environment.IsDevelopment())
     });
 }
 
+
 app.UseCors("AllowClients");
 app.UseHttpsRedirection();
 app.UseAuthentication();

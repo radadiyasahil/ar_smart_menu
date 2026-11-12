@@ -141,7 +141,7 @@ export function TableOrderStatusModal({
       document.body.style.overflow = 'hidden'
       // Fast refresh every 2s while customer is actively viewing order/bill status
       const timer = setInterval(() => {
-        onRefreshOrders(true)
+        onRefresh?.()
       }, 2000)
       return () => {
         document.body.style.overflow = ''
@@ -150,7 +150,7 @@ export function TableOrderStatusModal({
     } else {
       document.body.style.overflow = ''
     }
-  }, [isOpen, onRefreshOrders])
+  }, [isOpen, onRefresh])
 
   // Reset bill request state if order is cancelled or table reset
   useEffect(() => {

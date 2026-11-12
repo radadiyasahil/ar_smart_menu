@@ -15,6 +15,7 @@ import {
   Check,
   ExternalLink,
   ChefHat,
+  Lock,
 } from 'lucide-react'
 import type { PublicMenuDish } from '@/services/productService'
 import type { CartItem } from '@/types/cart'
@@ -372,12 +373,16 @@ export function TableSelectorModal({
   availableTables,
   onClose,
   onSelectTable,
+  isLocked = false,
+  lockedMessage,
 }: {
   isOpen: boolean
   currentTable: string
   availableTables?: string[]
   onClose: () => void
   onSelectTable: (table: string) => void
+  isLocked?: boolean
+  lockedMessage?: string
 }) {
   const configuredTables = availableTables && availableTables.length > 0 ? availableTables : null
   const [selected, setSelected] = useState(currentTable || (configuredTables ? '' : 'Dine-in'))
@@ -392,6 +397,10 @@ export function TableSelectorModal({
   }, [currentTable, configuredTables])
 
   const handleConfirm = () => {
+    if (isLocked) {
+      onClose()
+      return
+    }
     const table = (configuredTables ? selected : (custom.trim() || selected || 'Dine-in')).trim()
     if (table) {
       onSelectTable(table)
@@ -402,20 +411,35 @@ export function TableSelectorModal({
   const tableList = configuredTables ?? ['1', '2', '3', '4', '5', '6']
 
   return (
-    <ModalShell isOpen={isOpen} onClose={onClose} title={configuredTables ? 'Select Your Table' : 'Dining / Table Selection'}>
+    <ModalShell isOpen={isOpen} onClose={onClose} title={isLocked ? 'Table Locked' : (configuredTables ? 'Select Your Table' : 'Dining / Table Selection')}>
       <div className="space-y-4">
-        <p className="text-xs text-gray-400">
-          {configuredTables
-            ? 'Pick your table from the restaurant floor to place orders.'
-            : 'Select how you are dining so the kitchen can prepare and deliver your order:'}
-        </p>
+        {isLocked ? (
+          <div className="p-3.5 bg-amber-500/15 border border-amber-500/30 rounded-xl text-amber-200 text-xs flex items-center gap-2.5">
+            <Lock size={18} className="text-amber-400 shrink-0" />
+            <div className="space-y-0.5">
+              <p className="font-bold text-amber-300">Active Dining Session in Progress</p>
+              <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                {lockedMessage || `You have active orders placed at Table ${currentTable}. Your table cannot be changed during dining. Please ask restaurant staff if you need to be moved.`}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400">
+            {configuredTables
+              ? 'Pick your table from the restaurant floor to place orders.'
+              : 'Select how you are dining so the kitchen can prepare and deliver your order:'}
+          </p>
+        )}
 
         {!configuredTables && (
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
+              disabled={isLocked}
               onClick={() => { setSelected('Dine-in'); setCustom('') }}
-              className={`py-3 px-3 rounded-xl text-xs font-bold cursor-pointer transition flex items-center justify-center gap-2 ${
+              className={`py-3 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+                isLocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+              } ${
                 selected === 'Dine-in' && !custom
                   ? 'bg-[#EB4F16] text-white shadow-md shadow-[#EB4F16]/30 border border-[#FF6A3D]'
                   : 'bg-[#27272A] text-gray-300 hover:text-white hover:bg-[#323238]'
@@ -426,8 +450,11 @@ export function TableSelectorModal({
             </button>
             <button
               type="button"
+              disabled={isLocked}
               onClick={() => { setSelected('Takeaway'); setCustom('') }}
-              className={`py-3 px-3 rounded-xl text-xs font-bold cursor-pointer transition flex items-center justify-center gap-2 ${
+              className={`py-3 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+                isLocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+              } ${
                 selected === 'Takeaway' && !custom
                   ? 'bg-[#EB4F16] text-white shadow-md shadow-[#EB4F16]/30 border border-[#FF6A3D]'
                   : 'bg-[#27272A] text-gray-300 hover:text-white hover:bg-[#323238]'
@@ -448,8 +475,17 @@ export function TableSelectorModal({
               <button
                 key={t}
                 type="button"
-                onClick={() => { setSelected(t); setCustom('') }}
-                className={`py-2 rounded-xl text-xs font-bold cursor-pointer transition ${
+                disabled={isLocked && t !== currentTable}
+                onClick={() => {
+                  if (isLocked) return
+                  setSelected(t)
+                  setCustom('')
+                }}
+                className={`py-2 rounded-xl text-xs font-bold transition ${
+                  isLocked && t !== currentTable
+                    ? 'opacity-30 cursor-not-allowed bg-[#1F2028] text-gray-500'
+                    : 'cursor-pointer'
+                } ${
                   selected === t && !custom
                     ? 'bg-[#EB4F16] text-white shadow-md shadow-[#EB4F16]/30'
                     : 'bg-[#27272A] text-gray-300 hover:text-white hover:bg-[#323238]'
@@ -461,7 +497,7 @@ export function TableSelectorModal({
           </div>
         </div>
 
-        {!configuredTables && (
+        {!configuredTables && !isLocked && (
           <input
             type="text"
             placeholder="Or type custom table (e.g. Table 7, Rooftop 2)"
@@ -474,9 +510,15 @@ export function TableSelectorModal({
         <button
           type="button"
           onClick={handleConfirm}
-          className="w-full py-2.5 bg-gradient-to-r from-[#EB4F16] to-[#FF6A3D] text-white font-bold rounded-full text-sm cursor-pointer shadow-lg shadow-[#EB4F16]/20 transition"
+          className={`w-full py-2.5 text-white font-bold rounded-full text-sm cursor-pointer shadow-lg transition ${
+            isLocked
+              ? 'bg-[#2A2B36] hover:bg-[#343544] border border-gray-700'
+              : 'bg-gradient-to-r from-[#EB4F16] to-[#FF6A3D] shadow-[#EB4F16]/20'
+          }`}
         >
-          Confirm {configuredTables ? `Table #${selected}` : (custom.trim() ? custom.trim() : (selected.startsWith('Table') || selected === 'Dine-in' || selected === 'Takeaway' ? selected : `Table ${selected}`))}
+          {isLocked
+            ? `Table ${currentTable} is Active • Close`
+            : `Confirm ${configuredTables ? `Table #${selected}` : (custom.trim() ? custom.trim() : (selected.startsWith('Table') || selected === 'Dine-in' || selected === 'Takeaway' ? selected : `Table ${selected}`))}`}
         </button>
       </div>
     </ModalShell>
@@ -505,6 +547,7 @@ export function CartDrawer({
   isTableValid = true,
   isTableOccupied = false,
   occupiedMessage,
+  isTableLocked = false,
 }: {
   isTableOccupied?: boolean
   occupiedMessage?: string
@@ -525,6 +568,7 @@ export function CartDrawer({
   allCancelled?: boolean
   canRequestBill?: boolean
   isTableValid?: boolean
+  isTableLocked?: boolean
 }) {
   const [instructions, setInstructions] = useState('')
   const [waiterSent, setWaiterSent] = useState(false)
@@ -669,14 +713,24 @@ export function CartDrawer({
       title={
         <div className="flex items-center gap-2 flex-wrap">
           <h2 className="text-base font-bold text-white">Your Table Order</h2>
-          <button
-            type="button"
-            onClick={onChangeTable}
-            className="flex items-center gap-1 text-[11px] font-bold text-[#FF6A3D] bg-[#EB4F16]/15 border border-[#EB4F16]/30 px-2 py-0.5 rounded-full cursor-pointer"
-          >
-            <span>{tableNumber ? `Table ${tableNumber}` : 'Set Table'}</span>
-            <Edit3 size={10} />
-          </button>
+          {isTableLocked ? (
+            <div
+              className="flex items-center gap-1.5 text-[11px] font-bold text-gray-300 bg-white/10 border border-white/20 px-2.5 py-0.5 rounded-full select-none"
+              title={`Table is locked to Table ${tableNumber} for this active dining session.`}
+            >
+              <Lock size={10} className="text-amber-400" />
+              <span>{tableNumber ? `Table ${tableNumber}` : 'Dine-in'}</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onChangeTable}
+              className="flex items-center gap-1 text-[11px] font-bold text-[#FF6A3D] bg-[#EB4F16]/15 border border-[#EB4F16]/30 px-2 py-0.5 rounded-full cursor-pointer"
+            >
+              <span>{tableNumber ? `Table ${tableNumber}` : 'Set Table'}</span>
+              <Edit3 size={10} />
+            </button>
+          )}
           {currentRound > 1 && (
             <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/30 px-2 py-0.5 rounded-full">
               Round {currentRound}
@@ -688,7 +742,7 @@ export function CartDrawer({
       footer={
         items.length > 0 && (
           <div className="space-y-2">
-            {!isTableValid && (
+            {!isTableValid && !isTableLocked && (
               <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
                 <span>⚠️ Table &ldquo;{tableNumber}&rdquo; is not a valid table.</span>
                 <button
@@ -700,7 +754,7 @@ export function CartDrawer({
                 </button>
               </div>
             )}
-            {isTableOccupied ? (
+            {isTableOccupied && !isTableLocked ? (
               <button
                 type="button"
                 onClick={onChangeTable}
@@ -743,7 +797,7 @@ export function CartDrawer({
         )
       }
     >
-      {isTableOccupied && (
+      {isTableOccupied && !isTableLocked && (
         <div className="mb-3 p-3 bg-amber-500/15 border border-amber-500/40 rounded-xl text-amber-200 text-xs flex items-center justify-between gap-2 shadow">
           <span>⚠️ Table "{tableNumber}" is currently occupied by another customer.</span>
           <button
@@ -812,13 +866,15 @@ export function CartDrawer({
                   🧾 Request Final Bill
                 </button>
               )}
-              <button
-                type="button"
-                onClick={resetSession}
-                className="px-3 py-2 text-gray-400 hover:text-white text-xs cursor-pointer"
-              >
-                New Visit
-              </button>
+              {!isTableLocked && (
+                <button
+                  type="button"
+                  onClick={resetSession}
+                  className="px-3 py-2 text-gray-400 hover:text-white text-xs cursor-pointer"
+                >
+                  New Visit
+                </button>
+              )}
             </div>
           ) : null}
         </div>

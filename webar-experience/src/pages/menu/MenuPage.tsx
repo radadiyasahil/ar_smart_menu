@@ -16,6 +16,7 @@ import {
   ChefHat,
   XCircle,
   AlertTriangle,
+  Lock,
 } from 'lucide-react'
 import {
   productService,
@@ -41,20 +42,6 @@ export function MenuPage() {
   const [table, setTable] = useState<string>(
     () => searchParams.get('table') || localStorage.getItem('ar_smart_menu_table') || '',
   )
-
-  // Sync table if URL parameter ?table=... changes (e.g. scanning/opening a different table QR code)
-  useEffect(() => {
-    const qTable = searchParams.get('table')
-    if (qTable !== null && qTable !== table) {
-      setTable(qTable)
-      if (qTable) {
-        localStorage.setItem('ar_smart_menu_table', qTable)
-      } else {
-        localStorage.removeItem('ar_smart_menu_table')
-      }
-      setActiveOrders([]) // Immediately wipe orders from previous table
-    }
-  }, [searchParams])
 
   // Check whether restaurant has configured tables and if current table is valid
   const hasConfiguredTables = Boolean(menu?.availableTables && menu.availableTables.length > 0)
@@ -229,7 +216,50 @@ export function MenuPage() {
     return { status: 'ACTIVE', label: 'Ordered', emoji: '🍽️' }
   }, [activeOrders, allOrdersCancelled])
 
+  const hasNonCancelledOrders = useMemo(() => {
+    return activeOrders.some((o) => o.status !== 'CANCELLED' && o.status !== 'PAID' && o.status !== 'SETTLED')
+  }, [activeOrders])
+
+  const isTableLocked = useMemo(() => {
+    if (!table || !table.trim()) return false
+    if (allOrdersCancelled) return false
+    if (hasNonCancelledOrders) return true
+    if (nextRoundNumber > 1) return true
+    try {
+      const storedRound = parseInt(sessionStorage.getItem('ar_order_round') || '1', 10)
+      if (storedRound > 1) return true
+      const storedIds = tableOrderService.getStoredOrderIds(table)
+      if (storedIds && storedIds.length > 0) return true
+    } catch {}
+    return false
+  }, [table, allOrdersCancelled, hasNonCancelledOrders, nextRoundNumber])
+
+  // Sync table if URL parameter ?table=... changes (e.g. scanning/opening a different table QR code)
+  useEffect(() => {
+    const qTable = searchParams.get('table')
+    if (qTable !== null && qTable !== table) {
+      if (isTableLocked && table) {
+        showToast(`🔒 Table is locked to Table ${table}. Ask staff to move tables.`)
+        const params = new URLSearchParams(searchParams)
+        params.set('table', table)
+        setSearchParams(params, { replace: true })
+        return
+      }
+      setTable(qTable)
+      if (qTable) {
+        localStorage.setItem('ar_smart_menu_table', qTable)
+      } else {
+        localStorage.removeItem('ar_smart_menu_table')
+      }
+      setActiveOrders([]) // Immediately wipe orders from previous table
+    }
+  }, [searchParams, isTableLocked, table, setSearchParams])
+
   const handleSelectTable = (newTable: string) => {
+    if (isTableLocked && newTable !== table) {
+      showToast(`🔒 Table is locked to Table ${table} while your active order is in progress.`)
+      return
+    }
     setTable(newTable)
     localStorage.setItem('ar_smart_menu_table', newTable)
     const params = new URLSearchParams(searchParams)
@@ -403,25 +433,53 @@ export function MenuPage() {
 
               <button
                 type="button"
-                onClick={() => setIsTableOpen(true)}
+                onClick={() => {
+                  if (isTableLocked) {
+                    showToast(`🔒 Table is locked to Table ${table} for your active dining session.`)
+                    return
+                  }
+                  setIsTableOpen(true)
+                }}
                 className={`border px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 cursor-pointer shadow-sm transition ${
-                  hasConfiguredTables && !isTableValid
+                  isTableLocked
+                    ? 'bg-[#242735] border-amber-500/40 text-amber-300'
+                    : hasConfiguredTables && !isTableValid
                     ? 'bg-rose-500/20 hover:bg-rose-500/30 border-rose-500/50 text-rose-300 animate-pulse'
                     : 'bg-[#242735] hover:bg-[#2e3244] border-[#34384B] text-[#FF5353]'
                 }`}
-                title="Click to select table number"
+                title={
+                  isTableLocked
+                    ? `Table locked to Table ${table} for active dining session`
+                    : 'Click to select table number'
+                }
               >
-                <MapPin size={13} className={hasConfiguredTables && !isTableValid ? 'text-rose-400' : 'text-[#FF5353]'} />
-                <span>
-                  {hasConfiguredTables && !isTableValid
-                    ? `Invalid (${table ? `T-${table}` : 'No Table'})`
-                    : table
-                    ? (table.toLowerCase().startsWith('table') || table.toLowerCase() === 'dine-in' || table.toLowerCase() === 'takeaway'
-                        ? table
-                        : `Table ${table}`)
-                    : (hasConfiguredTables ? 'Select Table' : 'Dine-in')}
-                </span>
-                <ChevronRight size={12} className="text-gray-400" />
+                {isTableLocked ? (
+                  <>
+                    <Lock size={13} className="text-amber-400" />
+                    <span>
+                      {table
+                        ? (table.toLowerCase().startsWith('table') || table.toLowerCase() === 'dine-in' || table.toLowerCase() === 'takeaway'
+                            ? table
+                            : `Table ${table}`)
+                        : 'Table Locked'}
+                    </span>
+                    <span className="text-[10px] text-amber-400/80 font-normal">🔒</span>
+                  </>
+                ) : (
+                  <>
+                    <MapPin size={13} className={hasConfiguredTables && !isTableValid ? 'text-rose-400' : 'text-[#FF5353]'} />
+                    <span>
+                      {hasConfiguredTables && !isTableValid
+                        ? `Invalid (${table ? `T-${table}` : 'No Table'})`
+                        : table
+                        ? (table.toLowerCase().startsWith('table') || table.toLowerCase() === 'dine-in' || table.toLowerCase() === 'takeaway'
+                            ? table
+                            : `Table ${table}`)
+                        : (hasConfiguredTables ? 'Select Table' : 'Dine-in')}
+                    </span>
+                    <ChevronRight size={12} className="text-gray-400" />
+                  </>
+                )}
               </button>
 
               {activeOrders.length > 0 && (
@@ -936,12 +994,17 @@ export function MenuPage() {
           showToast('Cart cleared')
         }}
         onChangeTable={() => {
+          if (isTableLocked) {
+            showToast(`🔒 Table is locked to Table ${table} for your active dining session.`)
+            return
+          }
           setIsCartOpen(false)
           setIsTableOpen(true)
         }}
         isTableValid={isTableValid}
         isTableOccupied={isTableOccupiedByOther}
         occupiedMessage={occupiedMessage}
+        isTableLocked={isTableLocked}
       />
 
       <TableOrderStatusModal
@@ -994,6 +1057,8 @@ export function MenuPage() {
         availableTables={menu.availableTables}
         onClose={() => setIsTableOpen(false)}
         onSelectTable={handleSelectTable}
+        isLocked={isTableLocked}
+        lockedMessage={`Table is locked to Table ${table} for your active dining session. Please ask restaurant staff if you need to move tables.`}
       />
 
       {/* Floating Toast Notification */}

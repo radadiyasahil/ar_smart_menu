@@ -268,6 +268,8 @@ class BusinessProvider extends ChangeNotifier {
     String? gstNumber,
     String? upiId,
     String? logoUrl,
+    String? wifiName,
+    String? wifiPassword,
   }) async {
     _isLoading = true;
     _error = null;
@@ -279,7 +281,10 @@ class BusinessProvider extends ChangeNotifier {
           fullAddress != null ||
           fssaiNumber != null ||
           gstNumber != null ||
-          upiId != null || logoUrl != null) {
+          upiId != null ||
+          logoUrl != null ||
+          wifiName != null ||
+          wifiPassword != null) {
         _business = await _businessService.update(
           businessName: businessName,
           businessType: businessType,
@@ -289,6 +294,8 @@ class BusinessProvider extends ChangeNotifier {
           gstNumber: gstNumber,
           upiId: upiId,
           logoUrl: logoUrl,
+          wifiName: wifiName,
+          wifiPassword: wifiPassword,
         );
       }
 

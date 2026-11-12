@@ -20,7 +20,9 @@ public record UpdateBusinessRequest(
     string? LogoUrl = null,
     string? FssaiNumber = null,
     string? GstNumber = null,
-    string? UpiId = null);
+    string? UpiId = null,
+    string? WifiName = null,
+    string? WifiPassword = null);
 
 public record BusinessDto(
     Guid Id,
@@ -39,7 +41,9 @@ public record BusinessDto(
     BusinessStatus Status,
     string? RejectionReason,
     DateTime? ApprovedAt,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? WifiName = null,
+    string? WifiPassword = null);
 
 public record VerifyBankRequest(string BankAccountNumber, string BankIfsc);
 
@@ -407,7 +411,9 @@ public record PublicMenuResponse(
     IReadOnlyList<PublicMenuCategoryDto> Categories,
     bool IsBusinessActive = true,
     string? InactiveMessage = null,
-    IReadOnlyList<string>? AvailableTables = null);
+    IReadOnlyList<string>? AvailableTables = null,
+    string? WifiName = null,
+    string? WifiPassword = null);
 
 public record PublicMenuCategoryDto(
     string CategoryName,

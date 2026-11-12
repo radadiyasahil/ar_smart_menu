@@ -193,7 +193,9 @@ public class PublicArService : IPublicArService
             categories,
             business.Status == BusinessStatus.Active,
             business.Status == BusinessStatus.Active ? null : "This restaurant is temporarily paused / closed.",
-            orderedAvailableTables
+            orderedAvailableTables,
+            business.WifiName,
+            business.WifiPassword
         );
     }
 

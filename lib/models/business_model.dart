@@ -47,6 +47,8 @@ class BusinessModel {
     this.rejectionReason,
     this.approvedAt,
     this.createdAt,
+    this.wifiName,
+    this.wifiPassword,
   });
 
   final String id;
@@ -66,6 +68,8 @@ class BusinessModel {
   final String? rejectionReason;
   final DateTime? approvedAt;
   final DateTime? createdAt;
+  final String? wifiName;
+  final String? wifiPassword;
 
   bool get isPending => status == BusinessStatus.pendingApproval;
   bool get isActive => status == BusinessStatus.active;
@@ -96,6 +100,8 @@ class BusinessModel {
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String)
           : null,
+      wifiName: json['wifiName'] as String?,
+      wifiPassword: json['wifiPassword'] as String?,
     );
   }
 
@@ -129,5 +135,7 @@ class BusinessModel {
         'rejectionReason': rejectionReason,
         'approvedAt': approvedAt?.toIso8601String(),
         'createdAt': createdAt?.toIso8601String(),
+        'wifiName': wifiName,
+        'wifiPassword': wifiPassword,
       };
 }

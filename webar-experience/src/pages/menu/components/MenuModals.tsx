@@ -184,53 +184,34 @@ function BottomSheetShell({
 
 
 export function RestaurantInfoModal({
-
   isOpen,
-
   businessName,
-
   city,
-
   address,
-
   whatsAppNumber,
-
   onClose,
-
+  wifiName,
+  wifiPassword,
 }: {
-
   isOpen: boolean
-
   businessName: string
-
   city: string
-
   address?: string
-
   whatsAppNumber?: string
-
   onClose: () => void
-
+  wifiName?: string
+  wifiPassword?: string
 }) {
-
   const [copied, setCopied] = useState(false)
-
   const phone = (whatsAppNumber || '9876543210').replace(/[^0-9]/g, '')
-
   const intlPhone = phone.length === 10 ? `91${phone}` : phone
-
-  const wifiPass = 'welcome@horeca'
-
-
+  const wifiPass = wifiPassword || ''
 
   const copyWifi = () => {
-
+    if (!wifiPass) return
     navigator.clipboard.writeText(wifiPass)
-
     setCopied(true)
-
     setTimeout(() => setCopied(false), 2000)
-
   }
 
 
@@ -291,43 +272,37 @@ export function RestaurantInfoModal({
 
 
 
-        <div className="bg-[#1F1F23] border border-[#2E2E34] rounded-xl p-3 flex items-center justify-between">
-
-          <div className="flex items-center gap-3">
-
-            <div className="p-2 bg-blue-500/15 text-blue-400 rounded-lg"><Wifi size={16} /></div>
-
-            <div>
-
-              <span className="text-[11px] font-semibold text-gray-400 uppercase">Guest Wi-Fi</span>
-
-              <p className="text-xs font-semibold text-white mt-0.5">Pass: <code className="bg-[#27272A] px-1.5 py-0.5 rounded text-gray-200">{wifiPass}</code></p>
-
+        {(wifiName || wifiPassword) && (
+          <div className="bg-[#1F1F23] border border-[#2E2E34] rounded-xl p-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-500/15 text-blue-400 rounded-lg"><Wifi size={16} /></div>
+              <div>
+                <span className="text-[11px] font-semibold text-gray-400 uppercase">
+                  {wifiName ? `Wi-Fi: ${wifiName}` : 'Guest Wi-Fi'}
+                </span>
+                {wifiPassword ? (
+                  <p className="text-xs font-semibold text-white mt-0.5">
+                    Pass: <code className="bg-[#27272A] px-1.5 py-0.5 rounded text-gray-200">{wifiPassword}</code>
+                  </p>
+                ) : (
+                  <p className="text-xs text-emerald-400 mt-0.5">Free Open Wi-Fi (No password)</p>
+                )}
+              </div>
             </div>
-
+            {wifiPassword && (
+              <button
+                type="button"
+                onClick={copyWifi}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer flex items-center gap-1 transition ${
+                  copied ? 'bg-[#20BF6B] text-white' : 'bg-[#27272A] text-gray-200 hover:text-white'
+                }`}
+              >
+                {copied ? <Check size={12} /> : <Copy size={12} />}
+                <span>{copied ? 'Copied' : 'Copy'}</span>
+              </button>
+            )}
           </div>
-
-          <button
-
-            type="button"
-
-            onClick={copyWifi}
-
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer flex items-center gap-1 transition ${
-
-              copied ? 'bg-[#20BF6B] text-white' : 'bg-[#27272A] text-gray-200 hover:text-white'
-
-            }`}
-
-          >
-
-            {copied ? <Check size={12} /> : <Copy size={12} />}
-
-            <span>{copied ? 'Copied' : 'Copy'}</span>
-
-          </button>
-
-        </div>
+        )}
 
 
 

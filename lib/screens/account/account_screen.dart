@@ -44,6 +44,8 @@ class _AccountScreenState extends State<AccountScreen> {
   final _businessNameController = TextEditingController();
   final _cityController = TextEditingController();
   final _addressController = TextEditingController();
+  final _wifiNameController = TextEditingController();
+  final _wifiPasswordController = TextEditingController();
   final _upiController = TextEditingController();
   final _fssaiController = TextEditingController();
   final _gstController = TextEditingController();
@@ -179,6 +181,8 @@ class _AccountScreenState extends State<AccountScreen> {
       _businessNameController.text = business.businessName;
       _cityController.text = business.city;
       _addressController.text = business.fullAddress;
+      _wifiNameController.text = business.wifiName ?? '';
+      _wifiPasswordController.text = business.wifiPassword ?? '';
       _upiController.text = business.upiId ?? '';
       _fssaiController.text = business.fssaiNumber ?? '';
       _gstController.text = business.gstNumber ?? '';
@@ -209,6 +213,8 @@ class _AccountScreenState extends State<AccountScreen> {
     _businessNameController.dispose();
     _cityController.dispose();
     _addressController.dispose();
+    _wifiNameController.dispose();
+    _wifiPasswordController.dispose();
     _upiController.dispose();
     _fssaiController.dispose();
     _gstController.dispose();
@@ -284,6 +290,8 @@ class _AccountScreenState extends State<AccountScreen> {
     final businessName = _businessNameController.text.trim();
     final city = _cityController.text.trim();
     final fullAddress = _addressController.text.trim();
+    final wifiName = _wifiNameController.text.trim();
+    final wifiPassword = _wifiPasswordController.text.trim();
     final upiId = _upiController.text.trim();
     final fssaiNumber = _fssaiController.text.trim();
     final gstNumber = _gstController.text.trim().toUpperCase();
@@ -375,6 +383,8 @@ class _AccountScreenState extends State<AccountScreen> {
         upiId: upiId,
         fssaiNumber: fssaiNumber,
         gstNumber: gstNumber,
+        wifiName: wifiName,
+        wifiPassword: wifiPassword,
       );
 
       final prefs = await SharedPreferences.getInstance();
@@ -1270,6 +1280,15 @@ class _AccountScreenState extends State<AccountScreen> {
                 _buildInfoRow('Business Type', business?.businessType.label ?? 'Restaurant', isDark),
                 _buildInfoRow('City', business?.city ?? '—', isDark),
                 _buildInfoRow('Full Address', business?.fullAddress ?? '—', isDark),
+                _buildInfoRow(
+                  'Guest Wi-Fi',
+                  (business != null &&
+                          ((business.wifiName?.isNotEmpty ?? false) ||
+                              (business.wifiPassword?.isNotEmpty ?? false)))
+                      ? '${(business.wifiName?.isNotEmpty ?? false) ? business.wifiName : "Wi-Fi"} • Pass: ${(business.wifiPassword?.isNotEmpty ?? false) ? business.wifiPassword : "None"}'
+                      : 'Not configured (Tap Edit to set)',
+                  isDark,
+                ),
                 _buildInfoRow('UPI Payment ID', business?.upiId ?? 'Not configured', isDark),
                 _buildInfoRow('FSSAI Number', business?.fssaiNumber ?? 'Not provided', isDark),
                 _buildInfoRow('GSTIN', business?.gstNumber ?? 'Not provided', isDark),
@@ -1960,6 +1979,20 @@ class _AccountScreenState extends State<AccountScreen> {
                 label: 'Address',
                 controller: _addressController,
                 hint: 'Full Address',
+                isDark: isDark,
+              ),
+              Divider(height: 1, color: groupBorder),
+              _buildEditProfileField(
+                label: 'Wi-Fi Name',
+                controller: _wifiNameController,
+                hint: 'Guest Wi-Fi SSID (optional)',
+                isDark: isDark,
+              ),
+              Divider(height: 1, color: groupBorder),
+              _buildEditProfileField(
+                label: 'Wi-Fi Password',
+                controller: _wifiPasswordController,
+                hint: 'Password for diners (optional)',
                 isDark: isDark,
               ),
               Divider(height: 1, color: groupBorder),

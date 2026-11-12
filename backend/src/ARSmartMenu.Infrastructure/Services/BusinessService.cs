@@ -93,6 +93,10 @@ public class BusinessService : IBusinessService
             business.GstNumber = request.GstNumber;
         if (request.UpiId is not null)
             business.UpiId = request.UpiId;
+        if (request.WifiName is not null)
+            business.WifiName = string.IsNullOrWhiteSpace(request.WifiName) ? null : request.WifiName.Trim();
+        if (request.WifiPassword is not null)
+            business.WifiPassword = string.IsNullOrWhiteSpace(request.WifiPassword) ? null : request.WifiPassword.Trim();
 
         business.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -228,5 +232,7 @@ public class BusinessService : IBusinessService
         business.Status,
         business.RejectionReason,
         business.ApprovedAt,
-        business.CreatedAt);
+        business.CreatedAt,
+        business.WifiName,
+        business.WifiPassword);
 }

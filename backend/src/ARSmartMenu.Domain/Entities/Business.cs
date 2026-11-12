@@ -27,6 +27,8 @@ public class Business : BaseEntity
     public Guid? ApprovedById { get; set; }
     public User? ApprovedBy { get; set; }
     public string? AdminNotes { get; set; }
+    public string? WifiName { get; set; }
+    public string? WifiPassword { get; set; }
 
     public ICollection<Product> Products { get; set; } = [];
     public ICollection<Subscription> Subscriptions { get; set; } = [];

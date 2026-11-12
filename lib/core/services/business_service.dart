@@ -45,6 +45,8 @@ class BusinessService {
     String? gstNumber,
     String? upiId,
     String? logoUrl,
+    String? wifiName,
+    String? wifiPassword,
   }) async {
     final response = await _dio.put<Map<String, dynamic>>(
       '/businesses/me',
@@ -57,6 +59,8 @@ class BusinessService {
         if (gstNumber != null) 'gstNumber': gstNumber,
         if (upiId != null) 'upiId': upiId,
         if (logoUrl != null) 'logoUrl': logoUrl,
+        if (wifiName != null) 'wifiName': wifiName,
+        if (wifiPassword != null) 'wifiPassword': wifiPassword,
       },
     );
     return _parseBusiness(response.data!);

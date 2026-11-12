@@ -34,6 +34,8 @@ export interface PublicMenuResponse {
   isBusinessActive?: boolean
   inactiveMessage?: string
   availableTables?: string[]
+  wifiName?: string
+  wifiPassword?: string
 }
 
 import { apiClient, type ApiEnvelope } from './apiClient'

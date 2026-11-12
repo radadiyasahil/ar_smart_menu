@@ -1041,6 +1041,8 @@ export function MenuPage() {
           showToast('🔔 Bill requested! Restaurant staff notified.')
         }}
         onClearOrders={handleClearOrders}
+        wifiName={menu.wifiName}
+        wifiPassword={menu.wifiPassword}
       />
 
       <RestaurantInfoModal
@@ -1048,6 +1050,9 @@ export function MenuPage() {
         businessName={menu.businessName}
         city={menu.city}
         address={menu.address}
+        whatsAppNumber={menu.whatsAppNumber}
+        wifiName={menu.wifiName}
+        wifiPassword={menu.wifiPassword}
         onClose={() => setIsInfoOpen(false)}
       />
 

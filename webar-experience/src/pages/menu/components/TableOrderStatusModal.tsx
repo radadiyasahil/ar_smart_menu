@@ -12,6 +12,9 @@ import {
   Sparkles,
   BellRing,
   Trash2,
+  Wifi,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { tableOrderService, type LiveTableOrder } from '@/services/tableOrderService'
 import { soundAlerts } from '@/utils/soundAlerts'
@@ -29,6 +32,8 @@ interface TableOrderStatusModalProps {
   onReorderItems?: (items: { id: string; name: string; quantity: number }[]) => void
   onBillRequested?: () => void
   onClearOrders?: () => void
+  wifiName?: string
+  wifiPassword?: string
 }
 
 export function TableOrderStatusModal({
@@ -44,7 +49,10 @@ export function TableOrderStatusModal({
   onReorderItems,
   onBillRequested,
   onClearOrders,
+  wifiName,
+  wifiPassword,
 }: TableOrderStatusModalProps) {
+  const [wifiCopied, setWifiCopied] = useState(false)
   const [isRequestingBill, setIsRequestingBill] = useState(false)
   const [billRequestSent, setBillRequestSent] = useState(false)
   const [billErrorMessage, setBillErrorMessage] = useState<string | null>(null)
@@ -261,6 +269,13 @@ export function TableOrderStatusModal({
     }
   }
 
+  const copyWifiPassword = () => {
+    if (!wifiPassword) return
+    navigator.clipboard.writeText(wifiPassword)
+    setWifiCopied(true)
+    setTimeout(() => setWifiCopied(false), 2000)
+  }
+
   const handleRingWaiter = async () => {
     if (!slug) return
     setIsRingingWaiter(true)
@@ -444,6 +459,46 @@ export function TableOrderStatusModal({
               <div className="px-3.5 py-2 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center gap-2 text-rose-300 text-xs font-semibold">
                 <XCircle size={16} className="text-rose-400 shrink-0" />
                 <span>{billErrorMessage}</span>
+              </div>
+            )}
+
+            {/* Complimentary Guest Wi-Fi for Diners */}
+            {(wifiName || wifiPassword) && (
+              <div className="p-3 rounded-2xl bg-gradient-to-r from-blue-950/40 via-[#182032]/60 to-indigo-950/40 border border-blue-500/25 flex items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0">
+                    <Wifi size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-black text-blue-400 uppercase tracking-wider">Free Guest Wi-Fi</span>
+                      <span className="text-[9px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded-full font-bold">Diners Only</span>
+                    </div>
+                    <p className="text-xs text-white mt-0.5 truncate">
+                      {wifiName && <span className="text-gray-300 font-semibold">{wifiName} • </span>}
+                      {wifiPassword ? (
+                        <span>Pass: <code className="bg-black/50 px-1.5 py-0.5 rounded text-blue-200 font-mono font-bold select-all">{wifiPassword}</code></span>
+                      ) : (
+                        <span className="text-emerald-300 text-[11px]">Free Open Network</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                {wifiPassword && (
+                  <button
+                    type="button"
+                    onClick={copyWifiPassword}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 flex items-center gap-1 transition shadow cursor-pointer ${
+                      wifiCopied
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-blue-600 hover:bg-blue-500 text-white'
+                    }`}
+                    title="Copy Wi-Fi password"
+                  >
+                    {wifiCopied ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{wifiCopied ? 'Copied' : 'Copy'}</span>
+                  </button>
+                )}
               </div>
             )}
           </div>

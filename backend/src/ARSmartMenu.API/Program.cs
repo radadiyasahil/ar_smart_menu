@@ -10,8 +10,13 @@ using Microsoft.OpenApi.Models;
 using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using Microsoft.Data.SqlClient;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Dynamically auto-detect SQL Server instance across different developer machines (LocalDB vs localhost vs SQLEXPRESS)
+var connectionString = ResolveDatabaseConnectionString(builder.Configuration);
+builder.Configuration["ConnectionStrings:DefaultConnection"] = connectionString;
 
 // Bind to 0.0.0.0 so mobile devices on LAN/USB tethering can reach the API
 var configuredUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") 
@@ -105,7 +110,7 @@ builder.Services.AddCors(options =>
     {
         if (builder.Environment.IsDevelopment())
         {
-            // Flutter web uses random localhost ports — allow all local dev origins.
+            // Flutter web uses random localhost ports â€” allow all local dev origins.
             policy.SetIsOriginAllowed(static origin =>
             {
                 if (string.IsNullOrEmpty(origin)) return false;
@@ -123,7 +128,6 @@ builder.Services.AddCors(options =>
 });
 
 // Hangfire background jobs (uses same SQL Server database)
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")!;
 builder.Services.AddHangfire(config =>
     config.UseSqlServerStorage(connectionString, new SqlServerStorageOptions
     {
@@ -158,13 +162,25 @@ RecurringJob.AddOrUpdate<ARSmartMenu.Infrastructure.Jobs.PipelineJobRunner>(
     runner => runner.CleanupTemporaryFilesAsync(),
     Cron.Daily);
 
-// Apply migrations + seed data
-await DatabaseSeeder.SeedAsync(app.Services);
-await SaaSDatabaseSeeder.SeedAsync(app.Services);
-
 try
 {
+    // Apply migrations + seed data
+    await DatabaseSeeder.SeedAsync(app.Services);
+    await SaaSDatabaseSeeder.SeedAsync(app.Services);
+
     app.Run();
+}
+catch (Microsoft.Data.SqlClient.SqlException ex)
+{
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.WriteLine("\n=======================================================");
+    Console.WriteLine(" [DATABASE CONNECTION ERROR] Cannot connect to SQL Server");
+    Console.WriteLine("=======================================================");
+    Console.WriteLine($"Connection String: {connectionString}");
+    Console.WriteLine($"Error Details: {ex.Message}");
+    Console.WriteLine("\nPlease ensure SQL Server or LocalDB is running: 'sqllocaldb start mssqllocaldb'\n");
+    Console.ResetColor();
+    Environment.Exit(1);
 }
 catch (System.IO.IOException ex) when (ex.InnerException is Microsoft.AspNetCore.Connections.AddressInUseException || ex.Message.Contains("address already in use"))
 {
@@ -173,4 +189,44 @@ catch (System.IO.IOException ex) when (ex.InnerException is Microsoft.AspNetCore
     Console.WriteLine("Automatic fix: The dev script will terminate stale processes on launch, or run 'start-backend.bat'.\n");
     Console.ResetColor();
     Environment.Exit(1);
+}
+
+// Auto-detect working SQL Server connection string across different developer machines
+static string ResolveDatabaseConnectionString(IConfiguration configuration)
+{
+    var configured = configuration.GetConnectionString("DefaultConnection");
+    var candidates = new List<string>();
+
+    if (!string.IsNullOrWhiteSpace(configured))
+    {
+        candidates.Add(configured);
+    }
+
+    // Common developer database targets for seamless portability across machines
+    candidates.Add("Server=(localdb)\\mssqllocaldb;Database=ARSmartMenu;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true");
+    candidates.Add("Server=localhost;Database=ARSmartMenu;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true");
+    candidates.Add("Server=.\\SQLEXPRESS;Database=ARSmartMenu;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true");
+    candidates.Add("Server=localhost\\SQLEXPRESS;Database=ARSmartMenu;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true");
+
+    foreach (var rawConn in candidates.Distinct())
+    {
+        try
+        {
+            var testBuilder = new SqlConnectionStringBuilder(rawConn)
+            {
+                InitialCatalog = "master", // Test connection to master catalog first
+                ConnectTimeout = 2,
+            };
+            using var conn = new SqlConnection(testBuilder.ConnectionString);
+            conn.Open();
+            Console.WriteLine($"[Database] Successfully detected SQL Server instance: {testBuilder.DataSource}");
+            return rawConn;
+        }
+        catch
+        {
+            // Try next candidate
+        }
+    }
+
+    return configured ?? candidates[0];
 }

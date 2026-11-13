@@ -33,6 +33,7 @@ var jwtSecret = builder.Configuration["Jwt:Secret"]
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "ARSmartMenu";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "ARSmartMenuClients";
 
+
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

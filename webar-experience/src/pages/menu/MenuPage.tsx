@@ -1031,6 +1031,7 @@ export function MenuPage() {
         restaurantName={menu.businessName}
         tableNumber={table}
         slug={slug}
+        upiId={menu.upiId}
         isRefreshing={isRefreshingOrders}
         onRefresh={() => fetchOrders(false)}
         onOrderMore={() => {

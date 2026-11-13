@@ -297,4 +297,17 @@ export const tableOrderService = {
       }
     }
   },
+
+  async notifyUpiPayment(slug: string, tableNumber: string, amount: number, upiApp: string = 'UPI'): Promise<boolean> {
+    try {
+      await apiClient.post(
+        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber || 'dine-in')}/notify-upi`,
+        { amount, upiApp },
+      )
+      return true
+    } catch {
+      // Graceful fallback to callWaiter notification
+      return await this.callWaiter(slug, tableNumber, `💰 Paid ₹${amount} via UPI`)
+    }
+  },
 }

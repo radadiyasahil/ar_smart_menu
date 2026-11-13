@@ -36,6 +36,7 @@ export interface PublicMenuResponse {
   availableTables?: string[]
   wifiName?: string
   wifiPassword?: string
+  upiId?: string
 }
 
 import { apiClient, type ApiEnvelope } from './apiClient'

@@ -15,6 +15,9 @@ import {
   Wifi,
   Copy,
   Check,
+  QrCode,
+  Smartphone,
+  ExternalLink,
 } from 'lucide-react'
 import { tableOrderService, type LiveTableOrder } from '@/services/tableOrderService'
 import { soundAlerts } from '@/utils/soundAlerts'
@@ -34,6 +37,7 @@ interface TableOrderStatusModalProps {
   onClearOrders?: () => void
   wifiName?: string
   wifiPassword?: string
+  upiId?: string
 }
 
 export function TableOrderStatusModal({
@@ -51,8 +55,13 @@ export function TableOrderStatusModal({
   onClearOrders,
   wifiName,
   wifiPassword,
+  upiId,
 }: TableOrderStatusModalProps) {
   const [wifiCopied, setWifiCopied] = useState(false)
+  const [showUpiQr, setShowUpiQr] = useState(false)
+  const [upiPaidNotified, setUpiPaidNotified] = useState(false)
+  const [isNotifyingUpi, setIsNotifyingUpi] = useState(false)
+  const [upiIdCopied, setUpiIdCopied] = useState(false)
   const [isRequestingBill, setIsRequestingBill] = useState(false)
   const [billRequestSent, setBillRequestSent] = useState(false)
   const [billErrorMessage, setBillErrorMessage] = useState<string | null>(null)
@@ -450,6 +459,118 @@ export function TableOrderStatusModal({
                   <p className="text-[11px] text-emerald-300/80 mt-0.5">
                     Your server has received the notification in the restaurant app and will bring your bill to your table shortly.
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* Pay at Table with Dynamic Table UPI */}
+            {isBillAlreadyRequested && runningBillTotal > 0 && (
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-[#1B2620] via-[#161F1A] to-[#121815] border border-emerald-500/30 space-y-3.5 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                      <Smartphone size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-white">Pay at Table via UPI</h4>
+                      <p className="text-[10px] text-gray-400">Pre-filled amount • Zero manual typing</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-gray-400 block">Total Due</span>
+                    <span className="text-base font-black text-emerald-400">₹{runningBillTotal.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+
+                {/* Direct Mobile UPI Intent Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const effectiveUpi = upiId?.trim() || 'restaurant@upi'
+                    const upiUrl = `upi://pay?pa=${encodeURIComponent(effectiveUpi)}&pn=${encodeURIComponent(restaurantName)}&am=${runningBillTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Table ${tableNumber} Bill`)}`
+                    window.location.href = upiUrl
+                  }}
+                  className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 cursor-pointer transition active:scale-[0.98]"
+                >
+                  <Smartphone size={14} />
+                  <span>Open UPI App (GPay / PhonePe / Paytm)</span>
+                  <ExternalLink size={12} className="opacity-70" />
+                </button>
+
+                {/* Toggle to Show/Hide QR Code */}
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowUpiQr((v) => !v)}
+                    className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <QrCode size={13} />
+                    <span>{showUpiQr ? 'Hide Table UPI QR' : 'Show Dynamic Table UPI QR Code'}</span>
+                  </button>
+
+                  {upiId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(upiId)
+                        setUpiIdCopied(true)
+                        setTimeout(() => setUpiIdCopied(false), 2000)
+                      }}
+                      className="text-[10px] text-gray-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      {upiIdCopied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                      <span>{upiIdCopied ? 'UPI ID Copied' : 'Copy UPI ID'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Dynamic QR Code Card */}
+                {showUpiQr && (
+                  <div className="p-3.5 bg-white rounded-xl flex flex-col items-center justify-center gap-2 animate-fadeIn">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=4&data=${encodeURIComponent(
+                        `upi://pay?pa=${encodeURIComponent(upiId?.trim() || 'restaurant@upi')}&pn=${encodeURIComponent(restaurantName)}&am=${runningBillTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Table ${tableNumber} Bill`)}`
+                      )}`}
+                      alt="Table UPI QR"
+                      className="w-40 h-40 object-contain rounded-lg"
+                    />
+                    <div className="text-center text-gray-900 text-xs font-black">
+                      Scan & Pay ₹{runningBillTotal.toLocaleString('en-IN')}
+                    </div>
+                    {upiId && (
+                      <div className="text-[10px] text-gray-500 font-medium">
+                        Pay to: {upiId}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* "I Have Paid" Confirmation */}
+                <div className="pt-2 border-t border-white/10">
+                  {upiPaidNotified ? (
+                    <div className="p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold text-center flex items-center justify-center gap-2">
+                      <CheckCircle2 size={15} />
+                      <span>Payment Notified to Cashier! Server is verifying.</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={isNotifyingUpi}
+                      onClick={async () => {
+                        setIsNotifyingUpi(true)
+                        if (slug) {
+                          await tableOrderService.notifyUpiPayment(slug, tableNumber, runningBillTotal)
+                        }
+                        soundAlerts.playBillSettled()
+                        setUpiPaidNotified(true)
+                        setIsNotifyingUpi(false)
+                      }}
+                      className="w-full py-2.5 bg-white/10 hover:bg-white/15 border border-white/20 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer transition"
+                    >
+                      <CheckCircle2 size={13} className="text-emerald-400" />
+                      <span>I Have Paid ₹{runningBillTotal.toLocaleString('en-IN')} via UPI</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}

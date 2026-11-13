@@ -1297,6 +1297,70 @@ public class TableOrdersController : ControllerBase
         return Ok(ApiResponse<bool>.Ok(true, "Waiter call attended"));
     }
 
+    /// <summary>Public endpoint for customer to notify restaurant that they paid via dynamic UPI.</summary>
+    [HttpPost("api/public/orders/{slug}/table/{tableNumber}/notify-upi")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object>>> NotifyUpiPayment(
+        string slug,
+        string tableNumber,
+        [FromBody] NotifyUpiPaymentRequest? request,
+        CancellationToken ct)
+    {
+        var targetTable = !string.IsNullOrWhiteSpace(tableNumber) ? tableNumber : "Dine-in";
+        var cleanSlug = slug.Trim().ToLowerInvariant();
+        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
+
+        Guid businessId;
+        if (qr != null) businessId = qr.BusinessId;
+        else if (Guid.TryParse(cleanSlug, out var bId)) businessId = bId;
+        else
+        {
+            var b = await _db.Businesses.FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
+            if (b == null) return NotFound(ApiResponse<object>.Fail("Restaurant not found"));
+            businessId = b.Id;
+        }
+
+        var amount = request?.Amount ?? 0;
+        var app = string.IsNullOrWhiteSpace(request?.UpiApp) ? "UPI" : request.UpiApp.Trim();
+        var note = $"💰 Paid ₹{amount} via {app}";
+
+        var call = new TableWaiterCallDto
+        {
+            Id = Guid.NewGuid().ToString(),
+            BusinessId = businessId,
+            TableNumber = targetTable.Trim(),
+            Note = note,
+            CreatedAt = DateTime.UtcNow,
+            IsAttended = false
+        };
+
+        var key = GetChatKey(businessId, targetTable);
+        _waiterCallsStore.AddOrUpdate(key, call, (_, _) => call);
+
+        var chatMsg = new TableChatMessageDto
+        {
+            Id = Guid.NewGuid().ToString(),
+            Sender = "CUSTOMER",
+            SenderName = targetTable.StartsWith("Table", StringComparison.OrdinalIgnoreCase) ? targetTable : $"Table {targetTable}",
+            Text = $"💰 Payment: {note}",
+            Timestamp = DateTime.UtcNow
+        };
+        _tableChatStore.AddOrUpdate(
+            key,
+            new List<TableChatMessageDto> { chatMsg },
+            (_, list) => { lock (list) { list.Add(chatMsg); } return list; }
+        );
+
+        TableSyncManager.Broadcast(businessId, targetTable, "upi_payment_submitted", new {
+            tableNumber = targetTable,
+            amount = amount,
+            upiApp = app,
+            timestamp = DateTime.UtcNow
+        });
+
+        return Ok(ApiResponse<object>.Ok(new { success = true }, "Payment notification sent to restaurant"));
+    }
+
 
 
     private async Task<ActionResult<ApiResponse<TableOrderResponse>>> UpdateStatusAsync(Guid id, string status, CancellationToken ct)
@@ -1784,6 +1848,12 @@ public class TableOrderItemDto
 
     public string? Notes { get; set; }
 
+}
+
+public class NotifyUpiPaymentRequest
+{
+    public int Amount { get; set; }
+    public string? UpiApp { get; set; }
 }
 
 

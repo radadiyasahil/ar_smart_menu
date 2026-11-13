@@ -15,6 +15,7 @@ import '../../models/bill_model.dart';
 import '../../providers/business_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/table_orders_provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 enum TableFloorStatus {
   available,
@@ -1580,6 +1581,102 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     if (mounted) _showSettleDialog(bill);
   }
 
+  String _generateDynamicUpiUri(TableBill bill) {
+    final biz = context.read<BusinessProvider>().business;
+    final upiId = (biz?.upiId?.isNotEmpty == true) ? biz!.upiId! : 'restaurant@upi';
+    final bName = biz?.businessName ?? 'Restaurant';
+    final amount = bill.grandTotal.toStringAsFixed(2);
+    final note = 'Table_${bill.tableNumber}_Bill_${bill.id}';
+    return 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bName)}&am=$amount&cu=INR&tn=${Uri.encodeComponent(note)}';
+  }
+
+  void _showDynamicUpiQrDialog(TableBill bill) {
+    final upiUri = _generateDynamicUpiUri(bill);
+    final biz = context.read<BusinessProvider>().business;
+    final upiId = (biz?.upiId?.isNotEmpty == true) ? biz!.upiId! : 'restaurant@upi';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E202A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.qr_code_scanner, color: Colors.blue, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_canonicalTableName(bill.tableNumber)} Dynamic UPI QR',
+                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    'Exact Pre-filled: ₹${bill.grandTotal}',
+                    style: const TextStyle(color: Color(0xFF10B981), fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: QrImageView(
+                data: upiUri,
+                version: QrVersions.auto,
+                size: 200,
+                backgroundColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'UPI ID: $upiId',
+              style: const TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Diner scans with GPay, PhonePe, or Paytm with pre-filled amount.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white60, fontSize: 11),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close', style: TextStyle(color: Colors.grey)),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+            icon: const Icon(Icons.check, size: 16),
+            label: const Text('Settle as UPI Paid'),
+            onPressed: () {
+              bill.paymentMode = 'UPI';
+              Navigator.pop(ctx);
+              _archiveBill(bill);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showSettleDialog(TableBill bill) {
     String currentMode = bill.paymentMode.isNotEmpty ? bill.paymentMode : 'Cash';
     if (currentMode.toUpperCase().contains('UPI') ||
@@ -1741,6 +1838,41 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                       ],
                     ),
                   ),
+                  if (selectedMode == 'UPI') ...[
+                    const SizedBox(height: 12),
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black26, blurRadius: 6),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            QrImageView(
+                              data: _generateDynamicUpiUri(bill),
+                              version: QrVersions.auto,
+                              size: 140,
+                              backgroundColor: Colors.white,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Scan to Pay ₹${bill.grandTotal}',
+                              style: const TextStyle(
+                                color: Colors.black87,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -5054,6 +5186,20 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF10B981),
                       ),
+                    ),
+                  ),
+
+                  const SizedBox(width: 6),
+
+                  OutlinedButton.icon(
+                    onPressed: () => _showDynamicUpiQrDialog(bill),
+                    icon: const Icon(Icons.qr_code_scanner, size: 15),
+                    label: const Text('UPI QR', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF60A5FA),
+                      side: const BorderSide(color: Color(0xFF60A5FA)),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      visualDensity: VisualDensity.compact,
                     ),
                   ),
 

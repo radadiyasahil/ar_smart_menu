@@ -1608,90 +1608,271 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   }
 
   void _showDynamicUpiQrDialog(TableBill bill) {
-    final upiUri = _generateDynamicUpiUri(bill);
-    final biz = context.read<BusinessProvider>().business;
-    final upiId = (biz?.upiId?.isNotEmpty == true) ? biz!.upiId! : 'restaurant@upi';
+    if (bill.grandTotal <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Table total is ₹0. Please add items to the table before generating a payment QR.'),
+          backgroundColor: Colors.amber,
+        ),
+      );
+      return;
+    }
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E202A),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.blue.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.qr_code_scanner, color: Colors.blue, size: 20),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
+    try {
+      final upiUri = _generateDynamicUpiUri(bill);
+      final biz = context.read<BusinessProvider>().business;
+      final hasRealUpi = biz?.upiId?.trim().isNotEmpty == true;
+      final upiId = hasRealUpi ? biz!.upiId!.trim() : 'restaurant@upi';
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => Dialog(
+          backgroundColor: isDark ? const Color(0xFF1E202A) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 380),
+            padding: const EdgeInsets.all(20),
+            child: SingleChildScrollView(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    '${_canonicalTableName(bill.tableNumber)} Dynamic UPI QR',
-                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  // Header
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF60A5FA).withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.qr_code_scanner, color: Color(0xFF60A5FA), size: 22),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${_canonicalTableName(bill.tableNumber)} • Dynamic UPI QR',
+                              style: TextStyle(
+                                color: isDark ? Colors.white : Colors.black87,
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Bill #${bill.id}',
+                              style: const TextStyle(color: Colors.grey, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        color: Colors.grey,
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
                   ),
-                  Text(
-                    'Exact Pre-filled: ₹${bill.grandTotal}',
-                    style: const TextStyle(color: Color(0xFF10B981), fontSize: 13, fontWeight: FontWeight.w700),
+                  const SizedBox(height: 12),
+
+                  // Amount Banner
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Pre-filled Amount:',
+                          style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          '₹${bill.grandTotal}',
+                          style: const TextStyle(
+                            color: Color(0xFF10B981),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Crisp White QR Box
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4)),
+                      ],
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: SizedBox(
+                      width: 190,
+                      height: 190,
+                      child: QrImageView(
+                        data: upiUri,
+                        version: QrVersions.auto,
+                        size: 190,
+                        backgroundColor: Colors.white,
+                        errorStateBuilder: (cxt, err) => const Center(
+                          child: Text(
+                            'QR Error',
+                            style: TextStyle(color: Colors.redAccent, fontSize: 11),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // UPI ID & Copy action
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white10 : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.account_balance_wallet_outlined, size: 14, color: Colors.grey),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            'UPI: $upiId',
+                            style: TextStyle(
+                              color: isDark ? Colors.white70 : Colors.black87,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: () {
+                            Clipboard.setData(ClipboardData(text: upiUri));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('📋 UPI payment link copied to clipboard!'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(Icons.copy, size: 14, color: Color(0xFF60A5FA)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  if (!hasRealUpi) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 14),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Tip: Set your official UPI ID in Account to receive direct bank transfers.',
+                              style: TextStyle(color: Colors.amber, fontSize: 10.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Diners scan with GPay, PhonePe, or Paytm with pre-filled amount.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey, fontSize: 11),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // Actions Row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: upiUri));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('📋 UPI payment link copied to clipboard!'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.copy, size: 14),
+                          label: const Text('Copy Link', style: TextStyle(fontSize: 12)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF60A5FA),
+                            side: const BorderSide(color: Color(0xFF60A5FA)),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: const Icon(Icons.check_circle_outline, size: 16),
+                          label: const Text('Settle as Paid', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          onPressed: () {
+                            bill.paymentMode = 'UPI';
+                            Navigator.pop(ctx);
+                            _archiveBill(bill);
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: QrImageView(
-                data: upiUri,
-                version: QrVersions.auto,
-                size: 200,
-                backgroundColor: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'UPI ID: $upiId',
-              style: const TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Diner scans with GPay, PhonePe, or Paytm with pre-filled amount.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white60, fontSize: 11),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close', style: TextStyle(color: Colors.grey)),
           ),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
-            icon: const Icon(Icons.check, size: 16),
-            label: const Text('Settle as UPI Paid'),
-            onPressed: () {
-              bill.paymentMode = 'UPI';
-              Navigator.pop(ctx);
-              _archiveBill(bill);
-            },
-          ),
-        ],
-      ),
-    );
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('Error showing UPI QR dialog: $e\n$st');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open UPI QR: ${e.toString().replaceFirst("Exception: ", "")}'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   void _showSettleDialog(TableBill bill) {

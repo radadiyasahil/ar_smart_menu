@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:geolocator/geolocator.dart';
+import '../../core/utils/device_location_helper.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -2420,68 +2420,19 @@ class _AccountScreenState extends State<AccountScreen> {
             });
 
             try {
-              bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-              if (!serviceEnabled) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('⚠️ Location services (GPS) are turned off. Please turn on GPS in your device settings.'),
-                      backgroundColor: Colors.amber,
-                    ),
-                  );
-                }
-                setModalState(() => isLocating = false);
-                return;
-              }
+              final result = await DeviceLocationHelper.getCurrentLocation();
 
-              LocationPermission permission = await Geolocator.checkPermission();
-              if (permission == LocationPermission.denied) {
-                permission = await Geolocator.requestPermission();
-                if (permission == LocationPermission.denied) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('⚠️ Location permission denied. Please allow location access to capture your restaurant GPS.'),
-                        backgroundColor: Colors.amber,
-                      ),
-                    );
-                  }
-                  setModalState(() => isLocating = false);
-                  return;
-                }
-              }
-
-              if (permission == LocationPermission.deniedForever) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('⚠️ Location permissions are permanently denied. Please allow location in your device/browser settings.'),
-                      backgroundColor: Colors.redAccent,
-                    ),
-                  );
-                }
-                setModalState(() => isLocating = false);
-                return;
-              }
-
-              final position = await Geolocator.getCurrentPosition(
-                locationSettings: const LocationSettings(
-                  accuracy: LocationAccuracy.high,
-                  timeLimit: Duration(seconds: 15),
-                ),
-              );
-
-              latController.text = position.latitude.toStringAsFixed(6);
-              lngController.text = position.longitude.toStringAsFixed(6);
-              lastAccuracy = position.accuracy;
+              latController.text = result.latitude.toStringAsFixed(6);
+              lngController.text = result.longitude.toStringAsFixed(6);
+              lastAccuracy = result.accuracy;
               locationStatusMessage =
-                  'Location captured: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)} (±${position.accuracy.round()}m)';
+                  'Location captured: ${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)} (±${result.accuracy.round()}m)';
 
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      '📍 Restaurant GPS captured: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)} (±${position.accuracy.round()}m). Ensure your device is inside your restaurant premises!',
+                      '📍 Restaurant GPS captured: ${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)} (±${result.accuracy.round()}m). Ensure your device is inside your restaurant premises!',
                     ),
                     backgroundColor: Colors.green.shade700,
                     duration: const Duration(seconds: 5),

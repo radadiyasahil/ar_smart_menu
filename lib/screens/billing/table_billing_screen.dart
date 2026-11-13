@@ -14,6 +14,7 @@ import '../../core/utils/kitchen_sound_alert.dart';
 import '../../models/bill_model.dart';
 import '../../providers/business_provider.dart';
 import '../../providers/product_provider.dart';
+import '../../providers/table_orders_provider.dart';
 
 enum TableFloorStatus {
   available,
@@ -81,6 +82,15 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     super.initState();
 
     _initScreenData();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final ordersProv = context.read<TableOrdersProvider>();
+        ordersProv.onAutoPrintKot = (order) {
+          _printKot(order);
+        };
+      }
+    });
 
     _pollingTimer = Timer.periodic(
       const Duration(seconds: 2),
@@ -158,6 +168,13 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     _tabController.dispose();
 
     _phoneController.dispose();
+
+    try {
+      final ordersProv = context.read<TableOrdersProvider>();
+      if (ordersProv.onAutoPrintKot != null) {
+        ordersProv.onAutoPrintKot = null;
+      }
+    } catch (_) {}
 
     super.dispose();
   }
@@ -1826,6 +1843,33 @@ class _TableBillingScreenState extends State<TableBillingScreen>
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Print error: $e')));
+      }
+    }
+  }
+
+  Future<void> _printKot(PendingTableOrder order) async {
+    if (order.items.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cannot print an empty order ticket.')),
+        );
+      }
+      return;
+    }
+
+    final biz = context.read<BusinessProvider>().business;
+    final bName = biz?.businessName ?? 'Our Restaurant';
+
+    try {
+      await BillReceiptPdfService.instance.printKot(
+        order: order,
+        businessName: bName,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('KOT Print error: $e')));
       }
     }
   }
@@ -4561,6 +4605,17 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                               ),
                             ),
                             const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: isDark ? Colors.white : Colors.black87,
+                                side: BorderSide(color: isDark ? Colors.white24 : Colors.black26),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              ),
+                              icon: const Icon(Icons.print_rounded, size: 15),
+                              label: const Text('KOT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                              onPressed: () => _printKot(order),
+                            ),
+                            const SizedBox(width: 8),
                             OutlinedButton(
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.redAccent,
@@ -5020,28 +5075,74 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
       children: [
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
 
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
 
-              child: const Icon(
-                Icons.pending_actions,
-                color: Colors.orange,
-                size: 20,
-              ),
+                  child: const Icon(
+                    Icons.pending_actions,
+                    color: Colors.orange,
+                    size: 20,
+                  ),
+                ),
+
+                const SizedBox(width: 10),
+
+                Text(
+                  'Incoming Order Tickets (${_pendingOrders.length})',
+
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
-
-            const SizedBox(width: 10),
-
-            Text(
-              'Incoming Order Tickets (${_pendingOrders.length})',
-
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Builder(
+              builder: (ctx) {
+                final ordersProv = ctx.watch<TableOrdersProvider>();
+                final isAuto = ordersProv.autoPrintKot;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => ordersProv.setAutoPrintKot(!isAuto),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: isAuto
+                          ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                          : Colors.grey.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isAuto ? const Color(0xFF10B981) : Colors.grey.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.print_rounded,
+                          size: 14,
+                          color: isAuto ? const Color(0xFF10B981) : Colors.grey,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          isAuto ? 'Auto-KOT: ON' : 'Auto-KOT: OFF',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: isAuto ? const Color(0xFF10B981) : Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -5560,30 +5661,56 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
           const SizedBox(height: 8),
 
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
 
-              foregroundColor: Colors.white,
+                    foregroundColor: Colors.white,
 
-              minimumSize: const Size(double.infinity, 36),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
 
-              visualDensity: VisualDensity.compact,
+                    visualDensity: VisualDensity.compact,
 
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+
+                  icon: const Icon(Icons.check_circle_rounded, size: 16),
+
+                  label: const Text(
+                    'Mark as Served to Table ✅',
+
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+
+                  onPressed: () => _markOrderServed(o),
+                ),
               ),
-            ),
 
-            icon: const Icon(Icons.check_circle_rounded, size: 16),
+              const SizedBox(width: 8),
 
-            label: const Text(
-              'Mark as Served to Table ✅',
-
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-            ),
-
-            onPressed: () => _markOrderServed(o),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white24),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                icon: const Icon(Icons.print_rounded, size: 15),
+                label: const Text('KOT', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                onPressed: () => _printKot(o),
+              ),
+            ],
           ),
         ],
       ),
@@ -5760,7 +5887,27 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                 ),
               ),
 
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
+
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white24),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                icon: const Icon(Icons.print_rounded, size: 14),
+                label: const Text('KOT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                onPressed: () => _printKot(o),
+              ),
+
+              const SizedBox(width: 6),
 
               OutlinedButton(
                 style: OutlinedButton.styleFrom(

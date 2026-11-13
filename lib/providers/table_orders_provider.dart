@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/billing_service.dart';
 import '../core/utils/kitchen_sound_alert.dart';
 import '../models/bill_model.dart';
 
 class TableOrdersProvider extends ChangeNotifier {
   TableOrdersProvider({BillingService? billingService})
-      : _billingService = billingService ?? BillingService();
+      : _billingService = billingService ?? BillingService() {
+    initAutoPrintKot();
+  }
 
   final BillingService _billingService;
 
@@ -27,6 +30,29 @@ class TableOrdersProvider extends ChangeNotifier {
   String? _businessId;
   String? _lastAlertMessage;
   bool _isPolling = false;
+
+  bool _autoPrintKot = false;
+  bool get autoPrintKot => _autoPrintKot;
+
+  /// Optional callback invoked when a new order arrives and auto-printing is enabled
+  void Function(PendingTableOrder order)? onAutoPrintKot;
+
+  Future<void> initAutoPrintKot() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _autoPrintKot = prefs.getBool('auto_print_kot_enabled') ?? false;
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> setAutoPrintKot(bool value) async {
+    _autoPrintKot = value;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('auto_print_kot_enabled', value);
+    } catch (_) {}
+  }
 
   List<PendingTableOrder> get pendingOrders => List.unmodifiable(_pendingOrders);
   List<PendingTableOrder> get kitchenOrders => List.unmodifiable(_kitchenOrders);
@@ -106,6 +132,13 @@ class TableOrdersProvider extends ChangeNotifier {
           if (!_isFirstLoad) {
             hasNewOrder = true;
             alertMsg = '🔔 New Order for ${ord.tableNumber} (₹${ord.totalAmount})';
+            if (_autoPrintKot) {
+              try {
+                onAutoPrintKot?.call(ord);
+              } catch (err) {
+                debugPrint('Auto-print KOT error: $err');
+              }
+            }
           }
         }
       }

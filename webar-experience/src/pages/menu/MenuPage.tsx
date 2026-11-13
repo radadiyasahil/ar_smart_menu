@@ -24,7 +24,7 @@ import {
   type PublicMenuResponse,
   type PublicMenuDish,
 } from '@/services/productService'
-import type { CartItem, DishCustomization, SharedCartItem } from '@/types/cart'
+import type { CartItem, DishCustomization, SharedCartItem, SharedCartResponse } from '@/types/cart'
 import { DishCard } from './components/DishCard'
 import { DishCustomizationModal } from './components/DishCustomizationModal'
 import { Interactive3dModal } from './components/Interactive3dModal'
@@ -103,9 +103,68 @@ export function MenuPage() {
   const myClientId = useRef(tableOrderService.getDinerClientId()).current
   const [dinerNickname, setDinerNickname] = useState<string>(() => tableOrderService.getDinerNickname())
   const [lastSharedBy, setLastSharedBy] = useState<string | undefined>(undefined)
-  const isAdoptingRemoteCart = useRef(false)
   const lastSyncCartVersion = useRef<string>('')
-  const pushCartTimer = useRef<number | null>(null)
+  const isFirstCartSync = useRef(true)
+
+  const applySharedCart = (sc?: SharedCartResponse | null, isFromPoll = false) => {
+    if (!sc) {
+      if (!isFirstCartSync.current) {
+        setCart({})
+      }
+      isFirstCartSync.current = false
+      return
+    }
+
+    setLastSharedBy(sc.lastUpdatedBy)
+
+    const remoteCartMap: Record<string, CartItem> = {}
+    for (const item of sc.items || []) {
+      const dish = allDishes.find(
+        (d) => d.id === item.dishId || d.name.toLowerCase() === item.name.toLowerCase(),
+      )
+      if (dish) {
+        remoteCartMap[dish.id] = {
+          id: item.id,
+          dish,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          addedBy: item.addedBy || 'Companion',
+          clientId: item.clientId,
+          customization: item.notes || item.modifiers ? { notes: item.notes } : undefined,
+        }
+      }
+    }
+
+    setCart((currentLocalCart) => {
+      const currentKeys = Object.keys(currentLocalCart)
+      const remoteKeys = Object.keys(remoteCartMap)
+      const isDifferent =
+        currentKeys.length !== remoteKeys.length ||
+        remoteKeys.some(
+          (k) =>
+            !currentLocalCart[k] ||
+            currentLocalCart[k].quantity !== remoteCartMap[k].quantity ||
+            currentLocalCart[k].addedBy !== remoteCartMap[k].addedBy,
+        ) ||
+        currentKeys.some((k) => !remoteCartMap[k])
+
+      if (isDifferent) {
+        if (
+          isFromPoll &&
+          !isFirstCartSync.current &&
+          sc.lastClientId &&
+          sc.lastClientId !== myClientId
+        ) {
+          showToast(`👥 Table cart updated by ${sc.lastUpdatedBy || 'Companion'}`)
+        }
+        isFirstCartSync.current = false
+        return remoteCartMap
+      }
+
+      isFirstCartSync.current = false
+      return currentLocalCart
+    })
+  }
 
   const fetchOrders = async (silent = false) => {
     if (!slug) return
@@ -121,51 +180,16 @@ export function MenuPage() {
       const orders = res.orders
 
       // Phase 2.4: Synchronize multiplayer table cart across diners
-      if (res.sharedCart && table) {
-        const sc = res.sharedCart
-        const remoteVersion = `${sc.updatedAt}_${sc.items.length}_${sc.lastClientId}`
-        if (remoteVersion !== lastSyncCartVersion.current) {
-          lastSyncCartVersion.current = remoteVersion
-          setLastSharedBy(sc.lastUpdatedBy)
-
-          if (sc.lastClientId && sc.lastClientId !== myClientId) {
-            const remoteCartMap: Record<string, CartItem> = {}
-            for (const item of sc.items) {
-              const dish = allDishes.find(
-                (d) => d.id === item.dishId || d.name.toLowerCase() === item.name.toLowerCase(),
-              )
-              if (dish) {
-                remoteCartMap[dish.id] = {
-                  id: item.id,
-                  dish,
-                  quantity: item.quantity,
-                  unitPrice: item.unitPrice,
-                  addedBy: item.addedBy || 'Companion',
-                  clientId: item.clientId,
-                  customization: item.notes || item.modifiers ? { notes: item.notes } : undefined,
-                }
-              }
-            }
-
-            setCart((currentLocalCart) => {
-              const currentKeys = Object.keys(currentLocalCart)
-              const remoteKeys = Object.keys(remoteCartMap)
-              const isDifferent =
-                currentKeys.length !== remoteKeys.length ||
-                remoteKeys.some(
-                  (k) => !currentLocalCart[k] || currentLocalCart[k].quantity !== remoteCartMap[k].quantity,
-                )
-              if (isDifferent) {
-                isAdoptingRemoteCart.current = true
-                setTimeout(() => {
-                  isAdoptingRemoteCart.current = false
-                }, 800)
-                showToast(`👥 Table cart updated by ${sc.lastUpdatedBy || 'Companion'}`)
-                return remoteCartMap
-              }
-              return currentLocalCart
-            })
+      if (table) {
+        if (res.sharedCart) {
+          const sc = res.sharedCart
+          const remoteVersion = `${sc.updatedAt}_${sc.items.length}_${sc.lastClientId}_${sc.totalAmount}`
+          if (remoteVersion !== lastSyncCartVersion.current || isFirstCartSync.current) {
+            lastSyncCartVersion.current = remoteVersion
+            applySharedCart(sc, true)
           }
+        } else if (res.sharedCart === null && !isFirstCartSync.current) {
+          setCart({})
         }
       }
 
@@ -445,34 +469,6 @@ export function MenuPage() {
     return list
   }, [allDishes, menu, selectedCategory, dietary, popularOnly, arOnly, searchQuery])
 
-  const syncSharedCart = (cartMap: Record<string, CartItem>) => {
-    if (isAdoptingRemoteCart.current || !slug || !table || isTableOccupiedByOther) return
-    if (pushCartTimer.current) clearTimeout(pushCartTimer.current)
-    pushCartTimer.current = window.setTimeout(async () => {
-      const items: SharedCartItem[] = Object.values(cartMap).map((i) => {
-        const mods: string[] = []
-        if (i.customization?.spiceLevel) mods.push(`${i.customization.spiceLevel} Spicy`)
-        if (i.customization?.dietary && i.customization.dietary !== 'Regular') mods.push(i.customization.dietary)
-        if (i.customization?.selectedAddons) {
-          for (const a of i.customization.selectedAddons) mods.push(`${a.name} (+₹${a.price})`)
-        }
-        return {
-          id: i.id || i.dish.id,
-          dishId: i.dish.id,
-          name: i.dish.name,
-          unitPrice: i.unitPrice ?? (i.dish.pricePaise ? Math.round(i.dish.pricePaise / 100) : 0),
-          quantity: i.quantity,
-          imageUrl: i.dish.thumbnailUrl || (i.dish.photoUrls && i.dish.photoUrls[0]),
-          modifiers: mods.length > 0 ? mods : undefined,
-          notes: i.customization?.notes,
-          clientId: i.clientId || myClientId,
-          addedBy: i.addedBy || dinerNickname,
-        }
-      })
-      await tableOrderService.updateSharedCart(slug, table, items, myClientId, dinerNickname)
-    }, 300)
-  }
-
   const handleNicknameChange = (newName: string) => {
     tableOrderService.setDinerNickname(newName)
     setDinerNickname(newName)
@@ -486,7 +482,7 @@ export function MenuPage() {
     }
   }
 
-  const handleQty = (dish: PublicMenuDish, qty: number, customization?: DishCustomization) => {
+  const handleQty = async (dish: PublicMenuDish, qty: number, customization?: DishCustomization) => {
     if (qty > 0 && isTableOccupiedByOther) {
       showToast(`⚠️ Table ${table} is occupied. Please select an available table.`)
       setIsTableOpen(true)
@@ -496,6 +492,7 @@ export function MenuPage() {
     const addonsTotal = customization?.selectedAddons?.reduce((sum, a) => sum + a.price, 0) ?? 0
     const itemUnitPrice = basePrice + addonsTotal
 
+    // 1. Optimistic local update
     setCart((prev) => {
       const next = { ...prev }
       if (qty <= 0) {
@@ -512,9 +509,47 @@ export function MenuPage() {
           clientId: myClientId,
         }
       }
-      syncSharedCart(next)
       return next
     })
+
+    // 2. Atomic communal table cart update (preserves companion dishes)
+    if (slug && table && !isTableOccupiedByOther) {
+      const mods: string[] = []
+      if (customization?.spiceLevel) mods.push(`${customization.spiceLevel} Spicy`)
+      if (customization?.dietary && customization.dietary !== 'Regular') mods.push(customization.dietary)
+      if (customization?.selectedAddons) {
+        for (const a of customization.selectedAddons) mods.push(`${a.name} (+₹${a.price})`)
+      }
+
+      const sharedItem: SharedCartItem = {
+        id: dish.id,
+        dishId: dish.id,
+        name: dish.name,
+        unitPrice: itemUnitPrice,
+        quantity: qty,
+        imageUrl: dish.thumbnailUrl || (dish.photoUrls && dish.photoUrls[0]),
+        modifiers: mods.length > 0 ? mods : undefined,
+        notes: customization?.notes,
+        clientId: myClientId,
+        addedBy: dinerNickname,
+      }
+
+      try {
+        const updated = await tableOrderService.setSharedCartItem(
+          slug,
+          table,
+          sharedItem,
+          qty,
+          myClientId,
+          dinerNickname,
+        )
+        if (updated) {
+          applySharedCart(updated, false)
+        }
+      } catch (err) {
+        console.warn('Failed to sync item to table cart:', err)
+      }
+    }
   }
 
   const cartItems = useMemo(() => Object.values(cart), [cart])

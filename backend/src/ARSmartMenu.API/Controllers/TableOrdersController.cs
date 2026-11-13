@@ -397,7 +397,109 @@ public class TableOrdersController : ControllerBase
     }
 
     /// <summary>
-    /// Phase 2.4: Multiplayer Collaborative Cart - Update table cart from any diner phone.
+    /// Phase 2.4: Multiplayer Collaborative Cart - Atomic upsert or remove a single item in table cart without wiping companions' items.
+    /// </summary>
+    [HttpPost("api/public/orders/{slug}/table/{tableNumber}/shared-cart/item")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<SharedCartResponse>>> SetSharedCartItem(
+        string slug,
+        string tableNumber,
+        [FromBody] SetSharedCartItemRequest request,
+        CancellationToken ct = default)
+    {
+        var cleanSlug = slug.Trim().ToLowerInvariant();
+        var qr = await _db.QrCodes.AsNoTracking().Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
+        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
+        if (businessId == Guid.Empty)
+        {
+            var b = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
+            if (b != null) businessId = b.Id;
+        }
+
+        if (businessId == Guid.Empty)
+        {
+            return NotFound(ApiResponse<SharedCartResponse>.Fail("Restaurant not found"));
+        }
+
+        using var tableLock = await TableSyncManager.AcquireTableLockAsync(businessId, tableNumber, ct);
+        var key = GetChatKey(businessId, tableNumber);
+        var state = _tableSharedCartStore.GetOrAdd(key, _ => new SharedCartState());
+
+        lock (state)
+        {
+            var item = request.Item ?? new SharedCartItemDto();
+            var clientName = string.IsNullOrWhiteSpace(request.ClientName) ? "Guest" : request.ClientName.Trim();
+            var clientId = request.ClientId ?? string.Empty;
+
+            var existingIndex = state.Items.FindIndex(i =>
+                i.DishId == item.DishId &&
+                string.Join(",", i.Modifiers ?? new List<string>()) == string.Join(",", item.Modifiers ?? new List<string>()));
+
+            if (request.TargetQuantity <= 0)
+            {
+                if (existingIndex >= 0)
+                {
+                    state.Items.RemoveAt(existingIndex);
+                }
+            }
+            else
+            {
+                if (existingIndex >= 0)
+                {
+                    var existing = state.Items[existingIndex];
+                    existing.Quantity = request.TargetQuantity;
+                    if (item.UnitPrice > 0) existing.UnitPrice = item.UnitPrice;
+                    if (item.Modifiers != null) existing.Modifiers = item.Modifiers;
+                    if (!string.IsNullOrEmpty(item.Notes)) existing.Notes = item.Notes;
+                    existing.AddedBy = clientName;
+                    existing.ClientId = clientId;
+                    existing.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    item.Quantity = request.TargetQuantity;
+                    item.AddedBy = clientName;
+                    item.ClientId = clientId;
+                    item.UpdatedAt = DateTime.UtcNow;
+                    state.Items.Add(item);
+                }
+            }
+
+            state.LastUpdatedBy = clientName;
+            state.LastClientId = clientId;
+            state.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var totalItems = state.Items.Sum(i => i.Quantity);
+        var totalAmount = state.Items.Sum(i => i.UnitPrice * i.Quantity);
+
+        TableSyncManager.Broadcast(businessId, tableNumber, "shared_cart_updated", new
+        {
+            table = tableNumber,
+            totalItems,
+            totalAmount,
+            updatedBy = state.LastUpdatedBy,
+            clientId = state.LastClientId,
+            dishName = request.Item?.Name,
+            targetQuantity = request.TargetQuantity,
+        });
+
+        var response = new SharedCartResponse
+        {
+            TableNumber = tableNumber,
+            Items = state.Items.ToList(),
+            TotalItems = totalItems,
+            TotalAmount = totalAmount,
+            LastUpdatedBy = state.LastUpdatedBy,
+            LastClientId = state.LastClientId,
+            UpdatedAt = state.UpdatedAt,
+        };
+
+        return Ok(ApiResponse<SharedCartResponse>.Ok(response, "Table cart updated"));
+    }
+
+    /// <summary>
+    /// Phase 2.4: Multiplayer Collaborative Cart - Update table cart with smart merge (retains companions' items).
     /// </summary>
     [HttpPost("api/public/orders/{slug}/table/{tableNumber}/shared-cart")]
     [AllowAnonymous]
@@ -421,20 +523,51 @@ public class TableOrdersController : ControllerBase
             return NotFound(ApiResponse<SharedCartResponse>.Fail("Restaurant not found"));
         }
 
+        using var tableLock = await TableSyncManager.AcquireTableLockAsync(businessId, tableNumber, ct);
         var key = GetChatKey(businessId, tableNumber);
-        var updatedItems = request.Items ?? new List<SharedCartItemDto>();
-        var newState = new SharedCartState
+        var state = _tableSharedCartStore.GetOrAdd(key, _ => new SharedCartState());
+
+        lock (state)
         {
-            Items = updatedItems,
-            LastUpdatedBy = string.IsNullOrWhiteSpace(request.ClientName) ? "Guest" : request.ClientName.Trim(),
-            LastClientId = request.ClientId,
-            UpdatedAt = DateTime.UtcNow,
-        };
+            var incomingItems = request.Items ?? new List<SharedCartItemDto>();
+            var clientName = string.IsNullOrWhiteSpace(request.ClientName) ? "Guest" : request.ClientName.Trim();
+            var clientId = request.ClientId ?? string.Empty;
 
-        _tableSharedCartStore[key] = newState;
+            // Retain items added by OTHER companions (never wipe companions' items!)
+            var otherItems = state.Items
+                .Where(i => !string.IsNullOrEmpty(i.ClientId) && i.ClientId != clientId)
+                .ToList();
 
-        var totalItems = updatedItems.Sum(i => i.Quantity);
-        var totalAmount = updatedItems.Sum(i => i.UnitPrice * i.Quantity);
+            foreach (var item in incomingItems)
+            {
+                if (string.IsNullOrEmpty(item.ClientId)) item.ClientId = clientId;
+                if (string.IsNullOrEmpty(item.AddedBy)) item.AddedBy = clientName;
+            }
+
+            var merged = new List<SharedCartItemDto>(otherItems);
+            foreach (var item in incomingItems)
+            {
+                var idx = merged.FindIndex(m => m.DishId == item.DishId);
+                if (idx >= 0)
+                {
+                    merged[idx].Quantity = item.Quantity;
+                    merged[idx].AddedBy = item.AddedBy;
+                    merged[idx].ClientId = item.ClientId;
+                }
+                else
+                {
+                    merged.Add(item);
+                }
+            }
+
+            state.Items = merged;
+            state.LastUpdatedBy = clientName;
+            state.LastClientId = clientId;
+            state.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var totalItems = state.Items.Sum(i => i.Quantity);
+        var totalAmount = state.Items.Sum(i => i.UnitPrice * i.Quantity);
 
         // Real-time broadcast to all diner phones listening on this table
         TableSyncManager.Broadcast(businessId, tableNumber, "shared_cart_updated", new
@@ -442,19 +575,19 @@ public class TableOrdersController : ControllerBase
             table = tableNumber,
             totalItems,
             totalAmount,
-            updatedBy = newState.LastUpdatedBy,
-            clientId = newState.LastClientId,
+            updatedBy = state.LastUpdatedBy,
+            clientId = state.LastClientId,
         });
 
         var response = new SharedCartResponse
         {
             TableNumber = tableNumber,
-            Items = newState.Items,
+            Items = state.Items.ToList(),
             TotalItems = totalItems,
             TotalAmount = totalAmount,
-            LastUpdatedBy = newState.LastUpdatedBy,
-            LastClientId = newState.LastClientId,
-            UpdatedAt = newState.UpdatedAt,
+            LastUpdatedBy = state.LastUpdatedBy,
+            LastClientId = state.LastClientId,
+            UpdatedAt = state.UpdatedAt,
         };
 
         return Ok(ApiResponse<SharedCartResponse>.Ok(response, "Table cart synchronized"));
@@ -2375,6 +2508,14 @@ public class UpdateSharedCartRequest
     public string? ClientId { get; set; }
     public string? ClientName { get; set; }
     public List<SharedCartItemDto> Items { get; set; } = new();
+}
+
+public class SetSharedCartItemRequest
+{
+    public string? ClientId { get; set; }
+    public string? ClientName { get; set; }
+    public SharedCartItemDto Item { get; set; } = new();
+    public int TargetQuantity { get; set; } = 1;
 }
 
 public class SharedCartResponse

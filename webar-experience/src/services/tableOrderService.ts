@@ -434,6 +434,27 @@ export const tableOrderService = {
     }
   },
 
+  async setSharedCartItem(
+    slug: string,
+    tableNumber: string,
+    item: SharedCartItem,
+    targetQuantity: number,
+    clientId: string,
+    clientName: string,
+  ): Promise<SharedCartResponse | null> {
+    if (!slug || !tableNumber) return null
+    try {
+      const res = await apiClient.post<ApiEnvelope<SharedCartResponse>>(
+        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/shared-cart/item`,
+        { clientId, clientName, item, targetQuantity },
+      )
+      return res.data?.success && res.data.data ? res.data.data : null
+    } catch (e) {
+      console.warn('Could not update shared cart item:', e)
+      return null
+    }
+  },
+
   async updateSharedCart(
     slug: string,
     tableNumber: string,

@@ -70,6 +70,10 @@ export function MenuPage() {
 
   // Cart & Modals
   const [cart, setCart] = useState<Record<string, CartItem>>({})
+  const cartRef = useRef<Record<string, CartItem>>({})
+  cartRef.current = cart
+  const allDishesRef = useRef<PublicMenuDish[]>([])
+  const lastLocalEditTimestamp = useRef<number>(0)
   const [active3dDish, setActive3dDish] = useState<PublicMenuDish | null>(null)
   const [customizingDish, setCustomizingDish] = useState<PublicMenuDish | null>(null)
   const [isCartOpen, setIsCartOpen] = useState(false)
@@ -107,35 +111,67 @@ export function MenuPage() {
   const isFirstCartSync = useRef(true)
 
   const applySharedCart = (sc?: SharedCartResponse | null, isFromPoll = false) => {
-    if (!sc) {
-      if (!isFirstCartSync.current) {
-        setCart({})
-      }
-      isFirstCartSync.current = false
+    // If response is missing, null, or has invalid items, do NOT wipe local cart!
+    if (!sc || !Array.isArray(sc.items)) {
       return
     }
 
     setLastSharedBy(sc.lastUpdatedBy)
 
+    const currentDishes = allDishesRef.current
+    const localCartSnapshot = cartRef.current
+
     const remoteCartMap: Record<string, CartItem> = {}
-    for (const item of sc.items || []) {
-      const dish = allDishes.find(
-        (d) => d.id === item.dishId || d.name.toLowerCase() === item.name.toLowerCase(),
+    for (const item of sc.items) {
+      const dishIdToMatch = item.dishId || item.id
+      let dish = currentDishes.find(
+        (d) => d.id === dishIdToMatch || d.name.toLowerCase() === item.name.toLowerCase(),
       )
-      if (dish) {
-        remoteCartMap[dish.id] = {
-          id: item.id,
-          dish,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          addedBy: item.addedBy || 'Companion',
-          clientId: item.clientId,
-          customization: item.notes || item.modifiers ? { notes: item.notes } : undefined,
+      // Check if we already have this dish loaded in local cart snapshot
+      if (!dish && localCartSnapshot[dishIdToMatch]?.dish) {
+        dish = localCartSnapshot[dishIdToMatch].dish
+      }
+      // If dish metadata is not available yet, create a robust fallback dish
+      if (!dish) {
+        dish = {
+          id: dishIdToMatch,
+          name: item.name,
+          pricePaise: Math.round(item.unitPrice * 100),
+          vegStatus: 0,
+          isSpicy: false,
+          isBestseller: false,
+          isNew: false,
+          soldOutToday: false,
+          photoUrls: item.imageUrl ? [item.imageUrl] : [],
+          thumbnailUrl: item.imageUrl,
+          has3dModel: false,
+          dishSlug: item.name.toLowerCase().replace(/\s+/g, '-'),
         }
+      }
+
+      remoteCartMap[dish.id] = {
+        id: item.id || dish.id,
+        dish,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        addedBy: item.addedBy || 'Companion',
+        clientId: item.clientId,
+        customization: item.notes || item.modifiers ? { notes: item.notes } : undefined,
       }
     }
 
     setCart((currentLocalCart) => {
+      // If this call came from polling and user recently modified cart locally (< 3s),
+      // do NOT let a stale poll wipe out in-flight local additions!
+      const isRecentlyEditedLocally = Date.now() - lastLocalEditTimestamp.current < 3000
+      if (isFromPoll && isRecentlyEditedLocally) {
+        for (const [dishId, localItem] of Object.entries(currentLocalCart)) {
+          if (!remoteCartMap[dishId] && (localItem.clientId === myClientId || !localItem.clientId)) {
+            remoteCartMap[dishId] = localItem
+          }
+        }
+      }
+
       const currentKeys = Object.keys(currentLocalCart)
       const remoteKeys = Object.keys(remoteCartMap)
       const isDifferent =
@@ -183,13 +219,11 @@ export function MenuPage() {
       if (table) {
         if (res.sharedCart) {
           const sc = res.sharedCart
-          const remoteVersion = `${sc.updatedAt}_${sc.items.length}_${sc.lastClientId}_${sc.totalAmount}`
+          const remoteVersion = `${sc.updatedAt}_${sc.items?.length || 0}_${sc.lastClientId}_${sc.totalAmount}`
           if (remoteVersion !== lastSyncCartVersion.current || isFirstCartSync.current) {
             lastSyncCartVersion.current = remoteVersion
             applySharedCart(sc, true)
           }
-        } else if (res.sharedCart === null && !isFirstCartSync.current) {
-          setCart({})
         }
       }
 
@@ -312,11 +346,14 @@ export function MenuPage() {
   }
 
   // Poll table orders every 2 seconds for real-time kitchen status updates
+  const fetchOrdersRef = useRef(fetchOrders)
+  fetchOrdersRef.current = fetchOrders
+
   useEffect(() => {
     if (!slug) return
-    fetchOrders(true)
+    fetchOrdersRef.current(true)
     const interval = setInterval(() => {
-      fetchOrders(true)
+      fetchOrdersRef.current(true)
     }, 2000)
     return () => clearInterval(interval)
   }, [slug, table])
@@ -443,6 +480,7 @@ export function MenuPage() {
   }, [slug])
 
   const allDishes = useMemo(() => menu?.categories.flatMap((c) => c.dishes) || [], [menu])
+  allDishesRef.current = allDishes
 
   const categoriesWithCounts = useMemo(() => {
     if (!menu) return [{ name: 'All', count: 0 }]
@@ -476,6 +514,7 @@ export function MenuPage() {
   }
 
   const handleClearCart = async () => {
+    lastLocalEditTimestamp.current = Date.now()
     setCart({})
     if (slug && table) {
       await tableOrderService.clearSharedCart(slug, table)
@@ -483,6 +522,7 @@ export function MenuPage() {
   }
 
   const handleQty = async (dish: PublicMenuDish, qty: number, customization?: DishCustomization) => {
+    lastLocalEditTimestamp.current = Date.now()
     if (qty > 0 && isTableOccupiedByOther) {
       showToast(`⚠️ Table ${table} is occupied. Please select an available table.`)
       setIsTableOpen(true)

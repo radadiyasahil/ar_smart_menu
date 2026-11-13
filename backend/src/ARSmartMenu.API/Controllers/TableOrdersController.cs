@@ -35,11 +35,11 @@ public class TableOrdersController : ControllerBase
 
 
 
-    private static string GetChatKey(Guid businessId, string tableNumber)
+    private static string GetChatKey(Guid businessId, string? tableNumber)
 
     {
 
-        var clean = tableNumber.Trim().ToLowerInvariant().Replace("table", "").Trim();
+        var clean = (tableNumber ?? string.Empty).Trim().ToLowerInvariant().Replace("table", "").Trim();
 
         return $"{businessId}:{clean}";
 

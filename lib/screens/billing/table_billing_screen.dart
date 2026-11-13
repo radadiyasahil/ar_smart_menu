@@ -910,10 +910,11 @@ class _TableBillingScreenState extends State<TableBillingScreen>
           backgroundColor: const Color(0xFF1E202A),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.bolt, color: AppColors.primaryOrange, size: 22),
               SizedBox(width: 8),
-              Expanded(
+              Flexible(
                 child: Text(
                   'Add Unlisted / Custom Item',
                   style: TextStyle(
@@ -1876,234 +1877,289 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   }
 
   void _showSettleDialog(TableBill bill) {
-    String currentMode = bill.paymentMode.isNotEmpty ? bill.paymentMode : 'Cash';
-    if (currentMode.toUpperCase().contains('UPI') ||
-        currentMode.toUpperCase().contains('GPAY') ||
-        currentMode.toUpperCase().contains('PHONEPE')) {
-      currentMode = 'UPI';
-    } else if (currentMode.toUpperCase().contains('CASH')) {
-      currentMode = 'Cash';
-    } else if (currentMode.toUpperCase().contains('CARD')) {
-      currentMode = 'Card';
-    } else {
-      currentMode = 'Other';
-    }
+    try {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      String currentMode = bill.paymentMode.isNotEmpty ? bill.paymentMode : 'Cash';
+      if (currentMode.toUpperCase().contains('UPI') ||
+          currentMode.toUpperCase().contains('GPAY') ||
+          currentMode.toUpperCase().contains('PHONEPE')) {
+        currentMode = 'UPI';
+      } else if (currentMode.toUpperCase().contains('CASH')) {
+        currentMode = 'Cash';
+      } else if (currentMode.toUpperCase().contains('CARD')) {
+        currentMode = 'Card';
+      } else {
+        currentMode = 'Other';
+      }
 
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        String selectedMode = currentMode;
-        return StatefulBuilder(
-          builder: (dialogCtx, setDialogState) => AlertDialog(
-            backgroundColor: const Color(0xFF1E202A),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.receipt_long,
-                    color: Color(0xFF10B981),
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) {
+          String selectedMode = currentMode;
+          return StatefulBuilder(
+            builder: (dialogCtx, setDialogState) => Dialog(
+              backgroundColor: isDark ? const Color(0xFF1E202A) : Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 420),
+                padding: const EdgeInsets.all(20),
+                child: SingleChildScrollView(
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.receipt_long,
+                              color: Color(0xFF10B981),
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Settle ${_canonicalTableName(bill.tableNumber)}',
+                                  style: TextStyle(
+                                    color: isDark ? Colors.white : Colors.black87,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'Total Payable: ₹${bill.grandTotal}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF10B981),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            color: Colors.grey,
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
                       Text(
-                        'Settle ${_canonicalTableName(bill.tableNumber)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
+                        'Select Payment Method:',
+                        style: TextStyle(
+                          color: isDark ? Colors.white70 : Colors.black87,
+                          fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      Text(
-                        'Total Payable: ₹${bill.grandTotal}',
-                        style: const TextStyle(
-                          color: Color(0xFF10B981),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _dialogPaymentOption(
+                            label: '💵 Cash',
+                            isSelected: selectedMode == 'Cash',
+                            onTap: () {
+                              setDialogState(() => selectedMode = 'Cash');
+                              bill.paymentMode = 'Cash';
+                              setState(() {});
+                              _save();
+                            },
+                          ),
+                          _dialogPaymentOption(
+                            label: '📱 UPI / QR',
+                            isSelected: selectedMode == 'UPI',
+                            onTap: () {
+                              setDialogState(() => selectedMode = 'UPI');
+                              bill.paymentMode = 'UPI';
+                              setState(() {});
+                              _save();
+                            },
+                          ),
+                          _dialogPaymentOption(
+                            label: '💳 Card',
+                            isSelected: selectedMode == 'Card',
+                            onTap: () {
+                              setDialogState(() => selectedMode = 'Card');
+                              bill.paymentMode = 'Card';
+                              setState(() {});
+                              _save();
+                            },
+                          ),
+                          _dialogPaymentOption(
+                            label: '🔄 Other',
+                            isSelected: selectedMode == 'Other',
+                            onTap: () {
+                              setDialogState(() => selectedMode = 'Other');
+                              bill.paymentMode = 'Other';
+                              setState(() {});
+                              _save();
+                            },
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Select Payment Method:',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _dialogPaymentOption(
-                        label: '💵 Cash',
-                        isSelected: selectedMode == 'Cash',
-                        onTap: () {
-                          setDialogState(() => selectedMode = 'Cash');
-                          bill.paymentMode = 'Cash';
-                          setState(() {});
-                          _save();
-                        },
-                      ),
-                      _dialogPaymentOption(
-                        label: '📱 UPI / QR',
-                        isSelected: selectedMode == 'UPI',
-                        onTap: () {
-                          setDialogState(() => selectedMode = 'UPI');
-                          bill.paymentMode = 'UPI';
-                          setState(() {});
-                          _save();
-                        },
-                      ),
-                      _dialogPaymentOption(
-                        label: '💳 Card',
-                        isSelected: selectedMode == 'Card',
-                        onTap: () {
-                          setDialogState(() => selectedMode = 'Card');
-                          bill.paymentMode = 'Card';
-                          setState(() {});
-                          _save();
-                        },
-                      ),
-                      _dialogPaymentOption(
-                        label: '🔄 Other',
-                        isSelected: selectedMode == 'Other',
-                        onTap: () {
-                          setDialogState(() => selectedMode = 'Other');
-                          bill.paymentMode = 'Other';
-                          setState(() {});
-                          _save();
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white10),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.check_circle_outline,
-                              size: 14,
-                              color: Color(0xFF10B981),
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'Payment will be recorded as: $selectedMode',
-                                style: const TextStyle(
-                                  color: Color(0xFF10B981),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Closing the table will mark order as PAID and free this table for new guests.',
-                          style: TextStyle(color: Colors.grey, fontSize: 11),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (selectedMode == 'UPI') ...[
-                    const SizedBox(height: 12),
-                    Center(
-                      child: Container(
+                      const SizedBox(height: 14),
+
+                      Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: const [
-                            BoxShadow(color: Colors.black26, blurRadius: 6),
-                          ],
+                          color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade300),
                         ),
                         child: Column(
-                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            QrImageView(
-                              data: _generateDynamicUpiUri(bill),
-                              version: QrVersions.auto,
-                              size: 140,
-                              backgroundColor: Colors.white,
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.check_circle_outline,
+                                  size: 14,
+                                  color: Color(0xFF10B981),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Payment will be recorded as: $selectedMode',
+                                    style: const TextStyle(
+                                      color: Color(0xFF10B981),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              'Scan to Pay ₹${bill.grandTotal}',
-                              style: const TextStyle(
-                                color: Colors.black87,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            const Text(
+                              'Closing the table will mark order as PAID and free this table for new guests.',
+                              style: TextStyle(color: Colors.grey, fontSize: 11),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                  ],
-                ],
+
+                      if (selectedMode == 'UPI' && bill.grandTotal > 0) ...[
+                        const SizedBox(height: 12),
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: const [
+                                BoxShadow(color: Colors.black26, blurRadius: 6),
+                              ],
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 140,
+                                  height: 140,
+                                  child: QrImageView(
+                                    data: _generateDynamicUpiUri(bill),
+                                    version: QrVersions.auto,
+                                    size: 140,
+                                    backgroundColor: Colors.white,
+                                    errorStateBuilder: (cxt, err) => const Center(
+                                      child: Text(
+                                        'QR Error',
+                                        style: TextStyle(color: Colors.redAccent, fontSize: 11),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Scan to Pay ₹${bill.grandTotal}',
+                                  style: const TextStyle(
+                                    color: Colors.black87,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 20),
+
+                      // Actions
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.print, size: 14),
+                              label: const Text('Receipt', style: TextStyle(fontSize: 12)),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: () {
+                                bill.paymentMode = selectedMode;
+                                _printBill(bill);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 2,
+                            child: FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF10B981),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: const Icon(Icons.check, size: 16),
+                              label: Text(
+                                'Settle ($selectedMode)',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                              ),
+                              onPressed: () {
+                                bill.paymentMode = selectedMode;
+                                Navigator.pop(ctx);
+                                _archiveBill(bill);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-            actions: [
-              OutlinedButton.icon(
-                icon: const Icon(Icons.print, size: 14),
-                label: const Text('Print Receipt'),
-                onPressed: () {
-                  bill.paymentMode = selectedMode;
-                  _printBill(bill);
-                },
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Keep Active', style: TextStyle(color: Colors.grey)),
-              ),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
-                ),
-                icon: const Icon(Icons.check, size: 16),
-                label: Text('Settle & Close ($selectedMode)'),
-                onPressed: () {
-                  bill.paymentMode = selectedMode;
-                  Navigator.pop(ctx);
-                  _archiveBill(bill);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
+    } catch (e, st) {
+      debugPrint('Error showing settle dialog: $e\n$st');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open Settle dialog: ${e.toString().replaceFirst("Exception: ", "")}'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   Widget _dialogPaymentOption({
@@ -2993,78 +3049,91 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   }
 
   Future<void> _archiveBill(TableBill bill) async {
-    // Only accepted orders with items should be archived to history!
-
-    if (bill.items.isEmpty || bill.grandTotal <= 0) {
-      // Discard empty/unplaced session without polluting history
-
-      _deleteActiveTable(bill);
-
-      return;
-    }
-
-    final bId = context.read<BusinessProvider>().business?.id.toString() ?? '';
-
-    bill.paidAt ??= DateTime.now();
-
-    bill.isPaid = true;
-
-    await _billingService.archiveBill(bill, bId);
-
-    if (bId.isNotEmpty) {
-      await _billingService.closeTableSession(bId, bill.tableNumber);
-      final rawDigits = bill.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
-      if (rawDigits.isNotEmpty && rawDigits != bill.tableNumber) {
-        await _billingService.closeTableSession(bId, rawDigits);
-      }
-    }
-
-    setState(() {
-      _activeBills.removeWhere(
-        (b) => b.id == bill.id || _isSameTable(b.tableNumber, bill.tableNumber),
-      );
-
-      _historyBills.removeWhere((b) => b.id == bill.id);
-
-      _historyBills.insert(0, bill);
-
-      if (_selectedTableIndex >= _activeBills.length) {
-        _selectedTableIndex = _activeBills.isNotEmpty
-            ? _activeBills.length - 1
-            : 0;
+    try {
+      // Only accepted orders with items should be archived to history!
+      if (bill.items.isEmpty || bill.grandTotal <= 0) {
+        // Discard empty/unplaced session without polluting history
+        _deleteActiveTable(bill);
+        return;
       }
 
-      _billRequests.removeWhere(
-        (o) => _isSameTable(o.tableNumber, bill.tableNumber),
-      );
+      final bId = context.read<BusinessProvider>().business?.id.toString() ?? '';
 
-      _kitchenOrders.removeWhere(
-        (o) => _isSameTable(o.tableNumber, bill.tableNumber),
-      );
+      bill.paidAt ??= DateTime.now();
+      bill.isPaid = true;
 
-      _pendingOrders.removeWhere(
-        (o) => _isSameTable(o.tableNumber, bill.tableNumber),
-      );
+      await _billingService.archiveBill(bill, bId);
 
-      _syncPhone();
-    });
+      if (bId.isNotEmpty) {
+        try {
+          await _billingService.closeTableSession(bId, bill.tableNumber);
+          final rawDigits = bill.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
+          if (rawDigits.isNotEmpty && rawDigits != bill.tableNumber) {
+            await _billingService.closeTableSession(bId, rawDigits);
+          }
+        } catch (sessionErr) {
+          debugPrint('Notice: Error closing remote table session: $sessionErr');
+        }
+      }
 
-    await _save();
+      if (mounted) {
+        setState(() {
+          _activeBills.removeWhere(
+            (b) => b.id == bill.id || _isSameTable(b.tableNumber, bill.tableNumber),
+          );
 
-    await _loadPendingOrders();
-    await _loadBills();
+          _historyBills.removeWhere((b) => b.id == bill.id);
 
-    if (mounted) {
-      KitchenSoundAlert.playBillSettledTone();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${_canonicalTableName(bill.tableNumber)} completed! Saved to paid history.',
+          _historyBills.insert(0, bill);
+
+          if (_selectedTableIndex >= _activeBills.length) {
+            _selectedTableIndex = _activeBills.isNotEmpty
+                ? _activeBills.length - 1
+                : 0;
+          }
+
+          _billRequests.removeWhere(
+            (o) => _isSameTable(o.tableNumber, bill.tableNumber),
+          );
+
+          _kitchenOrders.removeWhere(
+            (o) => _isSameTable(o.tableNumber, bill.tableNumber),
+          );
+
+          _pendingOrders.removeWhere(
+            (o) => _isSameTable(o.tableNumber, bill.tableNumber),
+          );
+
+          _syncPhone();
+        });
+      }
+
+      await _save();
+
+      await _loadPendingOrders();
+      await _loadBills();
+
+      if (mounted) {
+        KitchenSoundAlert.playBillSettledTone();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${_canonicalTableName(bill.tableNumber)} completed! Saved to paid history.',
+            ),
+            backgroundColor: const Color(0xFF10B981),
           ),
-
-          backgroundColor: const Color(0xFF10B981),
-        ),
-      );
+        );
+      }
+    } catch (e, st) {
+      debugPrint('Error archiving bill: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to complete settlement: ${e.toString().replaceFirst("Exception: ", "")}'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -6506,6 +6575,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
         titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
         contentPadding: const EdgeInsets.symmetric(horizontal: 20),
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               padding: const EdgeInsets.all(8),
@@ -6520,7 +6590,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
               ),
             ),
             const SizedBox(width: 12),
-            Expanded(
+            Flexible(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

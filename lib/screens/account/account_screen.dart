@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -2369,6 +2370,9 @@ class _AccountScreenState extends State<AccountScreen> {
     final latController = TextEditingController(text: business.latitude?.toString() ?? '');
     final lngController = TextEditingController(text: business.longitude?.toString() ?? '');
     bool isSaving = false;
+    bool isLocating = false;
+    String? locationStatusMessage;
+    double? lastAccuracy;
 
     showModalBottomSheet(
       context: context,
@@ -2379,6 +2383,125 @@ class _AccountScreenState extends State<AccountScreen> {
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
+          final lat = double.tryParse(latController.text.trim());
+          final lng = double.tryParse(lngController.text.trim());
+          final bool hasValidCoords = lat != null && lng != null;
+
+          // Determine whether saving is allowed and what button text to show
+          final bool canSave;
+          final String buttonText;
+
+          if (!requireGeofence) {
+            // Switch is OFF
+            if (business.requireGeofence) {
+              // Was active before -> owner wants to turn it off
+              canSave = true;
+              buttonText = 'Turn Off Geofencing';
+            } else {
+              // Already off -> cannot save when disabled
+              canSave = false;
+              buttonText = 'Geofencing Is Disabled';
+            }
+          } else {
+            // Switch is ON -> coordinates are required
+            if (hasValidCoords) {
+              canSave = true;
+              buttonText = 'Save Geofence Settings';
+            } else {
+              canSave = false;
+              buttonText = 'Detect Location to Save';
+            }
+          }
+
+          Future<void> detectLocation() async {
+            setModalState(() {
+              isLocating = true;
+              locationStatusMessage = null;
+            });
+
+            try {
+              bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+              if (!serviceEnabled) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('⚠️ Location services (GPS) are turned off. Please turn on GPS in your device settings.'),
+                      backgroundColor: Colors.amber,
+                    ),
+                  );
+                }
+                setModalState(() => isLocating = false);
+                return;
+              }
+
+              LocationPermission permission = await Geolocator.checkPermission();
+              if (permission == LocationPermission.denied) {
+                permission = await Geolocator.requestPermission();
+                if (permission == LocationPermission.denied) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('⚠️ Location permission denied. Please allow location access to capture your restaurant GPS.'),
+                        backgroundColor: Colors.amber,
+                      ),
+                    );
+                  }
+                  setModalState(() => isLocating = false);
+                  return;
+                }
+              }
+
+              if (permission == LocationPermission.deniedForever) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('⚠️ Location permissions are permanently denied. Please allow location in your device/browser settings.'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                }
+                setModalState(() => isLocating = false);
+                return;
+              }
+
+              final position = await Geolocator.getCurrentPosition(
+                locationSettings: const LocationSettings(
+                  accuracy: LocationAccuracy.high,
+                  timeLimit: Duration(seconds: 15),
+                ),
+              );
+
+              latController.text = position.latitude.toStringAsFixed(6);
+              lngController.text = position.longitude.toStringAsFixed(6);
+              lastAccuracy = position.accuracy;
+              locationStatusMessage =
+                  'Location captured: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)} (±${position.accuracy.round()}m)';
+
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '📍 Restaurant GPS captured: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)} (±${position.accuracy.round()}m). Ensure your device is inside your restaurant premises!',
+                    ),
+                    backgroundColor: Colors.green.shade700,
+                    duration: const Duration(seconds: 5),
+                  ),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to get GPS location: ${e.toString().replaceFirst("Exception: ", "")}'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+              }
+            } finally {
+              setModalState(() => isLocating = false);
+            }
+          }
+
           return Padding(
             padding: EdgeInsets.only(
               left: 20,
@@ -2471,6 +2594,35 @@ class _AccountScreenState extends State<AccountScreen> {
                   ),
 
                   if (requireGeofence) ...[
+                    const SizedBox(height: 14),
+
+                    // Important Notice for Owner
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.withValues(alpha: 0.25)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Important: Capture location while physically inside your restaurant. Diners will only be allowed to order when their phone is inside your restaurant boundary.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: isDark ? Colors.blue.shade200 : Colors.blue.shade900,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2526,26 +2678,92 @@ class _AccountScreenState extends State<AccountScreen> {
                       }).toList(),
                     ),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     const Text(
                       'Restaurant GPS Location',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Set from Google Maps coordinates (e.g. 19.0760, 72.8777)',
+                      'Tap the button below to auto-detect coordinates from your phone GPS while standing inside the restaurant:',
                       style: TextStyle(fontSize: 11, color: isDark ? Colors.white54 : Colors.grey.shade600),
                     ),
                     const SizedBox(height: 10),
+
+                    // 1-Tap GPS Auto-Detect Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.primaryOrange, width: 1.5),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          backgroundColor: AppColors.primaryOrange.withValues(alpha: 0.08),
+                        ),
+                        onPressed: isLocating ? null : detectLocation,
+                        icon: isLocating
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryOrange),
+                              )
+                            : const Icon(Icons.my_location, color: AppColors.primaryOrange, size: 20),
+                        label: Text(
+                          isLocating
+                              ? 'Accessing GPS Location...'
+                              : (latController.text.isNotEmpty && lngController.text.isNotEmpty
+                                  ? 'Update Location via Current GPS'
+                                  : 'Detect Restaurant Location (GPS)'),
+                          style: const TextStyle(color: AppColors.primaryOrange, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ),
+                    ),
+
+                    if (latController.text.isNotEmpty && lngController.text.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                locationStatusMessage ??
+                                    'GPS Location: ${latController.text}, ${lngController.text}${lastAccuracy != null ? " (±${lastAccuracy!.round()}m)" : ""}',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.green.shade300 : Colors.green.shade800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 14),
+                    Text(
+                      'Manual Coordinates (Auto-filled by GPS):',
+                      style: TextStyle(fontSize: 11, color: isDark ? Colors.white38 : Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 6),
                     Row(
                       children: [
                         Expanded(
                           child: TextField(
                             controller: latController,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                            onChanged: (_) => setModalState(() {}),
                             decoration: InputDecoration(
                               labelText: 'Latitude',
-                              hintText: '19.0760',
+                              hintText: 'e.g. 19.0760',
                               isDense: true,
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                             ),
@@ -2556,9 +2774,10 @@ class _AccountScreenState extends State<AccountScreen> {
                           child: TextField(
                             controller: lngController,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                            onChanged: (_) => setModalState(() {}),
                             decoration: InputDecoration(
                               labelText: 'Longitude',
-                              hintText: '72.8777',
+                              hintText: 'e.g. 72.8777',
                               isDense: true,
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                             ),
@@ -2574,38 +2793,35 @@ class _AccountScreenState extends State<AccountScreen> {
                     height: 44,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryOrange,
+                        backgroundColor: canSave ? AppColors.primaryOrange : (isDark ? Colors.white10 : Colors.grey.shade300),
+                        foregroundColor: canSave ? Colors.white : (isDark ? Colors.white38 : Colors.grey.shade600),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: canSave ? 2 : 0,
                       ),
-                      onPressed: isSaving
+                      onPressed: (!canSave || isSaving)
                           ? null
                           : () async {
-                              final lat = double.tryParse(latController.text.trim());
-                              final lng = double.tryParse(lngController.text.trim());
-
                               final scaffoldMessenger = ScaffoldMessenger.of(context);
                               final navigator = Navigator.of(ctx);
-
-                              if (requireGeofence && (lat == null || lng == null)) {
-                                scaffoldMessenger.showSnackBar(
-                                  const SnackBar(content: Text('Please enter valid Latitude and Longitude coordinates')),
-                                );
-                                return;
-                              }
 
                               setModalState(() => isSaving = true);
                               try {
                                 final bp = Provider.of<BusinessProvider>(context, listen: false);
                                 await bp.updateGeofenceSettings(
-                                  latitude: lat,
-                                  longitude: lng,
+                                  latitude: requireGeofence ? lat : null,
+                                  longitude: requireGeofence ? lng : null,
                                   geofenceRadiusMeters: radius,
                                   requireGeofence: requireGeofence,
                                 );
                                 if (mounted) {
                                   navigator.pop();
                                   scaffoldMessenger.showSnackBar(
-                                    const SnackBar(content: Text('Geofence settings updated successfully!')),
+                                    SnackBar(
+                                      content: Text(requireGeofence
+                                          ? 'Geofence settings updated successfully!'
+                                          : 'Geofencing turned off. Diners can order without GPS restriction.'),
+                                      backgroundColor: requireGeofence ? Colors.green.shade700 : Colors.grey.shade800,
+                                    ),
                                   );
                                 }
                               } catch (e) {
@@ -2624,7 +2840,7 @@ class _AccountScreenState extends State<AccountScreen> {
                               height: 20,
                               child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                             )
-                          : const Text('Save Geofence Settings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          : Text(buttonText, style: const TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   ),
                 ],

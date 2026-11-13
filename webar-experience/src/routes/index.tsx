@@ -5,11 +5,13 @@ import { UnsupportedPage } from '@/pages/fallback/UnsupportedPage'
 import { HomePage } from '@/pages/landing/HomePage'
 import { ArViewerPage } from '@/pages/viewer/ArViewerPage'
 import { MenuPage } from '@/pages/menu/MenuPage'
+import { RouteErrorBoundary } from '@/components/ui/RouteErrorBoundary'
 
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <Navigate to="/home" replace />,
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/home',
@@ -18,6 +20,7 @@ export const router = createBrowserRouter([
         <HomePage />
       </ViewerLayout>
     ),
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/menu/:slug',
@@ -26,6 +29,7 @@ export const router = createBrowserRouter([
         <MenuPage />
       </ViewerLayout>
     ),
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/dish/:slug',
@@ -34,6 +38,7 @@ export const router = createBrowserRouter([
         <ArViewerPage />
       </ViewerLayout>
     ),
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/dish',
@@ -46,5 +51,6 @@ export const router = createBrowserRouter([
         <UnsupportedPage />
       </ViewerLayout>
     ),
+    errorElement: <RouteErrorBoundary />,
   },
 ])

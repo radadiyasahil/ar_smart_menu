@@ -16,6 +16,7 @@ import {
   ExternalLink,
   ChefHat,
   Lock,
+  Users,
 } from 'lucide-react'
 import type { PublicMenuDish } from '@/services/productService'
 import type { CartItem } from '@/types/cart'
@@ -523,6 +524,10 @@ export function CartDrawer({
   isTableOccupied = false,
   occupiedMessage,
   isTableLocked = false,
+  myClientId,
+  dinerNickname,
+  onNicknameChange,
+  lastSharedBy,
 }: {
   isTableOccupied?: boolean
   occupiedMessage?: string
@@ -544,6 +549,10 @@ export function CartDrawer({
   canRequestBill?: boolean
   isTableValid?: boolean
   isTableLocked?: boolean
+  myClientId?: string
+  dinerNickname?: string
+  onNicknameChange?: (name: string) => void
+  lastSharedBy?: string
 }) {
   const [instructions, setInstructions] = useState('')
   const [waiterSent, setWaiterSent] = useState(false)
@@ -734,6 +743,15 @@ export function CartDrawer({
               <Edit3 size={10} />
             </button>
           )}
+          {tableNumber && (
+            <div
+              className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-full"
+              title="Real-time synchronized across all diners at this table"
+            >
+              <Users size={10} />
+              <span>Table Cart</span>
+            </div>
+          )}
           {currentRound > 1 && (
             <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/30 px-2 py-0.5 rounded-full">
               Round {currentRound}
@@ -810,6 +828,32 @@ export function CartDrawer({
           >
             Change Table
           </button>
+        </div>
+      )}
+
+      {tableNumber && (
+        <div className="mb-3 px-3 py-2 bg-gradient-to-r from-emerald-500/10 via-[#27272A] to-transparent border border-emerald-500/20 rounded-xl flex items-center justify-between text-xs text-gray-300">
+          <div className="flex items-center gap-1.5">
+            <Users size={13} className="text-emerald-400 shrink-0" />
+            <span className="text-gray-400">Ordering as:</span>
+            <button
+              type="button"
+              onClick={() => {
+                const name = window.prompt('Enter your name for the table cart:', dinerNickname || 'Guest')
+                if (name && name.trim()) onNicknameChange?.(name.trim())
+              }}
+              className="font-bold text-white hover:text-[#FF6A3D] underline cursor-pointer inline-flex items-center gap-1"
+              title="Click to edit your display name"
+            >
+              <span>{dinerNickname || 'Guest'}</span>
+              <Edit3 size={10} className="text-emerald-400" />
+            </button>
+          </div>
+          {lastSharedBy && (
+            <span className="text-[10px] text-gray-400 truncate max-w-[140px]">
+              Last edit: {lastSharedBy}
+            </span>
+          )}
         </div>
       )}
       {items.length === 0 ? (
@@ -893,11 +937,20 @@ export function CartDrawer({
               <div key={itemKey} className="bg-[#1F1F23] border border-[#2E2E34] rounded-xl p-3 flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className={`w-3 h-3 border rounded-[2px] inline-flex items-center justify-center ${isVeg ? 'border-[#20BF6B]' : 'border-[#EF4444]'}`}>
+                    <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                      <span className={`w-3 h-3 border rounded-[2px] inline-flex items-center justify-center shrink-0 ${isVeg ? 'border-[#20BF6B]' : 'border-[#EF4444]'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${isVeg ? 'bg-[#20BF6B]' : 'bg-[#EF4444]'}`} />
                       </span>
                       <span className="text-sm font-semibold text-white truncate">{dish.name}</span>
+                      {item.addedBy && (
+                        <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded-full ${
+                          item.clientId === myClientId
+                            ? 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
+                            : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                        }`}>
+                          {item.clientId === myClientId ? 'Added by You' : `Added by ${item.addedBy}`}
+                        </span>
+                      )}
                     </div>
                     <span className="text-xs text-gray-400">₹{unitPrice} each</span>
                   </div>

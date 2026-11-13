@@ -19,6 +19,32 @@ export interface CartItem {
   quantity: number
   customization?: DishCustomization
   unitPrice?: number
+  addedBy?: string
+  clientId?: string
+}
+
+export interface SharedCartItem {
+  id: string
+  dishId: string
+  name: string
+  unitPrice: number
+  quantity: number
+  imageUrl?: string
+  modifiers?: string[]
+  notes?: string
+  clientId?: string
+  addedBy?: string
+  updatedAt?: string
+}
+
+export interface SharedCartResponse {
+  tableNumber: string
+  items: SharedCartItem[]
+  totalItems: number
+  totalAmount: number
+  lastUpdatedBy?: string
+  lastClientId?: string
+  updatedAt?: string
 }
 
 export interface CartOrder {

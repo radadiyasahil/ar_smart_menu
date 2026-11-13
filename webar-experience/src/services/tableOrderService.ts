@@ -1,4 +1,5 @@
 import { apiClient, type ApiEnvelope } from './apiClient'
+import type { SharedCartItem, SharedCartResponse } from '@/types/cart'
 
 export interface LiveTableOrderItem {
   id: string
@@ -56,6 +57,7 @@ export interface FetchTableOrdersResult {
   orders: LiveTableOrder[]
   isOccupiedByOther: boolean
   occupiedMessage?: string
+  sharedCart?: SharedCartResponse | null
 }
 
 const getStorageKey = (tableNumber?: string) =>
@@ -175,9 +177,12 @@ export const tableOrderService = {
         params.set('sessionToken', token)
       }
       const queryParam = params.toString() ? `?${params.toString()}` : ''
-      const res = await apiClient.get<ApiEnvelope<LiveTableOrder[]>>(
-        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}${queryParam}`,
-      )
+      const [res, sharedCart] = await Promise.all([
+        apiClient.get<ApiEnvelope<LiveTableOrder[]>>(
+          `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}${queryParam}`,
+        ),
+        this.getSharedCart(slug, tableNumber),
+      ])
       if (res.data?.success && Array.isArray(res.data.data)) {
         for (const o of res.data.data) {
           if (o.id) {
@@ -187,6 +192,7 @@ export const tableOrderService = {
         return {
           orders: res.data.data,
           isOccupiedByOther: false,
+          sharedCart,
         }
       }
       if (res.data?.code === 'TABLE_OCCUPIED' || res.data?.error?.includes('occupied') || res.data?.message?.includes('occupied')) {
@@ -194,9 +200,10 @@ export const tableOrderService = {
           orders: [],
           isOccupiedByOther: true,
           occupiedMessage: res.data.message || `Table ${tableNumber} is currently occupied by another customer.`,
+          sharedCart,
         }
       }
-      return { orders: [], isOccupiedByOther: false }
+      return { orders: [], isOccupiedByOther: false, sharedCart }
     } catch (err: any) {
       if (err?.response?.data?.code === 'TABLE_OCCUPIED' || err?.response?.data?.message?.includes('occupied')) {
         return {
@@ -308,6 +315,72 @@ export const tableOrderService = {
     } catch {
       // Graceful fallback to callWaiter notification
       return await this.callWaiter(slug, tableNumber, `💰 Paid ₹${amount} via UPI`)
+    }
+  },
+
+  // --- Phase 2.4: Multiplayer Collaborative Cart Helpers ---
+  getDinerClientId(): string {
+    let id = sessionStorage.getItem('ar_diner_client_id')
+    if (!id) {
+      id = 'diner_' + Math.random().toString(36).substring(2, 10)
+      sessionStorage.setItem('ar_diner_client_id', id)
+    }
+    return id
+  },
+
+  getDinerNickname(): string {
+    return sessionStorage.getItem('ar_diner_nickname') || 'Guest'
+  },
+
+  setDinerNickname(name: string): void {
+    if (name && name.trim()) {
+      sessionStorage.setItem('ar_diner_nickname', name.trim())
+    }
+  },
+
+  async getSharedCart(slug: string, tableNumber: string): Promise<SharedCartResponse | null> {
+    if (!slug || !tableNumber) return null
+    try {
+      const res = await apiClient.get<ApiEnvelope<SharedCartResponse>>(
+        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/shared-cart`,
+      )
+      return res.data?.success && res.data.data ? res.data.data : null
+    } catch (e) {
+      console.warn('Could not fetch shared cart:', e)
+      return null
+    }
+  },
+
+  async updateSharedCart(
+    slug: string,
+    tableNumber: string,
+    items: SharedCartItem[],
+    clientId: string,
+    clientName: string,
+  ): Promise<SharedCartResponse | null> {
+    if (!slug || !tableNumber) return null
+    try {
+      const res = await apiClient.post<ApiEnvelope<SharedCartResponse>>(
+        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/shared-cart`,
+        { clientId, clientName, items },
+      )
+      return res.data?.success && res.data.data ? res.data.data : null
+    } catch (e) {
+      console.warn('Could not update shared cart:', e)
+      return null
+    }
+  },
+
+  async clearSharedCart(slug: string, tableNumber: string): Promise<boolean> {
+    if (!slug || !tableNumber) return false
+    try {
+      const res = await apiClient.delete<ApiEnvelope<boolean>>(
+        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/shared-cart`,
+      )
+      return !!res.data?.success
+    } catch (e) {
+      console.warn('Could not clear shared cart:', e)
+      return false
     }
   },
 }

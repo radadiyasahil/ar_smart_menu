@@ -17,13 +17,14 @@ import {
   XCircle,
   AlertTriangle,
   Lock,
+  Users,
 } from 'lucide-react'
 import {
   productService,
   type PublicMenuResponse,
   type PublicMenuDish,
 } from '@/services/productService'
-import type { CartItem, DishCustomization } from '@/types/cart'
+import type { CartItem, DishCustomization, SharedCartItem } from '@/types/cart'
 import { DishCard } from './components/DishCard'
 import { DishCustomizationModal } from './components/DishCustomizationModal'
 import { Interactive3dModal } from './components/Interactive3dModal'
@@ -98,6 +99,14 @@ export function MenuPage() {
   const knownOrderStatuses = useRef<Map<string, string>>(new Map())
   const isFirstOrderPoll = useRef(true)
 
+  // Phase 2.4: Multiplayer Collaborative Table Cart State
+  const myClientId = useRef(tableOrderService.getDinerClientId()).current
+  const [dinerNickname, setDinerNickname] = useState<string>(() => tableOrderService.getDinerNickname())
+  const [lastSharedBy, setLastSharedBy] = useState<string | undefined>(undefined)
+  const isAdoptingRemoteCart = useRef(false)
+  const lastSyncCartVersion = useRef<string>('')
+  const pushCartTimer = useRef<number | null>(null)
+
   const fetchOrders = async (silent = false) => {
     if (!slug) return
     if (!silent) setIsRefreshingOrders(true)
@@ -110,6 +119,56 @@ export function MenuPage() {
         setOccupiedMessage('')
       }
       const orders = res.orders
+
+      // Phase 2.4: Synchronize multiplayer table cart across diners
+      if (res.sharedCart && table) {
+        const sc = res.sharedCart
+        const remoteVersion = `${sc.updatedAt}_${sc.items.length}_${sc.lastClientId}`
+        if (remoteVersion !== lastSyncCartVersion.current) {
+          lastSyncCartVersion.current = remoteVersion
+          setLastSharedBy(sc.lastUpdatedBy)
+
+          if (sc.lastClientId && sc.lastClientId !== myClientId) {
+            const remoteCartMap: Record<string, CartItem> = {}
+            for (const item of sc.items) {
+              const dish = allDishes.find(
+                (d) => d.id === item.dishId || d.name.toLowerCase() === item.name.toLowerCase(),
+              )
+              if (dish) {
+                remoteCartMap[dish.id] = {
+                  id: item.id,
+                  dish,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  addedBy: item.addedBy || 'Companion',
+                  clientId: item.clientId,
+                  customization: item.notes || item.modifiers ? { notes: item.notes } : undefined,
+                }
+              }
+            }
+
+            setCart((currentLocalCart) => {
+              const currentKeys = Object.keys(currentLocalCart)
+              const remoteKeys = Object.keys(remoteCartMap)
+              const isDifferent =
+                currentKeys.length !== remoteKeys.length ||
+                remoteKeys.some(
+                  (k) => !currentLocalCart[k] || currentLocalCart[k].quantity !== remoteCartMap[k].quantity,
+                )
+              if (isDifferent) {
+                isAdoptingRemoteCart.current = true
+                setTimeout(() => {
+                  isAdoptingRemoteCart.current = false
+                }, 800)
+                showToast(`👥 Table cart updated by ${sc.lastUpdatedBy || 'Companion'}`)
+                return remoteCartMap
+              }
+              return currentLocalCart
+            })
+          }
+        }
+      }
+
       if (orders.length === 0) {
         setIsDeclinedBannerDismissed(false)
         sessionStorage.removeItem('ar_declined_dismissed')
@@ -322,6 +381,47 @@ export function MenuPage() {
     return list
   }, [allDishes, menu, selectedCategory, dietary, popularOnly, arOnly, searchQuery])
 
+  const syncSharedCart = (cartMap: Record<string, CartItem>) => {
+    if (isAdoptingRemoteCart.current || !slug || !table || isTableOccupiedByOther) return
+    if (pushCartTimer.current) clearTimeout(pushCartTimer.current)
+    pushCartTimer.current = window.setTimeout(async () => {
+      const items: SharedCartItem[] = Object.values(cartMap).map((i) => {
+        const mods: string[] = []
+        if (i.customization?.spiceLevel) mods.push(`${i.customization.spiceLevel} Spicy`)
+        if (i.customization?.dietary && i.customization.dietary !== 'Regular') mods.push(i.customization.dietary)
+        if (i.customization?.selectedAddons) {
+          for (const a of i.customization.selectedAddons) mods.push(`${a.name} (+₹${a.price})`)
+        }
+        return {
+          id: i.id || i.dish.id,
+          dishId: i.dish.id,
+          name: i.dish.name,
+          unitPrice: i.unitPrice ?? (i.dish.pricePaise ? Math.round(i.dish.pricePaise / 100) : 0),
+          quantity: i.quantity,
+          imageUrl: i.dish.thumbnailUrl || (i.dish.photoUrls && i.dish.photoUrls[0]),
+          modifiers: mods.length > 0 ? mods : undefined,
+          notes: i.customization?.notes,
+          clientId: i.clientId || myClientId,
+          addedBy: i.addedBy || dinerNickname,
+        }
+      })
+      await tableOrderService.updateSharedCart(slug, table, items, myClientId, dinerNickname)
+    }, 300)
+  }
+
+  const handleNicknameChange = (newName: string) => {
+    tableOrderService.setDinerNickname(newName)
+    setDinerNickname(newName)
+    showToast(`👤 Name updated to ${newName}`)
+  }
+
+  const handleClearCart = async () => {
+    setCart({})
+    if (slug && table) {
+      await tableOrderService.clearSharedCart(slug, table)
+    }
+  }
+
   const handleQty = (dish: PublicMenuDish, qty: number, customization?: DishCustomization) => {
     if (qty > 0 && isTableOccupiedByOther) {
       showToast(`⚠️ Table ${table} is occupied. Please select an available table.`)
@@ -344,8 +444,11 @@ export function MenuPage() {
           quantity: qty,
           customization: customization ?? existing?.customization,
           unitPrice: customization ? itemUnitPrice : (existing?.unitPrice ?? itemUnitPrice),
+          addedBy: dinerNickname,
+          clientId: myClientId,
         }
       }
+      syncSharedCart(next)
       return next
     })
   }
@@ -870,8 +973,17 @@ export function MenuPage() {
                 </span>
               </div>
               <div>
-                <p className="text-[11px] text-gray-400 uppercase font-bold tracking-wide">
-                  {table ? `Table ${table} • ${cartCount} items in cart` : `${cartCount} items in cart`}
+                <p className="text-[11px] text-gray-400 uppercase font-bold tracking-wide flex items-center gap-1.5">
+                  {table ? (
+                    <>
+                      <span className="inline-flex items-center gap-1 text-emerald-400 font-bold">
+                        <Users size={12} /> Table {table} Cart
+                      </span>
+                      <span>• {cartCount} items</span>
+                    </>
+                  ) : (
+                    `${cartCount} items in cart`
+                  )}
                 </p>
                 <p className="text-lg font-black text-white">₹{cartTotal.toLocaleString('en-IN')}</p>
               </div>
@@ -991,11 +1103,16 @@ export function MenuPage() {
         nextRound={nextRoundNumber}
         allCancelled={allOrdersCancelled}
         canRequestBill={hasAcceptedOrCompleted}
+        myClientId={myClientId}
+        dinerNickname={dinerNickname}
+        onNicknameChange={handleNicknameChange}
+        lastSharedBy={lastSharedBy}
         onOpenOrderStatus={() => setIsOrderStatusOpen(true)}
         onOrderPlaced={(order) => {
           soundAlerts.playOrderPlaced()
           setIsDeclinedBannerDismissed(false)
           sessionStorage.removeItem('ar_declined_dismissed')
+          setCart({})
           setActiveOrders((prev) => {
             const exists = prev.some((o) => o.id === order.id)
             return exists ? prev.map((o) => (o.id === order.id ? order : o)) : [...prev, order]
@@ -1006,10 +1123,7 @@ export function MenuPage() {
         }}
         onClose={() => setIsCartOpen(false)}
         onQuantityChange={handleQty}
-        onClearCart={() => {
-          setCart({})
-          showToast('Cart cleared')
-        }}
+        onClearCart={handleClearCart}
         onChangeTable={() => {
           if (isTableLocked) {
             showToast(`🔒 Table is locked to Table ${table} for your active dining session.`)

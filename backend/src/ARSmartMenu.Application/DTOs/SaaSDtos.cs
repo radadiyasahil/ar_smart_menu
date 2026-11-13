@@ -22,8 +22,7 @@ public record UpdateBusinessRequest(
     string? GstNumber = null,
     string? UpiId = null,
     string? WifiName = null,
-    string? WifiPassword = null,
-    string? UpiId = null);
+    string? WifiPassword = null);
 
 public record BusinessDto(
     Guid Id,
@@ -44,8 +43,7 @@ public record BusinessDto(
     DateTime? ApprovedAt,
     DateTime CreatedAt,
     string? WifiName = null,
-    string? WifiPassword = null,
-    string? UpiId = null);
+    string? WifiPassword = null);
 
 public record VerifyBankRequest(string BankAccountNumber, string BankIfsc);
 

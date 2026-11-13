@@ -31,6 +31,7 @@ public class TableOrdersController : ControllerBase
     private static readonly ConcurrentDictionary<string, List<TableChatMessageDto>> _tableChatStore = new();
     private static readonly ConcurrentDictionary<string, TableWaiterCallDto> _waiterCallsStore = new();
     private static readonly ConcurrentDictionary<string, string> _activeTableSessionTokens = new();
+    private static readonly ConcurrentDictionary<string, SharedCartState> _tableSharedCartStore = new(StringComparer.OrdinalIgnoreCase);
 
 
 
@@ -269,7 +270,10 @@ public class TableOrdersController : ControllerBase
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
+        _tableSharedCartStore.TryRemove(chatKey, out _);
+
         TableSyncManager.Broadcast(business.Id, order.TableNumber, "order_placed", new { orderId = order.Id, round = order.Round, table = order.TableNumber });
+        TableSyncManager.Broadcast(business.Id, order.TableNumber, "shared_cart_cleared", new { table = order.TableNumber });
         return Ok(ApiResponse<TableOrderResponse>.Ok(ToResponse(order), "Order submitted to kitchen"));
         }
         catch
@@ -280,7 +284,142 @@ public class TableOrdersController : ControllerBase
 
     }
 
+    /// <summary>
+    /// Phase 2.4: Multiplayer Collaborative Cart - Get current shared table cart.
+    /// </summary>
+    [HttpGet("api/public/orders/{slug}/table/{tableNumber}/shared-cart")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<SharedCartResponse>>> GetSharedCart(
+        string slug,
+        string tableNumber,
+        CancellationToken ct = default)
+    {
+        var cleanSlug = slug.Trim().ToLowerInvariant();
+        var qr = await _db.QrCodes.AsNoTracking().Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
+        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
+        if (businessId == Guid.Empty)
+        {
+            var b = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
+            if (b != null) businessId = b.Id;
+        }
 
+        if (businessId == Guid.Empty)
+        {
+            return NotFound(ApiResponse<SharedCartResponse>.Fail("Restaurant not found"));
+        }
+
+        var key = GetChatKey(businessId, tableNumber);
+        var state = _tableSharedCartStore.TryGetValue(key, out var s) ? s : new SharedCartState();
+
+        var response = new SharedCartResponse
+        {
+            TableNumber = tableNumber,
+            Items = state.Items,
+            TotalItems = state.Items.Sum(i => i.Quantity),
+            TotalAmount = state.Items.Sum(i => i.UnitPrice * i.Quantity),
+            LastUpdatedBy = state.LastUpdatedBy,
+            LastClientId = state.LastClientId,
+            UpdatedAt = state.UpdatedAt,
+        };
+
+        return Ok(ApiResponse<SharedCartResponse>.Ok(response));
+    }
+
+    /// <summary>
+    /// Phase 2.4: Multiplayer Collaborative Cart - Update table cart from any diner phone.
+    /// </summary>
+    [HttpPost("api/public/orders/{slug}/table/{tableNumber}/shared-cart")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<SharedCartResponse>>> UpdateSharedCart(
+        string slug,
+        string tableNumber,
+        [FromBody] UpdateSharedCartRequest request,
+        CancellationToken ct = default)
+    {
+        var cleanSlug = slug.Trim().ToLowerInvariant();
+        var qr = await _db.QrCodes.AsNoTracking().Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
+        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
+        if (businessId == Guid.Empty)
+        {
+            var b = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
+            if (b != null) businessId = b.Id;
+        }
+
+        if (businessId == Guid.Empty)
+        {
+            return NotFound(ApiResponse<SharedCartResponse>.Fail("Restaurant not found"));
+        }
+
+        var key = GetChatKey(businessId, tableNumber);
+        var updatedItems = request.Items ?? new List<SharedCartItemDto>();
+        var newState = new SharedCartState
+        {
+            Items = updatedItems,
+            LastUpdatedBy = string.IsNullOrWhiteSpace(request.ClientName) ? "Guest" : request.ClientName.Trim(),
+            LastClientId = request.ClientId,
+            UpdatedAt = DateTime.UtcNow,
+        };
+
+        _tableSharedCartStore[key] = newState;
+
+        var totalItems = updatedItems.Sum(i => i.Quantity);
+        var totalAmount = updatedItems.Sum(i => i.UnitPrice * i.Quantity);
+
+        // Real-time broadcast to all diner phones listening on this table
+        TableSyncManager.Broadcast(businessId, tableNumber, "shared_cart_updated", new
+        {
+            table = tableNumber,
+            totalItems,
+            totalAmount,
+            updatedBy = newState.LastUpdatedBy,
+            clientId = newState.LastClientId,
+        });
+
+        var response = new SharedCartResponse
+        {
+            TableNumber = tableNumber,
+            Items = newState.Items,
+            TotalItems = totalItems,
+            TotalAmount = totalAmount,
+            LastUpdatedBy = newState.LastUpdatedBy,
+            LastClientId = newState.LastClientId,
+            UpdatedAt = newState.UpdatedAt,
+        };
+
+        return Ok(ApiResponse<SharedCartResponse>.Ok(response, "Table cart synchronized"));
+    }
+
+    /// <summary>
+    /// Phase 2.4: Multiplayer Collaborative Cart - Clear table cart.
+    /// </summary>
+    [HttpDelete("api/public/orders/{slug}/table/{tableNumber}/shared-cart")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<bool>>> ClearSharedCart(
+        string slug,
+        string tableNumber,
+        CancellationToken ct = default)
+    {
+        var cleanSlug = slug.Trim().ToLowerInvariant();
+        var qr = await _db.QrCodes.AsNoTracking().Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
+        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
+        if (businessId == Guid.Empty)
+        {
+            var b = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
+            if (b != null) businessId = b.Id;
+        }
+
+        if (businessId == Guid.Empty)
+        {
+            return NotFound(ApiResponse<bool>.Fail("Restaurant not found"));
+        }
+
+        var key = GetChatKey(businessId, tableNumber);
+        _tableSharedCartStore.TryRemove(key, out _);
+
+        TableSyncManager.Broadcast(businessId, tableNumber, "shared_cart_cleared", new { table = tableNumber });
+
+        return Ok(ApiResponse<bool>.Ok(true, "Table cart cleared"));
+    }
 
     /// <summary>Public live order status for diner tracking on their table.</summary>
 
@@ -1673,6 +1812,7 @@ public class TableOrdersController : ControllerBase
         var orders = await activeOrdersQuery.OrderBy(o => o.CreatedAt).ToListAsync(ct);
         var chatKey = GetChatKey(businessId, cleanTable);
         var chatMessages = _tableChatStore.TryGetValue(chatKey, out var msgs) ? msgs.ToList() : new List<TableChatMessageDto>();
+        var sharedCart = _tableSharedCartStore.TryGetValue(chatKey, out var sc) ? sc : null;
 
         return Ok(ApiResponse<object>.Ok(new
         {
@@ -1680,6 +1820,16 @@ public class TableOrdersController : ControllerBase
             eventType = syncEvent?.EventType ?? "sync",
             orders = orders.Select(ToResponse).ToList(),
             chat = chatMessages,
+            sharedCart = sharedCart != null ? new
+            {
+                tableNumber,
+                items = sharedCart.Items,
+                totalItems = sharedCart.Items.Sum(i => i.Quantity),
+                totalAmount = sharedCart.Items.Sum(i => i.UnitPrice * i.Quantity),
+                lastUpdatedBy = sharedCart.LastUpdatedBy,
+                lastClientId = sharedCart.LastClientId,
+                updatedAt = sharedCart.UpdatedAt,
+            } : null,
             billRequested = orders.Any(o => o.BillRequested),
             isOccupied = orders.Count > 0,
             serverTime = DateTime.UtcNow
@@ -1965,5 +2115,46 @@ public class AddTableItemsRequest
 {
     public List<TableOrderItemDto> Items { get; set; } = new();
     public string? Instructions { get; set; }
+}
+
+public class SharedCartItemDto
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string DishId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public decimal UnitPrice { get; set; }
+    public int Quantity { get; set; } = 1;
+    public string? ImageUrl { get; set; }
+    public List<string>? Modifiers { get; set; }
+    public string? Notes { get; set; }
+    public string? ClientId { get; set; }
+    public string? AddedBy { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class SharedCartState
+{
+    public List<SharedCartItemDto> Items { get; set; } = new();
+    public string? LastUpdatedBy { get; set; }
+    public string? LastClientId { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class UpdateSharedCartRequest
+{
+    public string? ClientId { get; set; }
+    public string? ClientName { get; set; }
+    public List<SharedCartItemDto> Items { get; set; } = new();
+}
+
+public class SharedCartResponse
+{
+    public string TableNumber { get; set; } = string.Empty;
+    public List<SharedCartItemDto> Items { get; set; } = new();
+    public int TotalItems { get; set; }
+    public decimal TotalAmount { get; set; }
+    public string? LastUpdatedBy { get; set; }
+    public string? LastClientId { get; set; }
+    public DateTime UpdatedAt { get; set; }
 }
 

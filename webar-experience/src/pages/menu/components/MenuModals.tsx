@@ -605,12 +605,29 @@ export function CartDrawer({
     setIsSubmitting(true)
 
     const round = nextRound ?? getOrderRound()
-    const orderItems = items.map((i) => ({
-      id: i.dish.id,
-      name: i.dish.name,
-      quantity: i.quantity,
-      unitPrice: i.dish.pricePaise ? Math.round(i.dish.pricePaise / 100) : 0,
-    }))
+    const orderItems = items.map((i) => {
+      const uPrice = i.unitPrice ?? (i.dish.pricePaise ? Math.round(i.dish.pricePaise / 100) : 0)
+      const mods: string[] = []
+      if (i.customization?.spiceLevel) {
+        mods.push(`${i.customization.spiceLevel} Spicy`)
+      }
+      if (i.customization?.dietary && i.customization.dietary !== 'Regular') {
+        mods.push(i.customization.dietary)
+      }
+      if (i.customization?.selectedAddons) {
+        for (const a of i.customization.selectedAddons) {
+          mods.push(`${a.name} (+₹${a.price})`)
+        }
+      }
+      return {
+        id: i.dish.id,
+        name: i.dish.name,
+        quantity: i.quantity,
+        unitPrice: uPrice,
+        modifiers: mods.length > 0 ? mods : undefined,
+        notes: i.customization?.notes || undefined,
+      }
+    })
 
     if (isTableOccupied) {
       alert(occupiedMessage || `Table "${tableNumber}" is currently occupied by another customer. Please choose an available table.`)
@@ -663,7 +680,18 @@ export function CartDrawer({
       `\ud83d\udccd *${getTableLabel()}*${round > 1 ? ' *(Add-on items)*' : ''}`,
       '\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500',
       '*Items to prepare:*',
-      ...items.map((i) => `\u2022 ${i.quantity}x ${i.dish.name}`),
+      ...items.map((i) => {
+        let line = `\u2022 ${i.quantity}x ${i.dish.name}`
+        const extra: string[] = []
+        if (i.customization?.spiceLevel) extra.push(`${i.customization.spiceLevel} Spicy`)
+        if (i.customization?.dietary && i.customization.dietary !== 'Regular') extra.push(i.customization.dietary)
+        if (i.customization?.selectedAddons?.length) {
+          extra.push(...i.customization.selectedAddons.map((a) => a.name))
+        }
+        if (extra.length > 0) line += ` (${extra.join(', ')})`
+        if (i.customization?.notes) line += ` [Note: ${i.customization.notes}]`
+        return line
+      }),
       ...(instructions.trim() ? ['\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500', `\ud83d\udcdd *Note:* ${instructions.trim()}`] : []),
       '\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500',
       '\u23f3 *Your order will be ready in a few minutes!*',
@@ -855,62 +883,66 @@ export function CartDrawer({
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map(({ dish, quantity }) => {
-
+          {items.map((item) => {
+            const { dish, quantity, customization } = item
             const isVeg = dish.vegStatus === 0 || dish.vegStatus === 2
-
-            const unitPrice = dish.pricePaise ? Math.round(dish.pricePaise / 100) : 0
+            const unitPrice = item.unitPrice ?? (dish.pricePaise ? Math.round(dish.pricePaise / 100) : 0)
+            const itemKey = item.id || dish.id
 
             return (
-
-              <div key={dish.id} className="bg-[#1F1F23] border border-[#2E2E34] rounded-xl p-3 flex items-center justify-between gap-3">
-
-                <div className="flex-1 min-w-0">
-
-                  <div className="flex items-center gap-1.5 mb-0.5">
-
-                    <span className={`w-3 h-3 border rounded-[2px] inline-flex items-center justify-center ${isVeg ? 'border-[#20BF6B]' : 'border-[#EF4444]'}`}>
-
-                      <span className={`w-1.5 h-1.5 rounded-full ${isVeg ? 'bg-[#20BF6B]' : 'bg-[#EF4444]'}`} />
-
-                    </span>
-
-                    <span className="text-sm font-semibold text-white truncate">{dish.name}</span>
-
+              <div key={itemKey} className="bg-[#1F1F23] border border-[#2E2E34] rounded-xl p-3 flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className={`w-3 h-3 border rounded-[2px] inline-flex items-center justify-center ${isVeg ? 'border-[#20BF6B]' : 'border-[#EF4444]'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isVeg ? 'bg-[#20BF6B]' : 'bg-[#EF4444]'}`} />
+                      </span>
+                      <span className="text-sm font-semibold text-white truncate">{dish.name}</span>
+                    </div>
+                    <span className="text-xs text-gray-400">₹{unitPrice} each</span>
                   </div>
 
-                  <span className="text-xs text-gray-400">₹{unitPrice} each</span>
-
-                </div>
-
-                <div className="flex items-center gap-3">
-
-                  <div className="flex items-center bg-[#27272A] border border-[#3F3F46] rounded-full px-2 py-0.5 gap-2">
-
-                    <button type="button" onClick={() => onQuantityChange(dish, quantity - 1)} className="text-white hover:text-red-400 cursor-pointer">
-
-                      {quantity === 1 ? <Trash2 size={12} className="text-red-400" /> : <Minus size={12} />}
-
-                    </button>
-
-                    <span className="text-xs font-bold text-white min-w-[12px] text-center">{quantity}</span>
-
-                    <button type="button" onClick={() => onQuantityChange(dish, quantity + 1)} className="text-white hover:text-[#EB4F16] cursor-pointer">
-
-                      <Plus size={12} />
-
-                    </button>
-
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-[#27272A] border border-[#3F3F46] rounded-full px-2 py-0.5 gap-2">
+                      <button type="button" onClick={() => onQuantityChange(dish, quantity - 1)} className="text-white hover:text-red-400 cursor-pointer">
+                        {quantity === 1 ? <Trash2 size={12} className="text-red-400" /> : <Minus size={12} />}
+                      </button>
+                      <span className="text-xs font-bold text-white min-w-[12px] text-center">{quantity}</span>
+                      <button type="button" onClick={() => onQuantityChange(dish, quantity + 1)} className="text-white hover:text-[#EB4F16] cursor-pointer">
+                        <Plus size={12} />
+                      </button>
+                    </div>
+                    <span className="text-sm font-bold text-white min-w-[45px] text-right">₹{unitPrice * quantity}</span>
                   </div>
-
-                  <span className="text-sm font-bold text-white min-w-[45px] text-right">₹{unitPrice * quantity}</span>
-
                 </div>
 
+                {/* Modifiers & Add-ons Badges */}
+                {customization && (
+                  <div className="pt-1.5 border-t border-white/5 flex flex-wrap items-center gap-1.5 text-[10px]">
+                    {customization.spiceLevel && (
+                      <span className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/25 text-amber-300 font-semibold">
+                        🌶️ {customization.spiceLevel}
+                      </span>
+                    )}
+                    {customization.dietary && customization.dietary !== 'Regular' && (
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 font-semibold">
+                        🌱 {customization.dietary}
+                      </span>
+                    )}
+                    {customization.selectedAddons?.map((addon) => (
+                      <span key={addon.id} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-gray-300 font-semibold">
+                        + {addon.name} (+₹{addon.price})
+                      </span>
+                    ))}
+                    {customization.notes && (
+                      <span className="px-2 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-300 italic">
+                        📝 &ldquo;{customization.notes}&rdquo;
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
-
             )
-
           })}
 
 

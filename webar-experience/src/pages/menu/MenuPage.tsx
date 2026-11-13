@@ -23,8 +23,9 @@ import {
   type PublicMenuResponse,
   type PublicMenuDish,
 } from '@/services/productService'
-import type { CartItem } from '@/types/cart'
+import type { CartItem, DishCustomization } from '@/types/cart'
 import { DishCard } from './components/DishCard'
+import { DishCustomizationModal } from './components/DishCustomizationModal'
 import { Interactive3dModal } from './components/Interactive3dModal'
 import { CartDrawer, RestaurantInfoModal, TableSelectorModal } from './components/MenuModals'
 import { TableOrderStatusModal } from './components/TableOrderStatusModal'
@@ -69,6 +70,7 @@ export function MenuPage() {
   // Cart & Modals
   const [cart, setCart] = useState<Record<string, CartItem>>({})
   const [active3dDish, setActive3dDish] = useState<PublicMenuDish | null>(null)
+  const [customizingDish, setCustomizingDish] = useState<PublicMenuDish | null>(null)
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [isInfoOpen, setIsInfoOpen] = useState(false)
   const [isTableOpen, setIsTableOpen] = useState(false)
@@ -320,16 +322,30 @@ export function MenuPage() {
     return list
   }, [allDishes, menu, selectedCategory, dietary, popularOnly, arOnly, searchQuery])
 
-  const handleQty = (dish: PublicMenuDish, qty: number) => {
+  const handleQty = (dish: PublicMenuDish, qty: number, customization?: DishCustomization) => {
     if (qty > 0 && isTableOccupiedByOther) {
       showToast(`⚠️ Table ${table} is occupied. Please select an available table.`)
       setIsTableOpen(true)
       return
     }
+    const basePrice = dish.pricePaise ? Math.round(dish.pricePaise / 100) : 0
+    const addonsTotal = customization?.selectedAddons?.reduce((sum, a) => sum + a.price, 0) ?? 0
+    const itemUnitPrice = basePrice + addonsTotal
+
     setCart((prev) => {
       const next = { ...prev }
-      if (qty <= 0) delete next[dish.id]
-      else next[dish.id] = { dish, quantity: qty }
+      if (qty <= 0) {
+        delete next[dish.id]
+      } else {
+        const existing = next[dish.id]
+        next[dish.id] = {
+          id: dish.id,
+          dish,
+          quantity: qty,
+          customization: customization ?? existing?.customization,
+          unitPrice: customization ? itemUnitPrice : (existing?.unitPrice ?? itemUnitPrice),
+        }
+      }
       return next
     })
   }
@@ -337,7 +353,7 @@ export function MenuPage() {
   const cartItems = useMemo(() => Object.values(cart), [cart])
   const cartCount = cartItems.reduce((s, i) => s + i.quantity, 0)
   const cartTotal = cartItems.reduce(
-    (s, i) => s + (i.dish.pricePaise ? Math.round(i.dish.pricePaise / 100) : 0) * i.quantity,
+    (s, i) => s + (i.unitPrice ?? (i.dish.pricePaise ? Math.round(i.dish.pricePaise / 100) : 0)) * i.quantity,
     0,
   )
 
@@ -405,6 +421,7 @@ export function MenuPage() {
           quantity={cart[dish.id]?.quantity || 0}
           onQuantityChange={handleQty}
           onOpen3d={(d) => setActive3dDish(d)}
+          onCustomize={(d) => setCustomizingDish(d)}
         />
       ))}
     </div>
@@ -1064,6 +1081,18 @@ export function MenuPage() {
         onSelectTable={handleSelectTable}
         isLocked={isTableLocked}
         lockedMessage={`Table is locked to Table ${table} for your active dining session. Please ask restaurant staff if you need to move tables.`}
+      />
+
+      {/* Dish Customization & Add-ons Modal */}
+      <DishCustomizationModal
+        isOpen={!!customizingDish}
+        dish={customizingDish}
+        initialCustomization={customizingDish ? cart[customizingDish.id]?.customization : undefined}
+        onClose={() => setCustomizingDish(null)}
+        onConfirm={(dish, qty, custom) => {
+          handleQty(dish, qty, custom)
+          showToast(`✨ ${dish.name} customized & added to cart!`)
+        }}
       />
 
       {/* Floating Toast Notification */}

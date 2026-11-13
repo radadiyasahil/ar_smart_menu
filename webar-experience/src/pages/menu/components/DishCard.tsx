@@ -1,4 +1,4 @@
-import { Sparkles, Plus, Minus, Flame } from 'lucide-react'
+import { Sparkles, Plus, Minus, Flame, SlidersHorizontal } from 'lucide-react'
 import type { PublicMenuDish } from '@/services/productService'
 
 export function DishCard({
@@ -6,11 +6,13 @@ export function DishCard({
   quantity,
   onQuantityChange,
   onOpen3d,
+  onCustomize,
 }: {
   dish: PublicMenuDish
   quantity: number
   onQuantityChange: (dish: PublicMenuDish, newQuantity: number) => void
   onOpen3d: (dish: PublicMenuDish) => void
+  onCustomize?: (dish: PublicMenuDish) => void
 }) {
   const isVeg = dish.vegStatus === 0 || dish.vegStatus === 2
   const price = dish.pricePaise
@@ -111,38 +113,52 @@ export function DishCard({
             <div />
           )}
 
-          {quantity === 0 ? (
-            <button
-              type="button"
-              onClick={() => onQuantityChange(dish, 1)}
-              className="btn-order-coral text-white text-xs font-bold px-4.5 py-2 rounded-full flex items-center gap-1.5 cursor-pointer ml-auto"
-            >
-              <span>Order Now</span>
-              <Plus size={13} />
-            </button>
-          ) : (
-            <div className="qty-counter-pill rounded-full px-3 py-1.5 gap-3 flex items-center ml-auto">
+          <div className="flex items-center gap-1.5 ml-auto">
+            {onCustomize && (
               <button
                 type="button"
-                onClick={() => onQuantityChange(dish, quantity - 1)}
-                className="text-white hover:opacity-80 cursor-pointer transition active:scale-90"
-                aria-label="Decrease"
+                onClick={() => onCustomize(dish)}
+                className="text-[10px] font-bold text-gray-300 hover:text-white px-2 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center gap-1 cursor-pointer transition active:scale-95"
+                title="Customize spice, add-ons, or special notes"
               >
-                <Minus size={12} />
+                <SlidersHorizontal size={11} className="text-[#FF7043]" />
+                <span>Custom</span>
               </button>
-              <span className="text-xs font-black text-white min-w-[14px] text-center">
-                {quantity}
-              </span>
+            )}
+
+            {quantity === 0 ? (
               <button
                 type="button"
-                onClick={() => onQuantityChange(dish, quantity + 1)}
-                className="text-white hover:opacity-80 cursor-pointer transition active:scale-90"
-                aria-label="Increase"
+                onClick={() => onQuantityChange(dish, 1)}
+                className="btn-order-coral text-white text-xs font-bold px-4 py-2 rounded-full flex items-center gap-1.5 cursor-pointer"
               >
-                <Plus size={12} />
+                <span>Order Now</span>
+                <Plus size={13} />
               </button>
-            </div>
-          )}
+            ) : (
+              <div className="qty-counter-pill rounded-full px-3 py-1.5 gap-3 flex items-center">
+                <button
+                  type="button"
+                  onClick={() => onQuantityChange(dish, quantity - 1)}
+                  className="text-white hover:opacity-80 cursor-pointer transition active:scale-90"
+                  aria-label="Decrease"
+                >
+                  <Minus size={12} />
+                </button>
+                <span className="text-xs font-black text-white min-w-[14px] text-center">
+                  {quantity}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onQuantityChange(dish, quantity + 1)}
+                  className="text-white hover:opacity-80 cursor-pointer transition active:scale-90"
+                  aria-label="Increase"
+                >
+                  <Plus size={12} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

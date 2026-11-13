@@ -358,9 +358,24 @@ class BillReceiptPdfService {
                         ),
                         pw.Expanded(
                           flex: 7,
-                          child: pw.Text(
-                            i.name,
-                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text(
+                                i.name,
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                              ),
+                              if (i.modifiers.isNotEmpty)
+                                pw.Text(
+                                  '+ ${i.modifiers.join(', ')}',
+                                  style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800),
+                                ),
+                              if (i.notes.isNotEmpty)
+                                pw.Text(
+                                  '* Note: ${i.notes}',
+                                  style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.grey900),
+                                ),
+                            ],
                           ),
                         ),
                       ],
@@ -408,12 +423,24 @@ class BillReceiptPdfService {
         ? order.tableNumber.toUpperCase()
         : 'TABLE ${order.tableNumber.toUpperCase()}';
 
-    final itemsHtml = order.items.map((i) => '''
+    final itemsHtml = order.items.map((i) {
+      final modsHtml = i.modifiers.isNotEmpty
+          ? '<div style="font-size: 11px; font-weight: 500; color: #333; margin-top: 2px;">↳ ${i.modifiers.join(" • ")}</div>'
+          : '';
+      final notesHtml = i.notes.isNotEmpty
+          ? '<div style="font-size: 11px; font-weight: bold; color: #b45309; margin-top: 1px;">↳ 📝 ${i.notes}</div>'
+          : '';
+      return '''
       <tr>
         <td style="padding: 6px 0; font-size: 15px; font-weight: bold; width: 45px; vertical-align: top;">${i.quantity}x</td>
-        <td style="padding: 6px 0; font-size: 14px; font-weight: bold;">${i.name}</td>
+        <td style="padding: 6px 0; font-size: 14px; font-weight: bold;">
+          ${i.name}
+          $modsHtml
+          $notesHtml
+        </td>
       </tr>
-    ''').join('');
+      ''';
+    }).join('');
 
     final notesHtml = order.instructions.isNotEmpty
         ? '''
@@ -593,6 +620,14 @@ class BillReceiptPdfService {
       writeBytes([0x1B, 0x45, 0x00]);
       writeText(item.name);
       lineFeed();
+      if (item.modifiers.isNotEmpty) {
+        writeText('      + ${item.modifiers.join(", ")}');
+        lineFeed();
+      }
+      if (item.notes.isNotEmpty) {
+        writeText('      * Note: ${item.notes}');
+        lineFeed();
+      }
     }
 
     writeText('--------------------------------');

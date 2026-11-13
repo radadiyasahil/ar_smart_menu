@@ -6,6 +6,8 @@ class BillItem {
   final int unitPrice; // in Rupees
   int quantity;
   final bool isCustom; // true for unlisted items like water bottle
+  final List<String> modifiers;
+  final String notes;
 
   BillItem({
     required this.id,
@@ -13,6 +15,8 @@ class BillItem {
     required this.unitPrice,
     this.quantity = 1,
     this.isCustom = false,
+    this.modifiers = const [],
+    this.notes = '',
   });
 
   int get total => unitPrice * quantity;
@@ -23,14 +27,21 @@ class BillItem {
     'unitPrice': unitPrice,
     'quantity': quantity,
     'isCustom': isCustom,
+    'modifiers': modifiers,
+    'notes': notes,
   };
 
   factory BillItem.fromJson(Map<String, dynamic> json) => BillItem(
-    id: json['id'] as String,
-    name: json['name'] as String,
-    unitPrice: json['unitPrice'] as int? ?? 0,
-    quantity: json['quantity'] as int? ?? 1,
+    id: (json['id'] as String?) ?? '',
+    name: (json['name'] as String?) ?? '',
+    unitPrice: (json['unitPrice'] as num?)?.toInt() ?? 0,
+    quantity: (json['quantity'] as num?)?.toInt() ?? 1,
     isCustom: json['isCustom'] as bool? ?? false,
+    modifiers: (json['modifiers'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const [],
+    notes: (json['notes'] as String?) ?? '',
   );
 }
 
@@ -219,12 +230,7 @@ class PendingTableOrder {
         items:
             (json['items'] as List<dynamic>?)
                 ?.map(
-                  (i) => BillItem(
-                    id: (i['id'] as String?) ?? '',
-                    name: (i['name'] as String?) ?? '',
-                    unitPrice: (i['unitPrice'] as num?)?.toInt() ?? 0,
-                    quantity: (i['quantity'] as num?)?.toInt() ?? 1,
-                  ),
+                  (i) => BillItem.fromJson(i as Map<String, dynamic>),
                 )
                 .toList() ??
             [],

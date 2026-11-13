@@ -5,6 +5,8 @@ export interface LiveTableOrderItem {
   name: string
   quantity: number
   unitPrice: number
+  modifiers?: string[]
+  notes?: string
 }
 
 export type OrderRoundStatus = 'PENDING' | 'ACCEPTED' | 'CANCELLED' | 'COMPLETED' | string
@@ -39,6 +41,8 @@ export interface PlaceTableOrderPayload {
     name: string
     quantity: number
     unitPrice: number
+    modifiers?: string[]
+    notes?: string
   }[]
 }
 

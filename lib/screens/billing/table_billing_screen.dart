@@ -4565,25 +4565,54 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                         const Divider(height: 14),
                         ...order.items.map((it) => Padding(
                           padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                '• ${it.quantity}x ${it.name}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '• ${it.quantity}x ${it.name}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? Colors.white : Colors.black87,
+                                    ),
+                                  ),
+                                  Text(
+                                    '₹${it.total}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF10B981),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                '₹${it.total}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF10B981),
+                              if (it.modifiers.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 12, top: 1),
+                                  child: Text(
+                                    '↳ ${it.modifiers.join(" • ")}',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Color(0xFF60A5FA),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                              if (it.notes.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 12, top: 1),
+                                  child: Text(
+                                    '↳ 📝 "${it.notes}"',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.amberAccent,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         )),
@@ -5627,18 +5656,43 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
           ...o.items.map(
             (i) => Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 2),
-
-              child: Text(
-                '• ${i.quantity}x ${i.name}',
-
-                style: const TextStyle(
-                  fontSize: 12,
-
-                  color: Colors.white70,
-
-                  fontWeight: FontWeight.w500,
-                ),
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '• ${i.quantity}x ${i.name}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (i.modifiers.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12, top: 1),
+                      child: Text(
+                        '↳ ${i.modifiers.join(" • ")}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Color(0xFF60A5FA),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  if (i.notes.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12, top: 1),
+                      child: Text(
+                        '↳ 📝 "${i.notes}"',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.amberAccent,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -5823,18 +5877,43 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
           ...o.items.map(
             (i) => Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 2),
-
-              child: Text(
-                '• ${i.quantity}x ${i.name}',
-
-                style: const TextStyle(
-                  fontSize: 12,
-
-                  color: Colors.white70,
-
-                  fontWeight: FontWeight.w500,
-                ),
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '• ${i.quantity}x ${i.name}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (i.modifiers.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12, top: 1),
+                      child: Text(
+                        '↳ ${i.modifiers.join(" • ")}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Color(0xFF60A5FA),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  if (i.notes.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12, top: 1),
+                      child: Text(
+                        '↳ 📝 "${i.notes}"',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.amberAccent,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),

@@ -1780,6 +1780,10 @@ public class TableOrderItemDto
 
     public int UnitPrice { get; set; } = 0;
 
+    public List<string>? Modifiers { get; set; } = new();
+
+    public string? Notes { get; set; }
+
 }
 
 

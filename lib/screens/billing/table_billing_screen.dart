@@ -387,6 +387,23 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     }
   }
 
+  Future<void> _verifyNewParty(String tableNumber) async {
+    final bId = context.read<BusinessProvider>().business?.id.toString() ?? '';
+    if (bId.isEmpty) return;
+    final success = await _billingService.verifyNewParty(bId, tableNumber);
+    await _loadPendingOrders();
+    await _loadBills();
+    if (mounted && success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ ${_canonicalTableName(tableNumber)} verified & reset for New Party!'),
+          backgroundColor: const Color(0xFF8B5CF6),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   Future<void> _markOrderServed(PendingTableOrder order) async {
     final success = await _billingService.markOrderServed(order.id);
     if (success) {
@@ -3618,19 +3635,27 @@ class _TableBillingScreenState extends State<TableBillingScreen>
           borderRadius: BorderRadius.circular(16),
 
           border: Border.all(
-            color: waiterCall != null
-                ? Colors.amberAccent
-                : (status == TableFloorStatus.billRequested
-                    ? Colors.redAccent
-                    : (isOccupied
-                          ? statusColor.withValues(alpha: 0.5)
-                          : (isDark ? Colors.white10 : Colors.grey.shade300))),
+            color: (waiterCall != null && waiterCall.isNewPartyClaim)
+                ? const Color(0xFFA78BFA)
+                : (waiterCall != null
+                    ? Colors.amberAccent
+                    : (status == TableFloorStatus.billRequested
+                        ? Colors.redAccent
+                        : (isOccupied
+                              ? statusColor.withValues(alpha: 0.5)
+                              : (isDark ? Colors.white10 : Colors.grey.shade300)))),
 
             width: (waiterCall != null || status == TableFloorStatus.billRequested) ? 2 : 1.2,
           ),
 
           boxShadow: [
-            if (waiterCall != null)
+            if (waiterCall != null && waiterCall.isNewPartyClaim)
+              BoxShadow(
+                color: const Color(0xFF8B5CF6).withValues(alpha: 0.35),
+                blurRadius: 8,
+                spreadRadius: 1,
+              )
+            else if (waiterCall != null)
               BoxShadow(
                 color: Colors.amber.withValues(alpha: 0.25),
                 blurRadius: 8,
@@ -3711,52 +3736,108 @@ class _TableBillingScreenState extends State<TableBillingScreen>
             ),
 
             if (waiterCall != null) ...[
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.amberAccent),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.notifications_active, color: Colors.amberAccent, size: 13),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        waiterCall.note.isNotEmpty ? waiterCall.note : 'Waiter Call',
-                        style: const TextStyle(
-                          color: Colors.amberAccent,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    InkWell(
-                      onTap: () => _attendWaiterCall(tableName),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF10B981),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          'Attended ✓',
+              if (waiterCall.isNewPartyClaim)
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFA78BFA), width: 1.2),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.people_alt, color: Color(0xFFA78BFA), size: 13),
+                      const SizedBox(width: 4),
+                      const Expanded(
+                        child: Text(
+                          'New Party Waiting',
                           style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
+                            color: Color(0xFFDDD6FE),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      InkWell(
+                        onTap: () => _verifyNewParty(tableName),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF8B5CF6), Color(0xFF6D28D9)],
+                            ),
+                            borderRadius: BorderRadius.circular(6),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF8B5CF6).withValues(alpha: 0.4),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                          child: const Text(
+                            '1-Tap Verify ✓',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                )
+              else
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amberAccent),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.notifications_active, color: Colors.amberAccent, size: 13),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          waiterCall.note.isNotEmpty ? waiterCall.note : 'Waiter Call',
+                          style: const TextStyle(
+                            color: Colors.amberAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      InkWell(
+                        onTap: () => _attendWaiterCall(tableName),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'Attended ✓',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
             ],
 
             if (isOccupied) ...[
@@ -3899,6 +3980,10 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                     (c) => _isSameTable(c.tableNumber, e.value.tableNumber),
                   );
 
+                  final isNewParty = _waiterCalls.any(
+                    (c) => _isSameTable(c.tableNumber, e.value.tableNumber) && c.isNewPartyClaim,
+                  );
+
                   final displayTable = _canonicalTableName(e.value.tableNumber);
 
                   final isHighlighted = hasPending || hasBillReq || hasWaiterCall;
@@ -3907,59 +3992,76 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                     padding: const EdgeInsets.only(right: 8),
 
                     child: ChoiceChip(
-                      selectedColor: isHighlighted
-                          ? Colors.amber.shade700
-                          : AppColors.primaryOrange,
+                      selectedColor: isNewParty
+                          ? const Color(0xFF8B5CF6)
+                          : (isHighlighted
+                              ? Colors.amber.shade700
+                              : AppColors.primaryOrange),
 
-                      backgroundColor: isHighlighted
-                          ? Colors.amber.withValues(alpha: 0.25)
-                          : (isDark
-                                ? const Color(0xFF1E202A)
-                                : Colors.grey.shade200),
+                      backgroundColor: isNewParty
+                          ? const Color(0xFF8B5CF6).withValues(alpha: 0.25)
+                          : (isHighlighted
+                              ? Colors.amber.withValues(alpha: 0.25)
+                              : (isDark
+                                    ? const Color(0xFF1E202A)
+                                    : Colors.grey.shade200)),
 
-                      side: isHighlighted
+                      side: isNewParty
                           ? const BorderSide(
-                              color: Colors.amberAccent,
+                              color: Color(0xFFA78BFA),
                               width: 1.5,
                             )
-                          : BorderSide.none,
-
-                      avatar: hasPending
-                          ? const Icon(
-                              Icons.assignment_late,
-                              size: 14,
-                              color: Colors.white,
-                            )
-                          : (hasWaiterCall
-                              ? const Icon(
-                                  Icons.notifications_active,
-                                  size: 14,
+                          : (isHighlighted
+                              ? const BorderSide(
                                   color: Colors.amberAccent,
+                                  width: 1.5,
                                 )
-                              : (hasBillReq
+                              : BorderSide.none),
+
+                      avatar: isNewParty
+                          ? const Icon(
+                              Icons.people_alt,
+                              size: 14,
+                              color: Color(0xFFDDD6FE),
+                            )
+                          : (hasPending
+                              ? const Icon(
+                                  Icons.assignment_late,
+                                  size: 14,
+                                  color: Colors.white,
+                                )
+                              : (hasWaiterCall
                                   ? const Icon(
-                                      Icons.receipt_long,
+                                      Icons.notifications_active,
                                       size: 14,
                                       color: Colors.amberAccent,
                                     )
-                                  : (hasKitchen
+                                  : (hasBillReq
                                       ? const Icon(
-                                          Icons.soup_kitchen,
+                                          Icons.receipt_long,
                                           size: 14,
-                                          color: Colors.orange,
+                                          color: Colors.amberAccent,
                                         )
-                                      : null))),
+                                      : (hasKitchen
+                                          ? const Icon(
+                                              Icons.soup_kitchen,
+                                              size: 14,
+                                              color: Colors.orange,
+                                            )
+                                          : null)))),
 
                       label: Text(
-                        hasPending
-                            ? '$displayTable 📥 New (₹${e.value.grandTotal})'
-                            : (hasWaiterCall
-                                ? '$displayTable 🔔 (₹${e.value.grandTotal})'
-                                : (hasBillReq
-                                    ? '$displayTable 🧾 (₹${e.value.grandTotal})'
-                                    : (hasKitchen
-                                        ? '$displayTable 🍳 (₹${e.value.grandTotal})'
-                                        : '$displayTable (₹${e.value.grandTotal})'))),
+                        isNewParty
+                            ? '$displayTable 👥 New Party (₹${e.value.grandTotal})'
+                            : (hasPending
+                                ? '$displayTable 📥 New (₹${e.value.grandTotal})'
+                                : (hasWaiterCall
+                                    ? '$displayTable 🔔 (₹${e.value.grandTotal})'
+                                    : (hasBillReq
+                                        ? '$displayTable 🧾 (₹${e.value.grandTotal})'
+                                        : (hasKitchen
+                                            ? '$displayTable 🍳 (₹${e.value.grandTotal})'
+                                            : '$displayTable (₹${e.value.grandTotal})')))),
 
                         style: TextStyle(
                           color: sel
@@ -4296,41 +4398,87 @@ class _TableBillingScreenState extends State<TableBillingScreen>
           ),
 
         if (waiterCall != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            color: Colors.amber.shade900.withValues(alpha: 0.35),
-            child: Row(
-              children: [
-                const Icon(Icons.notifications_active, color: Colors.amberAccent, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '🔔 Waiter Call / Assistance Requested',
-                        style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                      Text(
-                        'Diner note: "${waiterCall.note}"',
-                        style: const TextStyle(color: Colors.white, fontSize: 11),
-                      ),
-                    ],
-                  ),
+          if (waiterCall.isNewPartyClaim)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6D28D9).withValues(alpha: 0.35),
+                border: const Border(
+                  bottom: BorderSide(color: Color(0xFFA78BFA), width: 1.5),
                 ),
-                FilledButton.icon(
-                  onPressed: () => _attendWaiterCall(bill.tableNumber),
-                  icon: const Icon(Icons.check, size: 14),
-                  label: const Text('Attended ✓', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF10B981),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    visualDensity: VisualDensity.compact,
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.people_alt, color: Color(0xFFA78BFA), size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '👥 New Party Seated at Table!',
+                          style: TextStyle(color: Color(0xFFDDD6FE), fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        Text(
+                          waiterCall.note.isNotEmpty
+                              ? waiterCall.note
+                              : 'Customer tapped "We are a New Party". Verify to settle previous orders and start fresh session.',
+                          style: const TextStyle(color: Colors.white, fontSize: 11),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () => _verifyNewParty(bill.tableNumber),
+                    icon: const Icon(Icons.check_circle_outline, size: 15),
+                    label: const Text('1-Tap Verify & Reset', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF8B5CF6),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              color: Colors.amber.shade900.withValues(alpha: 0.35),
+              child: Row(
+                children: [
+                  const Icon(Icons.notifications_active, color: Colors.amberAccent, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '🔔 Waiter Call / Assistance Requested',
+                          style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        Text(
+                          'Diner note: "${waiterCall.note}"',
+                          style: const TextStyle(color: Colors.white, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () => _attendWaiterCall(bill.tableNumber),
+                    icon: const Icon(Icons.check, size: 14),
+                    label: const Text('Attended ✓', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
 
         // Chat Message Timeline (WhatsApp Wallpaper Canvas)
         Expanded(

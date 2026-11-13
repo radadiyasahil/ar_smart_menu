@@ -373,6 +373,23 @@ export function TableOrderStatusModal({
             </div>
           </div>
 
+          {/* Multi-diner Table Party PIN */}
+          {(() => {
+            const activePin = orders.find((o) => o.partyPin)?.partyPin
+            if (!activePin) return null
+            return (
+              <div className="mt-2.5 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-400 text-xs font-bold">👥 Table PIN:</span>
+                  <span className="px-2.5 py-0.5 rounded-lg bg-amber-400/20 text-amber-300 font-mono font-black text-sm tracking-widest border border-amber-400/40">
+                    {activePin}
+                  </span>
+                </div>
+                <span className="text-[11px] text-gray-400">Share with table mates</span>
+              </div>
+            )
+          })()}
+
           {/* Dynamic Kitchen Status Banner */}
           <div className="mt-3 space-y-2">
             {/* If all orders were cancelled/declined */}

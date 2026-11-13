@@ -365,6 +365,18 @@ class BillingService {
     }
   }
 
+  /// 1-Tap verifies and resets table for a new customer party handover
+  Future<bool> verifyNewParty(String businessId, String tableNumber) async {
+    try {
+      final safeTable = Uri.encodeComponent(tableNumber.trim());
+      final res = await ApiClient.dio.post('/businesses/$businessId/table/$safeTable/verify-new-party');
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint('Error verifying new party: $e');
+      return false;
+    }
+  }
+
   /// Adds unlisted/custom items (e.g. Water Bottle, Extra Roti) directly to a live table session
   Future<bool> addItemsToTable(
     String businessId,

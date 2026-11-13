@@ -256,6 +256,8 @@ class WaiterCallItem {
   final DateTime createdAt;
   final bool isAttended;
 
+  bool get isNewPartyClaim => note.toLowerCase().contains('new party');
+
   WaiterCallItem({
     required this.id,
     required this.businessId,

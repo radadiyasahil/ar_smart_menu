@@ -80,4 +80,13 @@ public class BusinessesController : ControllerBase
         var result = await _business.UpdateStatusAsync(_currentUser.GetUserId(), request, ct);
         return Ok(ApiResponse<BusinessDto>.Ok(result, $"Business status updated to {request.Status}"));
     }
+
+    [HttpPut("me/geofence")]
+    public async Task<ActionResult<ApiResponse<BusinessDto>>> UpdateGeofence(
+        [FromBody] UpdateBusinessGeofenceRequest request,
+        CancellationToken ct)
+    {
+        var result = await _business.UpdateGeofenceAsync(_currentUser.GetUserId(), request, ct);
+        return Ok(ApiResponse<BusinessDto>.Ok(result, "Geofence settings updated successfully"));
+    }
 }

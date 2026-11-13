@@ -1640,6 +1640,31 @@ class _AccountScreenState extends State<AccountScreen> {
                 trailing: const Icon(Icons.chevron_right, color: AppColors.mediumGray, size: 18),
                 onTap: () => context.push(AppRoutes.billing),
               ),
+              if (business != null) ...[
+                Divider(height: 1, indent: 48, color: groupBorder),
+                _buildSettingsRow(
+                  icon: Icons.location_on_outlined,
+                  title: 'Dine-in Anti-Fraud & Geofencing',
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        business.requireGeofence
+                            ? '${business.geofenceRadiusMeters}m Active'
+                            : 'Disabled',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: business.requireGeofence ? AppColors.success : AppColors.mediumGray,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right, color: AppColors.mediumGray, size: 18),
+                    ],
+                  ),
+                  onTap: () => _showGeofenceSettingsDialog(business),
+                ),
+              ],
             ],
           ),
         ),
@@ -2332,6 +2357,281 @@ class _AccountScreenState extends State<AccountScreen> {
             child: const Text('Close'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showGeofenceSettingsDialog(BusinessModel? business) {
+    if (business == null) return;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    bool requireGeofence = business.requireGeofence;
+    int radius = business.geofenceRadiusMeters;
+    final latController = TextEditingController(text: business.latitude?.toString() ?? '');
+    final lngController = TextEditingController(text: business.longitude?.toString() ?? '');
+    bool isSaving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF1E1F28) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryOrange.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.security_outlined, color: AppColors.primaryOrange, size: 24),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Dine-in Anti-Fraud & Geofencing',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            Text(
+                              'Prevent remote prank orders from home',
+                              style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Toggle GPS Protection
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF13141B) : Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Require Physical Presence',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Diners must be inside restaurant radius to order',
+                                style: TextStyle(fontSize: 11, color: isDark ? Colors.white54 : Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: requireGeofence,
+                          activeThumbColor: AppColors.primaryOrange,
+                          activeTrackColor: AppColors.primaryOrange.withValues(alpha: 0.5),
+                          onChanged: (val) {
+                            setModalState(() => requireGeofence = val);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  if (requireGeofence) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Allowed Ordering Distance',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryOrange.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$radius meters',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.primaryOrange),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Slider(
+                      value: radius.toDouble().clamp(30, 1000),
+                      min: 30,
+                      max: 1000,
+                      divisions: 97,
+                      activeColor: AppColors.primaryOrange,
+                      inactiveColor: isDark ? Colors.white12 : Colors.grey.shade300,
+                      onChanged: (v) {
+                        setModalState(() => radius = v.round());
+                      },
+                    ),
+
+                    // Quick distance presets
+                    Wrap(
+                      spacing: 8,
+                      children: [50, 100, 200, 500].map((preset) {
+                        final isSel = radius == preset;
+                        final label = preset == 50
+                            ? '50m (Cafe)'
+                            : preset == 100
+                                ? '100m (Standard)'
+                                : preset == 200
+                                    ? '200m (Patio)'
+                                    : '500m (Lawn/Resort)';
+                        return ChoiceChip(
+                          label: Text(label, style: TextStyle(fontSize: 11, fontWeight: isSel ? FontWeight.bold : FontWeight.normal)),
+                          selected: isSel,
+                          selectedColor: AppColors.primaryOrange.withValues(alpha: 0.2),
+                          onSelected: (_) => setModalState(() => radius = preset),
+                        );
+                      }).toList(),
+                    ),
+
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Restaurant GPS Location',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Set from Google Maps coordinates (e.g. 19.0760, 72.8777)',
+                      style: TextStyle(fontSize: 11, color: isDark ? Colors.white54 : Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: latController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                            decoration: InputDecoration(
+                              labelText: 'Latitude',
+                              hintText: '19.0760',
+                              isDense: true,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: lngController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                            decoration: InputDecoration(
+                              labelText: 'Longitude',
+                              hintText: '72.8777',
+                              isDense: true,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryOrange,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: isSaving
+                          ? null
+                          : () async {
+                              final lat = double.tryParse(latController.text.trim());
+                              final lng = double.tryParse(lngController.text.trim());
+
+                              final scaffoldMessenger = ScaffoldMessenger.of(context);
+                              final navigator = Navigator.of(ctx);
+
+                              if (requireGeofence && (lat == null || lng == null)) {
+                                scaffoldMessenger.showSnackBar(
+                                  const SnackBar(content: Text('Please enter valid Latitude and Longitude coordinates')),
+                                );
+                                return;
+                              }
+
+                              setModalState(() => isSaving = true);
+                              try {
+                                final bp = Provider.of<BusinessProvider>(context, listen: false);
+                                await bp.updateGeofenceSettings(
+                                  latitude: lat,
+                                  longitude: lng,
+                                  geofenceRadiusMeters: radius,
+                                  requireGeofence: requireGeofence,
+                                );
+                                if (mounted) {
+                                  navigator.pop();
+                                  scaffoldMessenger.showSnackBar(
+                                    const SnackBar(content: Text('Geofence settings updated successfully!')),
+                                  );
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  scaffoldMessenger.showSnackBar(
+                                    SnackBar(content: Text('Failed: ${e.toString().replaceFirst("Exception: ", "")}')),
+                                  );
+                                }
+                              } finally {
+                                setModalState(() => isSaving = false);
+                              }
+                            },
+                      child: isSaving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : const Text('Save Geofence Settings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

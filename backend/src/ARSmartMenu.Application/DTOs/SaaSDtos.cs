@@ -22,7 +22,17 @@ public record UpdateBusinessRequest(
     string? GstNumber = null,
     string? UpiId = null,
     string? WifiName = null,
-    string? WifiPassword = null);
+    string? WifiPassword = null,
+    double? Latitude = null,
+    double? Longitude = null,
+    int? GeofenceRadiusMeters = null,
+    bool? RequireGeofence = null);
+
+public record UpdateBusinessGeofenceRequest(
+    double? Latitude,
+    double? Longitude,
+    int? GeofenceRadiusMeters,
+    bool RequireGeofence);
 
 public record BusinessDto(
     Guid Id,
@@ -43,7 +53,11 @@ public record BusinessDto(
     DateTime? ApprovedAt,
     DateTime CreatedAt,
     string? WifiName = null,
-    string? WifiPassword = null);
+    string? WifiPassword = null,
+    double? Latitude = null,
+    double? Longitude = null,
+    int GeofenceRadiusMeters = 200,
+    bool RequireGeofence = false);
 
 public record VerifyBankRequest(string BankAccountNumber, string BankIfsc);
 

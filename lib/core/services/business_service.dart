@@ -129,6 +129,24 @@ class BusinessService {
     return _parseBusiness(response.data!);
   }
 
+  Future<BusinessModel> updateGeofence({
+    double? latitude,
+    double? longitude,
+    int? geofenceRadiusMeters,
+    required bool requireGeofence,
+  }) async {
+    final response = await _dio.put<Map<String, dynamic>>(
+      '/businesses/me/geofence',
+      data: {
+        'latitude': latitude,
+        'longitude': longitude,
+        'geofenceRadiusMeters': geofenceRadiusMeters,
+        'requireGeofence': requireGeofence,
+      },
+    );
+    return _parseBusiness(response.data!);
+  }
+
   BusinessModel _parseBusiness(Map<String, dynamic> envelope) {
     if (envelope['success'] != true) {
       throw Exception(envelope['error'] ?? 'Business request failed');

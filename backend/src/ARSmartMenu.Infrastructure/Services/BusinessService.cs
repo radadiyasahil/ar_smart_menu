@@ -97,6 +97,34 @@ public class BusinessService : IBusinessService
             business.WifiName = string.IsNullOrWhiteSpace(request.WifiName) ? null : request.WifiName.Trim();
         if (request.WifiPassword is not null)
             business.WifiPassword = string.IsNullOrWhiteSpace(request.WifiPassword) ? null : request.WifiPassword.Trim();
+        if (request.Latitude.HasValue)
+            business.Latitude = request.Latitude.Value;
+        if (request.Longitude.HasValue)
+            business.Longitude = request.Longitude.Value;
+        if (request.GeofenceRadiusMeters.HasValue)
+            business.GeofenceRadiusMeters = Math.Clamp(request.GeofenceRadiusMeters.Value, 20, 5000);
+        if (request.RequireGeofence.HasValue)
+            business.RequireGeofence = request.RequireGeofence.Value;
+
+        business.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return MapBusiness(business);
+    }
+
+    public async Task<BusinessDto> UpdateGeofenceAsync(Guid userId, UpdateBusinessGeofenceRequest request, CancellationToken ct = default)
+    {
+        var business = await _db.Businesses
+            .FirstOrDefaultAsync(b => b.OwnerId == userId, ct)
+            ?? throw new NotFoundException("Business not found for current user.");
+
+        if (request.Latitude.HasValue)
+            business.Latitude = request.Latitude.Value;
+        if (request.Longitude.HasValue)
+            business.Longitude = request.Longitude.Value;
+        if (request.GeofenceRadiusMeters.HasValue)
+            business.GeofenceRadiusMeters = Math.Clamp(request.GeofenceRadiusMeters.Value, 20, 5000);
+        business.RequireGeofence = request.RequireGeofence;
 
         business.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -234,5 +262,9 @@ public class BusinessService : IBusinessService
         business.ApprovedAt,
         business.CreatedAt,
         business.WifiName,
-        business.WifiPassword);
+        business.WifiPassword,
+        business.Latitude,
+        business.Longitude,
+        business.GeofenceRadiusMeters,
+        business.RequireGeofence);
 }

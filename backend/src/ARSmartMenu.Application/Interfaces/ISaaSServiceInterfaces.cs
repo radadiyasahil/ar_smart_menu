@@ -20,6 +20,7 @@ public interface IBusinessService
     Task<BusinessDto> UpdateStatusAsync(Guid userId, UpdateBusinessStatusRequest request, CancellationToken ct = default);
     Task<VerifyBankResponse> VerifyBankAsync(Guid userId, VerifyBankRequest request, CancellationToken ct = default);
     Task<UserDto> SubmitKycAsync(Guid userId, SubmitKycRequest request, CancellationToken ct = default);
+    Task<BusinessDto> UpdateGeofenceAsync(Guid userId, UpdateBusinessGeofenceRequest request, CancellationToken ct = default);
 
     Task<BusinessDto> UploadLogoAsync(Guid userId, IFormFile file, CancellationToken ct = default);
 }

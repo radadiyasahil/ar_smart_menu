@@ -169,7 +169,11 @@ export function MenuPage() {
         }
       }
 
-      if (orders.length === 0) {
+      if (orders.length === 0 && !res.isOccupiedByOther) {
+        if (isNewPartyClaimed) {
+          setIsNewPartyClaimed(false)
+          showToast(`🎉 Table ${table} verified! Your fresh session is ready.`)
+        }
         setIsDeclinedBannerDismissed(false)
         sessionStorage.removeItem('ar_declined_dismissed')
         tableOrderService.clearStoredOrderIds(table)
@@ -220,6 +224,66 @@ export function MenuPage() {
       console.warn('Failed to poll table orders:', e)
     } finally {
       if (!silent) setIsRefreshingOrders(false)
+    }
+  }
+
+  const [isJoiningTable, setIsJoiningTable] = useState(false)
+  const [isJoinPinModalOpen, setIsJoinPinModalOpen] = useState(false)
+  const [enteredPin, setEnteredPin] = useState('')
+  const [pinErrorMessage, setPinErrorMessage] = useState<string | null>(null)
+  const [isClaimingParty, setIsClaimingParty] = useState(false)
+  const [isNewPartyClaimed, setIsNewPartyClaimed] = useState(false)
+
+  const handleClaimNewParty = async () => {
+    if (!slug || !table || isClaimingParty) return
+    setIsClaimingParty(true)
+    try {
+      const res = await tableOrderService.claimNewParty(slug, table)
+      if (res.success) {
+        setIsNewPartyClaimed(true)
+        showToast(`🔔 Waiter alerted: New party seated at Table ${table}!`)
+      } else {
+        showToast(`⚠️ ${res.message}`)
+      }
+    } catch (e: any) {
+      showToast(`⚠️ ${e.message || 'Could not alert staff'}`)
+    } finally {
+      setIsClaimingParty(false)
+    }
+  }
+
+  const handleJoinTableParty = () => {
+    setEnteredPin('')
+    setPinErrorMessage(null)
+    setIsJoinPinModalOpen(true)
+  }
+
+  const submitJoinWithPin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (!slug || !table || isJoiningTable) return
+    const pin = enteredPin.trim()
+    if (pin.length !== 3) {
+      setPinErrorMessage('Please enter the 3-digit Table PIN.')
+      return
+    }
+
+    setIsJoiningTable(true)
+    setPinErrorMessage(null)
+    try {
+      const res = await tableOrderService.joinTableParty(slug, table, pin)
+      if (res.success) {
+        setIsJoinPinModalOpen(false)
+        setIsTableOccupiedByOther(false)
+        setEnteredPin('')
+        setActiveOrders(res.orders)
+        showToast(`🤝 Joined Table ${table}! You can now view and add orders together.`)
+      } else {
+        setPinErrorMessage(res.message || 'Invalid Table PIN. Please check with your friends.')
+      }
+    } catch (e: any) {
+      setPinErrorMessage(e.message || 'Could not join table')
+    } finally {
+      setIsJoiningTable(false)
     }
   }
 
@@ -721,17 +785,42 @@ export function MenuPage() {
                 </span>
               </div>
               <p className="text-xs text-amber-200/90 mt-1 leading-relaxed">
-                {occupiedMessage || `Table "${table}" is currently occupied by another customer and not available for new orders.`} If you are seated at another table, please choose your table:
+                {occupiedMessage || `Table "${table}" currently has an active order.`} If you are dining with friends, join with PIN. If previous guests left, alert your server:
               </p>
-              <div className="flex flex-wrap items-center gap-2 mt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsTableOpen(true)}
-                  className="px-3.5 py-1.5 text-xs font-black rounded-xl bg-[#EB4F16] hover:bg-[#FF6A3D] text-white shadow-md shadow-[#EB4F16]/20 border border-[#FF6A3D]/40 transition cursor-pointer"
-                >
-                  Change Table
-                </button>
-              </div>
+              {isNewPartyClaimed ? (
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 rounded-xl px-3 py-2 mt-3 animate-pulse">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 inline-block animate-ping" />
+                  <span>🔔 Waiter alerted: "New Party at Table {table}". Please wait while staff verifies to unlock this table.</span>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={handleJoinTableParty}
+                    disabled={isJoiningTable}
+                    className="px-3.5 py-1.5 text-xs font-black rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-950/20 border border-emerald-400/40 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Join Friends (Enter PIN)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClaimNewParty}
+                    disabled={isClaimingParty}
+                    className="px-3.5 py-1.5 text-xs font-black rounded-xl bg-amber-500 hover:bg-amber-400 text-black shadow-md shadow-amber-950/20 border border-amber-300 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-black" />
+                    <span>{isClaimingParty ? 'Alerting Staff...' : 'New Party at Table (Reset)'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsTableOpen(true)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-xl bg-white/10 hover:bg-white/15 text-white/90 border border-white/20 transition cursor-pointer"
+                  >
+                    Change Table
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1209,6 +1298,68 @@ export function MenuPage() {
           showToast(`✨ ${dish.name} customized & added to cart!`)
         }}
       />
+
+      {/* 3-Digit Table Party PIN Modal */}
+      {isJoinPinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-sm bg-[#181920] border border-[#2B2C38] rounded-3xl p-6 shadow-2xl relative text-center">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto mb-3 text-emerald-400">
+              <Users size={24} />
+            </div>
+            <h3 className="text-lg font-black text-white">Join Table {table}</h3>
+            <p className="text-xs text-gray-300 mt-1.5 leading-relaxed">
+              Enter the <span className="font-bold text-amber-400">3-digit PIN</span> shown on your table mate's screen to view and add orders together.
+            </p>
+
+            <form onSubmit={submitJoinWithPin} className="mt-5 space-y-4">
+              <div>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={3}
+                  value={enteredPin}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 3)
+                    setEnteredPin(val)
+                    if (pinErrorMessage) setPinErrorMessage(null)
+                  }}
+                  placeholder="•••"
+                  autoFocus
+                  className="w-36 text-center text-3xl font-mono font-black tracking-[0.5em] px-4 py-2.5 rounded-2xl bg-[#121319] border-2 border-emerald-500/40 text-emerald-300 focus:outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/20 placeholder:text-gray-600 transition"
+                />
+              </div>
+
+              {pinErrorMessage && (
+                <p className="text-xs text-rose-400 font-semibold bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2">
+                  {pinErrorMessage}
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsJoinPinModalOpen(false)
+                    setEnteredPin('')
+                    setPinErrorMessage(null)
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-[#23242E] hover:bg-[#2C2D3A] text-gray-300 text-xs font-bold transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isJoiningTable || enteredPin.length !== 3}
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black transition cursor-pointer shadow-lg shadow-emerald-950/30 flex items-center justify-center gap-1.5"
+                >
+                  {isJoiningTable ? 'Verifying...' : 'Join Table'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Floating Toast Notification */}
       {toast && (

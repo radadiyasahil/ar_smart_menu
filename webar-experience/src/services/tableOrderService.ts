@@ -27,6 +27,7 @@ export interface LiveTableOrder {
   createdAt: string
   acceptedAt?: string | null
   completedAt?: string | null
+  partyPin?: string | null
 }
 
 export interface PlaceTableOrderPayload {
@@ -37,6 +38,9 @@ export interface PlaceTableOrderPayload {
   sessionToken?: string
   previousOrderId?: string
   previousOrderIds?: string[]
+  customerLatitude?: number
+  customerLongitude?: number
+  partyPin?: string
   items: {
     id: string
     name: string
@@ -56,6 +60,8 @@ export interface RequestBillResult {
 export interface FetchTableOrdersResult {
   orders: LiveTableOrder[]
   isOccupiedByOther: boolean
+  canJoin?: boolean
+  activeOrdersCount?: number
   occupiedMessage?: string
   sharedCart?: SharedCartResponse | null
 }
@@ -196,9 +202,12 @@ export const tableOrderService = {
         }
       }
       if (res.data?.code === 'TABLE_OCCUPIED' || res.data?.error?.includes('occupied') || res.data?.message?.includes('occupied')) {
+        const previewOrders = Array.isArray(res.data.data) ? res.data.data : []
         return {
-          orders: [],
+          orders: previewOrders,
           isOccupiedByOther: true,
+          canJoin: true,
+          activeOrdersCount: previewOrders.length,
           occupiedMessage: res.data.message || `Table ${tableNumber} is currently occupied by another customer.`,
           sharedCart,
         }
@@ -206,9 +215,12 @@ export const tableOrderService = {
       return { orders: [], isOccupiedByOther: false, sharedCart }
     } catch (err: any) {
       if (err?.response?.data?.code === 'TABLE_OCCUPIED' || err?.response?.data?.message?.includes('occupied')) {
+        const previewOrders = Array.isArray(err.response.data?.data) ? err.response.data.data : []
         return {
-          orders: [],
+          orders: previewOrders,
           isOccupiedByOther: true,
+          canJoin: true,
+          activeOrdersCount: previewOrders.length,
           occupiedMessage: err.response.data.message || `Table ${tableNumber} is currently occupied by another customer.`,
         }
       }
@@ -217,12 +229,83 @@ export const tableOrderService = {
     }
   },
 
+  async getCurrentCoordinates(): Promise<{ latitude: number; longitude: number } | null> {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return null
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          })
+        },
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 },
+      )
+    })
+  },
+
+  async joinTableParty(slug: string, tableNumber: string, pin?: string, dinerName?: string): Promise<{ success: boolean; orders: LiveTableOrder[]; message: string }> {
+    if (!slug || !tableNumber) return { success: false, orders: [], message: 'Missing table information' }
+    try {
+      const token = this.getOrCreateSessionToken(tableNumber)
+      const res = await apiClient.post<ApiEnvelope<LiveTableOrder[]>>(
+        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/join`,
+        { sessionToken: token, dinerName, pin }
+      )
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        res.data.data.forEach((o) => {
+          if (o.id) this.storeOrderId(o.id, tableNumber)
+        })
+        return {
+          success: true,
+          orders: res.data.data,
+          message: res.data.message || `Joined Table ${tableNumber}!`,
+        }
+      }
+      return {
+        success: false,
+        orders: [],
+        message: res.data?.message || res.data?.error || 'Failed to join table',
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.response?.data?.error || err.message || 'Failed to join table'
+      return { success: false, orders: [], message: msg }
+    }
+  },
+
+  async claimNewParty(slug: string, tableNumber: string): Promise<{ success: boolean; message: string }> {
+    if (!slug || !tableNumber) return { success: false, message: 'Missing table information' }
+    try {
+      const token = this.getSessionToken(tableNumber)
+      const res = await apiClient.post<ApiEnvelope<any>>(
+        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/claim-new-party`,
+        { sessionToken: token }
+      )
+      return {
+        success: res.data?.success ?? true,
+        message: res.data?.message || `Server alerted for Table ${tableNumber}.`,
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.response?.data?.error || err.message || 'Failed to alert staff'
+      return { success: false, message: msg }
+    }
+  },
+
   async placeOrder(slug: string, payload: PlaceTableOrderPayload): Promise<LiveTableOrder | null> {
     try {
       const token = this.getOrCreateSessionToken(payload.tableNumber)
       const storedIds = this.getStoredOrderIds(payload.tableNumber)
+
+      let coords: { latitude: number; longitude: number } | null = null
+      if (payload.customerLatitude === undefined || payload.customerLongitude === undefined) {
+        coords = await this.getCurrentCoordinates()
+      }
+
       const fullPayload: PlaceTableOrderPayload = {
         ...payload,
+        customerLatitude: payload.customerLatitude ?? coords?.latitude,
+        customerLongitude: payload.customerLongitude ?? coords?.longitude,
         sessionToken: payload.sessionToken || token,
         previousOrderIds: payload.previousOrderIds || (storedIds.length > 0 ? storedIds : undefined),
         previousOrderId: payload.previousOrderId || (storedIds.length > 0 ? storedIds[storedIds.length - 1] : undefined),

@@ -30,6 +30,11 @@ public class Business : BaseEntity
     public string? WifiName { get; set; }
     public string? WifiPassword { get; set; }
 
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    public int GeofenceRadiusMeters { get; set; } = 200;
+    public bool RequireGeofence { get; set; } = false;
+
     public ICollection<Product> Products { get; set; } = [];
     public ICollection<Subscription> Subscriptions { get; set; } = [];
     public ICollection<QrCode> QrCodes { get; set; } = [];

@@ -16,5 +16,8 @@ public class TableOrder : BaseEntity
     public bool BillRequested { get; set; } = false;
     public DateTime? BillRequestedAt { get; set; }
 
+    /// <summary>3-digit PIN for multi-diner table collaboration (e.g. "482").</summary>
+    public string? PartyPin { get; set; }
+
     public Business? Business { get; set; }
 }

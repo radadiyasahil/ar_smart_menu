@@ -373,4 +373,31 @@ class BusinessProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<BusinessModel> updateGeofenceSettings({
+    double? latitude,
+    double? longitude,
+    int? geofenceRadiusMeters,
+    required bool requireGeofence,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      _business = await _businessService.updateGeofence(
+        latitude: latitude,
+        longitude: longitude,
+        geofenceRadiusMeters: geofenceRadiusMeters,
+        requireGeofence: requireGeofence,
+      );
+      await _persistProfile();
+      return _business!;
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 }

@@ -156,15 +156,48 @@ public class TableOrdersController : ControllerBase
 
 
         if (!string.IsNullOrWhiteSpace(request.CustomerPhone))
-
         {
-
             var digitsOnly = System.Text.RegularExpressions.Regex.Replace(request.CustomerPhone.Trim(), @"\D", "");
-
             if (digitsOnly.Length != 10)
-
                 return BadRequest(ApiResponse<TableOrderResponse>.Fail("Customer mobile number must be exactly 10 numeric digits."));
+        }
 
+        // GPS Geofence Anti-Fraud Check for Dine-In orders
+        if (business.RequireGeofence && business.Latitude.HasValue && business.Longitude.HasValue)
+        {
+            if (!request.CustomerLatitude.HasValue || !request.CustomerLongitude.HasValue)
+            {
+                return BadRequest(new ApiResponse<TableOrderResponse>
+                {
+                    Success = false,
+                    Code = "GEOFENCE_REQUIRED",
+                    Error = "Location permission required",
+                    Message = "Please allow location access to verify you are physically at the table before placing a dine-in order."
+                });
+            }
+
+            var distance = GeoUtils.CalculateDistanceMeters(
+                request.CustomerLatitude.Value,
+                request.CustomerLongitude.Value,
+                business.Latitude.Value,
+                business.Longitude.Value);
+
+            var allowedMeters = business.GeofenceRadiusMeters > 0 ? business.GeofenceRadiusMeters : 200;
+
+            if (distance > allowedMeters)
+            {
+                var distanceLabel = distance >= 1000
+                    ? $"{Math.Round(distance / 1000.0, 1)}km"
+                    : $"{Math.Round(distance)}m";
+
+                return BadRequest(new ApiResponse<TableOrderResponse>
+                {
+                    Success = false,
+                    Code = "OUTSIDE_GEOFENCE",
+                    Error = $"You appear to be {distanceLabel} away from {business.BusinessName}.",
+                    Message = $"Dine-in table ordering is only permitted within {allowedMeters}m of the restaurant. If you scanned a photo of this QR code from home or outside, table ordering is disabled."
+                });
+            }
         }
 
         var cleanTable = request.TableNumber.Trim().ToLowerInvariant();
@@ -213,6 +246,38 @@ public class TableOrdersController : ControllerBase
                     $"A final bill has already been requested for {request.TableNumber}. Additional rounds cannot be ordered until the table is settled or cleared."));
             }
 
+            // Multi-diner collaboration with 3-digit Table Party PIN
+            var activePartyPin = activeOrders.FirstOrDefault(o => !string.IsNullOrEmpty(o.PartyPin))?.PartyPin;
+            if (string.IsNullOrEmpty(activePartyPin))
+            {
+                activePartyPin = Random.Shared.Next(100, 1000).ToString();
+            }
+
+            var isSameSession = false;
+            if (!string.IsNullOrWhiteSpace(request.SessionToken) &&
+                _activeTableSessionTokens.TryGetValue(chatKey, out var existingToken) &&
+                existingToken == request.SessionToken)
+            {
+                isSameSession = true;
+            }
+
+            if (!isSameSession && !string.IsNullOrWhiteSpace(request.PartyPin) && request.PartyPin.Trim() == activePartyPin)
+            {
+                isSameSession = true;
+            }
+
+            // If a different device tries to order without verified session or PIN:
+            if (!isSameSession && _activeTableSessionTokens.ContainsKey(chatKey))
+            {
+                return BadRequest(new ApiResponse<TableOrderResponse>
+                {
+                    Success = false,
+                    Code = "REQUIRE_PARTY_PIN",
+                    Error = $"Table '{request.TableNumber}' has an active order.",
+                    Message = $"Table '{request.TableNumber}' currently has an active order. If you are sitting with friends, please enter the 3-digit Table PIN to join."
+                });
+            }
+
             // Keep session token updated for this table
             if (!string.IsNullOrWhiteSpace(request.SessionToken))
             {
@@ -234,6 +299,10 @@ public class TableOrdersController : ControllerBase
                 _activeTableSessionTokens[chatKey] = request.SessionToken;
             }
         }
+
+        var assignedPartyPin = (activeOrders.Count > 0
+            ? activeOrders.FirstOrDefault(o => !string.IsNullOrEmpty(o.PartyPin))?.PartyPin
+            : null) ?? Random.Shared.Next(100, 1000).ToString();
 
         var itemsJson = JsonSerializer.Serialize(request.Items ?? new List<TableOrderItemDto>());
 
@@ -260,6 +329,8 @@ public class TableOrdersController : ControllerBase
             ItemsJson = itemsJson,
 
             TotalAmount = totalAmount,
+
+            PartyPin = assignedPartyPin,
 
         };
 
@@ -557,6 +628,40 @@ public class TableOrdersController : ControllerBase
         if (nonCancelledOrders.Count > 0)
         {
             var chatKey = GetChatKey(businessId, cleanTable);
+            var isDinerSession = false;
+
+            if (!string.IsNullOrWhiteSpace(sessionToken) &&
+                _activeTableSessionTokens.TryGetValue(chatKey, out var activeToken) &&
+                activeToken == sessionToken)
+            {
+                isDinerSession = true;
+            }
+
+            if (!isDinerSession && parsedIds.Count > 0 && activeOrders.Any(o => parsedIds.Contains(o.Id)))
+            {
+                isDinerSession = true;
+            }
+
+            if (!isDinerSession)
+            {
+                // Return TABLE_OCCUPIED with sanitized orders (PartyPin = null so strangers cannot see the PIN)
+                var sanitizedOrders = nonCancelledOrders.Select(o =>
+                {
+                    var r = ToResponse(o);
+                    r.PartyPin = null;
+                    return r;
+                }).ToList();
+
+                return Ok(new ApiResponse<List<TableOrderResponse>>
+                {
+                    Success = false,
+                    Code = "TABLE_OCCUPIED",
+                    Error = $"Table '{tableNumber}' has an active order.",
+                    Message = $"Table '{tableNumber}' currently has an active order. If you are sitting with friends, please enter the 3-digit Table PIN to join.",
+                    Data = sanitizedOrders
+                });
+            }
+
             if (!string.IsNullOrWhiteSpace(sessionToken))
             {
                 _activeTableSessionTokens[chatKey] = sessionToken;
@@ -572,6 +677,109 @@ public class TableOrdersController : ControllerBase
 
         return Ok(ApiResponse<List<TableOrderResponse>>.Ok(list));
 
+    }
+
+    [HttpPost("api/public/orders/{slug}/table/{tableNumber}/join")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<List<TableOrderResponse>>>> JoinTableParty(
+        string slug,
+        string tableNumber,
+        [FromBody] JoinTablePartyRequest? request,
+        CancellationToken ct)
+    {
+        var cleanSlug = slug.Trim().ToLowerInvariant();
+        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
+        Guid businessId;
+        if (qr != null) businessId = qr.BusinessId;
+        else if (Guid.TryParse(cleanSlug, out var bId)) businessId = bId;
+        else
+        {
+            var b = await _db.Businesses.FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
+            if (b == null) return NotFound(ApiResponse<List<TableOrderResponse>>.Fail("Restaurant not found"));
+            businessId = b.Id;
+        }
+
+        var cleanTable = tableNumber.Trim().ToLowerInvariant();
+        var altTable = cleanTable.StartsWith("table") ? cleanTable.Replace("table", "").Trim() : ("table " + cleanTable);
+        var tableDigits = Regex.Match(cleanTable, @"\d+").Value;
+        var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
+
+        var cutoff = DateTime.UtcNow.AddHours(-12);
+        var activeOrders = await _db.TableOrders
+            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
+                        (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
+                         (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum))) &&
+                        o.Status != "PAID" && o.Status != "SETTLED" && o.Status != "CANCELLED")
+            .OrderBy(o => o.Round)
+            .ThenBy(o => o.CreatedAt)
+            .ToListAsync(ct);
+
+        if (activeOrders.Count > 0)
+        {
+            var activePartyPin = activeOrders.FirstOrDefault(o => !string.IsNullOrEmpty(o.PartyPin))?.PartyPin;
+            if (!string.IsNullOrEmpty(activePartyPin))
+            {
+                if (string.IsNullOrWhiteSpace(request?.Pin) || request.Pin.Trim() != activePartyPin)
+                {
+                    return BadRequest(ApiResponse<List<TableOrderResponse>>.Fail("Invalid 3-digit Table PIN. Please ask your friend at the table for the PIN displayed on their screen."));
+                }
+            }
+        }
+
+        var chatKey = GetChatKey(businessId, cleanTable);
+        if (!string.IsNullOrWhiteSpace(request?.SessionToken))
+        {
+            _activeTableSessionTokens[chatKey] = request.SessionToken.Trim();
+        }
+
+        var responses = activeOrders.Select(ToResponse).ToList();
+        return Ok(ApiResponse<List<TableOrderResponse>>.Ok(responses, "Joined table party successfully!"));
+    }
+
+    [HttpPost("api/public/orders/{slug}/table/{tableNumber}/claim-new-party")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object>>> ClaimNewParty(
+        string slug,
+        string tableNumber,
+        [FromBody] ClaimNewPartyRequest? request,
+        CancellationToken ct)
+    {
+        var cleanSlug = slug.Trim().ToLowerInvariant();
+        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
+        Guid businessId;
+        if (qr != null) businessId = qr.BusinessId;
+        else if (Guid.TryParse(cleanSlug, out var bId)) businessId = bId;
+        else
+        {
+            var b = await _db.Businesses.FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
+            if (b == null) return NotFound(ApiResponse<object>.Fail("Restaurant not found"));
+            businessId = b.Id;
+        }
+
+        var (isValid, _) = await ValidateTableForBusinessAsync(businessId, tableNumber, ct);
+        if (!isValid)
+        {
+            return BadRequest(ApiResponse<object>.Fail($"Invalid table '{tableNumber}'."));
+        }
+
+        var note = $"New party seated at Table {tableNumber.Trim()}! Previous orders pending settlement. 1-Tap verify to start fresh session.";
+        var call = new TableWaiterCallDto
+        {
+            Id = Guid.NewGuid().ToString(),
+            BusinessId = businessId,
+            TableNumber = tableNumber.Trim(),
+            Note = note,
+            CreatedAt = DateTime.UtcNow,
+            IsAttended = false
+        };
+
+        var key = GetChatKey(businessId, tableNumber);
+        _waiterCallsStore.AddOrUpdate(key, call, (_, _) => call);
+
+        TableSyncManager.Broadcast(businessId, tableNumber, "new_party_claimed", call);
+        TableSyncManager.Broadcast(businessId, tableNumber, "waiter_called", call);
+
+        return Ok(ApiResponse<object>.Ok(new { tableNumber, note }, "Staff alerted! Please wait while table is verified and reset."));
     }
 
 
@@ -990,6 +1198,7 @@ public class TableOrdersController : ControllerBase
     /// <summary>Closes table session and clears active orders and bill request.</summary>
 
     [HttpPost("api/businesses/{businessId}/table/{tableNumber}/close")]
+    [HttpPost("api/businesses/{businessId}/table/{tableNumber}/verify-new-party")]
 
     [AllowAnonymous]
 
@@ -1742,6 +1951,8 @@ public class TableOrdersController : ControllerBase
 
             CompletedAt = o.CompletedAt,
 
+            PartyPin = o.PartyPin,
+
         };
 
     }
@@ -1978,6 +2189,10 @@ public class PlaceTableOrderRequest
 
     public List<string>? PreviousOrderIds { get; set; }
 
+    public double? CustomerLatitude { get; set; }
+    public double? CustomerLongitude { get; set; }
+    public string? PartyPin { get; set; }
+
 }
 
 
@@ -2040,6 +2255,21 @@ public class TableOrderResponse
 
     public DateTime? CompletedAt { get; set; }
 
+    public string? PartyPin { get; set; }
+
+}
+
+public class JoinTablePartyRequest
+{
+    public string? SessionToken { get; set; }
+    public string? DinerName { get; set; }
+    public string? Pin { get; set; }
+}
+
+public class ClaimNewPartyRequest
+{
+    public string? SessionToken { get; set; }
+    public string? CustomerPhone { get; set; }
 }
 
 

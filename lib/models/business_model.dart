@@ -49,6 +49,10 @@ class BusinessModel {
     this.createdAt,
     this.wifiName,
     this.wifiPassword,
+    this.latitude,
+    this.longitude,
+    this.geofenceRadiusMeters = 200,
+    this.requireGeofence = false,
   });
 
   final String id;
@@ -70,6 +74,10 @@ class BusinessModel {
   final DateTime? createdAt;
   final String? wifiName;
   final String? wifiPassword;
+  final double? latitude;
+  final double? longitude;
+  final int geofenceRadiusMeters;
+  final bool requireGeofence;
 
   bool get isPending => status == BusinessStatus.pendingApproval;
   bool get isActive => status == BusinessStatus.active;
@@ -102,6 +110,10 @@ class BusinessModel {
           : null,
       wifiName: json['wifiName'] as String?,
       wifiPassword: json['wifiPassword'] as String?,
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
+      geofenceRadiusMeters: json['geofenceRadiusMeters'] as int? ?? 200,
+      requireGeofence: json['requireGeofence'] as bool? ?? false,
     );
   }
 
@@ -137,5 +149,9 @@ class BusinessModel {
         'createdAt': createdAt?.toIso8601String(),
         'wifiName': wifiName,
         'wifiPassword': wifiPassword,
+        'latitude': latitude,
+        'longitude': longitude,
+        'geofenceRadiusMeters': geofenceRadiusMeters,
+        'requireGeofence': requireGeofence,
       };
 }

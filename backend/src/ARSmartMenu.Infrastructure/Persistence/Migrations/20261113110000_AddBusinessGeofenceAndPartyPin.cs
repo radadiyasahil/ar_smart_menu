@@ -1,3 +1,5 @@
+using ARSmartMenu.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -5,6 +7,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ARSmartMenu.Infrastructure.Persistence.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20261113110000_AddBusinessGeofenceAndPartyPin")]
     public partial class AddBusinessGeofenceAndPartyPin : Migration
     {
         /// <inheritdoc />

@@ -723,16 +723,36 @@ export function TableOrderStatusModal({
                   {/* Items in this Round */}
                   <div className="divide-y divide-white/5 mt-2">
                     {(order.items || []).map((item, itemIdx) => (
-                      <div key={item.id || itemIdx} className="py-2 flex items-center justify-between gap-3 text-xs">
-                        <div className="flex items-center gap-2.5">
-                          <span className="w-6 h-6 rounded-md bg-[#252632] text-white font-bold flex items-center justify-center text-[11px] shrink-0">
+                      <div key={item.id || itemIdx} className="py-2.5 flex items-start justify-between gap-3 text-xs">
+                        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                          <span className="w-6 h-6 rounded-md bg-[#252632] text-white font-bold flex items-center justify-center text-[11px] shrink-0 mt-0.5">
                             {item.quantity}×
                           </span>
-                          <span className={`font-semibold ${isCancelled ? 'line-through text-gray-400' : 'text-gray-200'}`}>
-                            {item.name}
-                          </span>
+                          <div className="flex-1 min-w-0">
+                            <span className={`font-semibold block ${isCancelled ? 'line-through text-gray-400' : 'text-gray-200'}`}>
+                              {item.name}
+                            </span>
+                            {item.modifiers && item.modifiers.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1 mt-1">
+                                {item.modifiers.map((mod, mIdx) => (
+                                  <span
+                                    key={mIdx}
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-medium"
+                                  >
+                                    {mod}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {item.notes && item.notes.trim() && (
+                              <p className="text-[10px] text-blue-300 italic mt-0.5 flex items-center gap-1">
+                                <span>📝</span>
+                                <span>&ldquo;{item.notes.trim()}&rdquo;</span>
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <span className="font-bold text-gray-300 shrink-0">
+                        <span className="font-bold text-gray-300 shrink-0 mt-0.5">
                           ₹{((item.unitPrice || 0) * (item.quantity || 1)).toLocaleString('en-IN')}
                         </span>
                       </div>

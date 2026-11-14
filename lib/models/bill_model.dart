@@ -82,11 +82,17 @@ class TableBill {
     required int unitPrice,
     int quantity = 1,
     bool isCustom = false,
+    List<String> modifiers = const [],
+    String notes = '',
   }) {
+    final modKey = (List<String>.from(modifiers)..sort()).join('|');
     final idx = items.indexWhere(
       (i) =>
-          (id.isNotEmpty && i.id == id) ||
-          i.name.toLowerCase() == name.toLowerCase(),
+          ((id.isNotEmpty && i.id == id) ||
+              i.name.toLowerCase() == name.toLowerCase()) &&
+          i.unitPrice == unitPrice &&
+          (List<String>.from(i.modifiers)..sort()).join('|') == modKey &&
+          i.notes.trim() == notes.trim(),
     );
     if (idx >= 0) {
       items[idx].quantity += quantity;
@@ -98,6 +104,8 @@ class TableBill {
           unitPrice: unitPrice,
           quantity: quantity,
           isCustom: isCustom,
+          modifiers: List.from(modifiers),
+          notes: notes,
         ),
       );
     }
@@ -111,6 +119,8 @@ class TableBill {
         unitPrice: it.unitPrice,
         quantity: it.quantity,
         isCustom: it.isCustom,
+        modifiers: it.modifiers,
+        notes: it.notes,
       );
     }
   }
@@ -132,7 +142,13 @@ class TableBill {
       '🕒 $timeStr',
       '────────────────────────',
       '*Items:*',
-      ...items.map((i) => '▫️ ${i.quantity}x ${i.name}: ₹${i.total}'),
+      ...items.expand((i) => [
+        '▫️ ${i.quantity}x ${i.name}: ₹${i.total}',
+        if (i.modifiers.isNotEmpty)
+          '   └ Extra: ${i.modifiers.join(', ')}',
+        if (i.notes.trim().isNotEmpty)
+          '   └ Note: "${i.notes.trim()}"',
+      ]),
       '────────────────────────',
       'Subtotal: ₹$subtotal',
       if (discountAmount > 0) 'Discount: -₹$discountAmount',

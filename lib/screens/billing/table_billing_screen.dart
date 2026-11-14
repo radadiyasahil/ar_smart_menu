@@ -2795,18 +2795,43 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                             padding: const EdgeInsets.symmetric(vertical: 2.5),
 
                             child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   flex: 5,
 
-                                  child: Text(
-                                    i.name,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        i.name,
 
-                                    style: const TextStyle(
-                                      fontSize: 11,
-
-                                      color: Colors.black87,
-                                    ),
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                      if (i.modifiers.isNotEmpty)
+                                        Text(
+                                          '+ ${i.modifiers.join(", ")}',
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            color: Colors.grey.shade700,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      if (i.notes.trim().isNotEmpty)
+                                        Text(
+                                          'Note: "${i.notes.trim()}"',
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            fontStyle: FontStyle.italic,
+                                            color: Colors.amber.shade900,
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
 
@@ -5093,6 +5118,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                               padding: const EdgeInsets.symmetric(vertical: 4),
 
                               child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Container(
                                     width: 22,
@@ -5120,14 +5146,83 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                                   const SizedBox(width: 8),
 
                                   Expanded(
-                                    child: Text(
-                                      item.name,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          item.name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        if (item.modifiers.isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2),
+                                            child: Wrap(
+                                              spacing: 4,
+                                              runSpacing: 2,
+                                              children: item.modifiers.map((mod) {
+                                                return Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                    color: isDark
+                                                        ? const Color(0xFF1E3A8A).withValues(alpha: 0.4)
+                                                        : const Color(0xFFDBEAFE),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(
+                                                      color: isDark
+                                                          ? const Color(0xFF3B82F6).withValues(alpha: 0.5)
+                                                          : const Color(0xFF93C5FD),
+                                                      width: 0.5,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    mod,
+                                                    style: TextStyle(
+                                                      fontSize: 9.5,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: isDark
+                                                          ? const Color(0xFF93C5FD)
+                                                          : const Color(0xFF1E40AF),
+                                                    ),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ),
+                                        if (item.notes.trim().isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.edit_note,
+                                                  size: 12,
+                                                  color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                                ),
+                                                const SizedBox(width: 2),
+                                                Flexible(
+                                                  child: Text(
+                                                    '"${item.notes.trim()}"',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      fontStyle: FontStyle.italic,
+                                                      fontWeight: isDark ? FontWeight.normal : FontWeight.w600,
+                                                      color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
+
+                                  const SizedBox(width: 8),
 
                                   Text(
                                     '₹${item.total}',
@@ -5439,14 +5534,72 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                         ),
                         const SizedBox(height: 6),
                         ...order.items.map((it) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text(
-                            '• ${it.quantity}x ${it.name}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: isDark ? Colors.white70 : Colors.black87,
-                            ),
+                          padding: const EdgeInsets.symmetric(vertical: 2.5),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '• ${it.quantity}x ${it.name}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                              if (it.modifiers.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 12, top: 2),
+                                  child: Wrap(
+                                    spacing: 4,
+                                    runSpacing: 2,
+                                    children: it.modifiers.map((mod) => Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFDBEAFE),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.5) : const Color(0xFF93C5FD),
+                                          width: 0.5,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        mod,
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
+                                        ),
+                                      ),
+                                    )).toList(),
+                                  ),
+                                ),
+                              if (it.notes.trim().isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 12, top: 2),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.edit_note,
+                                        size: 12,
+                                        color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Flexible(
+                                        child: Text(
+                                          '"${it.notes.trim()}"',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontStyle: FontStyle.italic,
+                                            fontWeight: isDark ? FontWeight.normal : FontWeight.w600,
+                                            color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
                           ),
                         )),
                         const Divider(height: 14),
@@ -6886,7 +7039,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -6905,15 +7058,75 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            item.name,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                item.name,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                              if (item.modifiers.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Wrap(
+                                    spacing: 4,
+                                    runSpacing: 2,
+                                    children: item.modifiers.map((mod) => Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFDBEAFE),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.5) : const Color(0xFF93C5FD),
+                                          width: 0.5,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        mod,
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
+                                        ),
+                                      ),
+                                    )).toList(),
+                                  ),
+                                ),
+                              if (item.notes.trim().isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.edit_note,
+                                        size: 12,
+                                        color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Flexible(
+                                        child: Text(
+                                          '"${item.notes.trim()}"',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontStyle: FontStyle.italic,
+                                            fontWeight: isDark ? FontWeight.normal : FontWeight.w600,
+                                            color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
+                        const SizedBox(width: 8),
                         Text(
                           '₹${item.unitPrice} = ₹$lineTotal',
                           style: TextStyle(

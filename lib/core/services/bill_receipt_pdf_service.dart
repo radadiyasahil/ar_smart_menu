@@ -114,7 +114,25 @@ class BillReceiptPdfService {
                     child: pw.Row(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Expanded(flex: 5, child: pw.Text(i.name, style: const pw.TextStyle(fontSize: 8))),
+                        pw.Expanded(
+                          flex: 5,
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text(i.name, style: const pw.TextStyle(fontSize: 8)),
+                              if (i.modifiers.isNotEmpty)
+                                pw.Text(
+                                  '+ ${i.modifiers.join(', ')}',
+                                  style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
+                                ),
+                              if (i.notes.isNotEmpty)
+                                pw.Text(
+                                  '* Note: ${i.notes}',
+                                  style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey800),
+                                ),
+                            ],
+                          ),
+                        ),
                         pw.Expanded(flex: 2, child: pw.Text('${i.quantity}', textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 8))),
                         pw.Expanded(flex: 2, child: pw.Text('Rs.${i.unitPrice}', textAlign: pw.TextAlign.right, style: const pw.TextStyle(fontSize: 8))),
                         pw.Expanded(flex: 3, child: pw.Text('Rs.${i.total}', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8))),
@@ -689,14 +707,26 @@ class BillReceiptPdfService {
     final fmt = DateFormat('dd MMM yyyy, hh:mm a');
     final timeStr = fmt.format(bill.paidAt ?? bill.createdAt);
 
-    final itemsHtml = bill.items.map((i) => '''
+    final itemsHtml = bill.items.map((i) {
+      final modsHtml = i.modifiers.isNotEmpty
+          ? '<div style="font-size: 11px; color: #555; padding-left: 2px;">↳ ${i.modifiers.join(", ")}</div>'
+          : '';
+      final notesHtml = i.notes.isNotEmpty
+          ? '<div style="font-size: 11px; color: #b45309; font-style: italic; padding-left: 2px;">↳ 📝 ${i.notes}</div>'
+          : '';
+      return '''
       <tr>
-        <td style="padding: 3px 0;">${i.name}</td>
-        <td style="padding: 3px 0; text-align: center;">${i.quantity}</td>
-        <td style="padding: 3px 0; text-align: right;">Rs.${i.unitPrice}</td>
-        <td style="padding: 3px 0; text-align: right; font-weight: bold;">Rs.${i.total}</td>
+        <td style="padding: 3px 0;">
+          <div style="font-weight: 500;">${i.name}</div>
+          $modsHtml
+          $notesHtml
+        </td>
+        <td style="padding: 3px 0; text-align: center; vertical-align: top;">${i.quantity}</td>
+        <td style="padding: 3px 0; text-align: right; vertical-align: top;">Rs.${i.unitPrice}</td>
+        <td style="padding: 3px 0; text-align: right; font-weight: bold; vertical-align: top;">Rs.${i.total}</td>
       </tr>
-    ''').join('');
+    ''';
+    }).join('');
 
     final discountRow = bill.discountAmount > 0
         ? '''<div style="display: flex; justify-content: space-between; margin: 2px 0;"><span>Discount:</span><span>- Rs.${bill.discountAmount}</span></div>'''

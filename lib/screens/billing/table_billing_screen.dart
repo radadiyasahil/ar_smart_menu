@@ -4177,19 +4177,27 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.2),
+                    color: isDark
+                        ? Colors.amber.withValues(alpha: 0.2)
+                        : const Color(0xFFFEF3C7),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.amberAccent),
+                    border: Border.all(
+                      color: isDark ? Colors.amberAccent : const Color(0xFFF59E0B),
+                    ),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.notifications_active, color: Colors.amberAccent, size: 13),
+                      Icon(
+                        Icons.notifications_active,
+                        color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                        size: 13,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           waiterCall.note.isNotEmpty ? waiterCall.note : 'Waiter Call',
-                          style: const TextStyle(
-                            color: Colors.amberAccent,
+                          style: TextStyle(
+                            color: isDark ? Colors.amberAccent : const Color(0xFF78350F),
                             fontWeight: FontWeight.bold,
                             fontSize: 10,
                           ),
@@ -4388,22 +4396,22 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                                     : Colors.grey.shade200)),
 
                       side: isNewParty
-                          ? const BorderSide(
-                              color: Color(0xFFA78BFA),
+                          ? BorderSide(
+                              color: isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED),
                               width: 1.5,
                             )
                           : (isHighlighted
-                              ? const BorderSide(
-                                  color: Colors.amberAccent,
+                              ? BorderSide(
+                                  color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
                                   width: 1.5,
                                 )
                               : BorderSide.none),
 
                       avatar: isNewParty
-                          ? const Icon(
+                          ? Icon(
                               Icons.people_alt,
                               size: 14,
-                              color: Color(0xFFDDD6FE),
+                              color: isDark ? const Color(0xFFDDD6FE) : const Color(0xFF5B21B6),
                             )
                           : (hasPending
                               ? const Icon(
@@ -4412,16 +4420,16 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                                   color: Colors.white,
                                 )
                               : (hasWaiterCall
-                                  ? const Icon(
+                                  ? Icon(
                                       Icons.notifications_active,
                                       size: 14,
-                                      color: Colors.amberAccent,
+                                      color: isDark ? Colors.amberAccent : const Color(0xFF78350F),
                                     )
                                   : (hasBillReq
-                                      ? const Icon(
+                                      ? Icon(
                                           Icons.receipt_long,
                                           size: 14,
-                                          color: Colors.amberAccent,
+                                          color: isDark ? Colors.amberAccent : const Color(0xFF78350F),
                                         )
                                       : (hasKitchen
                                           ? const Icon(
@@ -4759,16 +4767,30 @@ class _TableBillingScreenState extends State<TableBillingScreen>
         if (pendingForTable.isNotEmpty)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            color: Colors.amber.shade900.withValues(alpha: 0.35),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.amber.shade900.withValues(alpha: 0.35)
+                  : const Color(0xFFFEF3C7),
+              border: Border(
+                bottom: BorderSide(
+                  color: isDark ? Colors.amber.shade800 : const Color(0xFFFCD34D),
+                  width: 1,
+                ),
+              ),
+            ),
             child: Row(
               children: [
-                const Icon(Icons.assignment_late, color: Colors.amberAccent, size: 20),
+                Icon(
+                  Icons.assignment_late,
+                  color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                  size: 20,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     '${pendingForTable.length} New Order Ticket(s) waiting for acceptance! Accept or review below 👇',
-                    style: const TextStyle(
-                      color: Colors.amberAccent,
+                    style: TextStyle(
+                      color: isDark ? Colors.amberAccent : const Color(0xFF78350F),
                       fontWeight: FontWeight.bold,
                       fontSize: 12,
                     ),
@@ -4783,28 +4805,44 @@ class _TableBillingScreenState extends State<TableBillingScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFF6D28D9).withValues(alpha: 0.35),
-                border: const Border(
-                  bottom: BorderSide(color: Color(0xFFA78BFA), width: 1.5),
+                color: isDark
+                    ? const Color(0xFF6D28D9).withValues(alpha: 0.35)
+                    : const Color(0xFFEDE9FE),
+                border: Border(
+                  bottom: BorderSide(
+                    color: isDark ? const Color(0xFFA78BFA) : const Color(0xFFC4B5FD),
+                    width: 1.5,
+                  ),
                 ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.people_alt, color: Color(0xFFA78BFA), size: 22),
+                  Icon(
+                    Icons.people_alt,
+                    color: isDark ? const Color(0xFFA78BFA) : const Color(0xFF6D28D9),
+                    size: 22,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           '👥 New Party Seated at Table!',
-                          style: TextStyle(color: Color(0xFFDDD6FE), fontWeight: FontWeight.bold, fontSize: 13),
+                          style: TextStyle(
+                            color: isDark ? const Color(0xFFDDD6FE) : const Color(0xFF4C1D95),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
                         ),
                         Text(
                           waiterCall.note.isNotEmpty
                               ? waiterCall.note
                               : 'Customer tapped "We are a New Party". Verify to settle previous orders and start fresh session.',
-                          style: const TextStyle(color: Colors.white, fontSize: 11),
+                          style: TextStyle(
+                            color: isDark ? Colors.white70 : const Color(0xFF5B21B6),
+                            fontSize: 11,
+                          ),
                         ),
                       ],
                     ),
@@ -4827,22 +4865,44 @@ class _TableBillingScreenState extends State<TableBillingScreen>
           else
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              color: Colors.amber.shade900.withValues(alpha: 0.35),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.amber.shade900.withValues(alpha: 0.35)
+                    : const Color(0xFFFEF3C7),
+                border: Border(
+                  bottom: BorderSide(
+                    color: isDark ? Colors.amber.shade800 : const Color(0xFFFCD34D),
+                    width: 1.5,
+                  ),
+                ),
+              ),
               child: Row(
                 children: [
-                  const Icon(Icons.notifications_active, color: Colors.amberAccent, size: 20),
+                  Icon(
+                    Icons.notifications_active,
+                    color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                    size: 20,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           '🔔 Waiter Call / Assistance Requested',
-                          style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                          style: TextStyle(
+                            color: isDark ? Colors.amberAccent : const Color(0xFF78350F),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
                         ),
                         Text(
                           'Diner note: "${waiterCall.note}"',
-                          style: const TextStyle(color: Colors.white, fontSize: 11),
+                          style: TextStyle(
+                            color: isDark ? Colors.white70 : const Color(0xFF92400E),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 11,
+                          ),
                         ),
                       ],
                     ),
@@ -4853,6 +4913,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                     label: const Text('Attended ✓', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       visualDensity: VisualDensity.compact,
                     ),
@@ -5267,10 +5328,11 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                                   padding: const EdgeInsets.only(left: 12, top: 1),
                                   child: Text(
                                     '↳ 📝 "${it.notes}"',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 10,
-                                      color: Colors.amberAccent,
+                                      color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
                                       fontStyle: FontStyle.italic,
+                                      fontWeight: isDark ? FontWeight.normal : FontWeight.w600,
                                     ),
                                   ),
                                 ),

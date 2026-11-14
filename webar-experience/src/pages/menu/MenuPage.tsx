@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Lock,
   Users,
+  Copy,
 } from 'lucide-react'
 import {
   productService,
@@ -94,6 +95,9 @@ export function MenuPage() {
 
   // Live Table Order Status Tracking (Round 1, Round 2, Round 3...)
   const [activeOrders, setActiveOrders] = useState<LiveTableOrder[]>([])
+  const activePartyPin = useMemo(() => {
+    return activeOrders.find((o) => o.partyPin)?.partyPin || null
+  }, [activeOrders])
   const [isOrderStatusOpen, setIsOrderStatusOpen] = useState(false)
   const [isRefreshingOrders, setIsRefreshingOrders] = useState(false)
   const [isDeclinedBannerDismissed, setIsDeclinedBannerDismissed] = useState<boolean>(() => {
@@ -344,6 +348,31 @@ export function MenuPage() {
       setIsJoiningTable(false)
     }
   }
+
+  // Auto-join table party if opened via invite link containing ?pin=...
+  useEffect(() => {
+    const pinFromUrl = searchParams.get('pin')?.trim()
+    if (!pinFromUrl || pinFromUrl.length !== 3 || !slug || !table) return
+    if (!isTableOccupiedByOther || isJoiningTable) return
+
+    setIsJoiningTable(true)
+    tableOrderService
+      .joinTableParty(slug, table, pinFromUrl)
+      .then((res) => {
+        if (res.success) {
+          setIsJoinPinModalOpen(false)
+          setIsTableOccupiedByOther(false)
+          setActiveOrders(res.orders)
+          showToast(`🤝 Joined Table ${table} party with PIN ${pinFromUrl}!`)
+        }
+      })
+      .catch((err) => {
+        console.warn('Auto join with PIN failed:', err)
+      })
+      .finally(() => {
+        setIsJoiningTable(false)
+      })
+  }, [searchParams, slug, table, isTableOccupiedByOther, isJoiningTable])
 
   // Poll table orders every 2 seconds for real-time kitchen status updates
   const fetchOrdersRef = useRef(fetchOrders)
@@ -617,15 +646,43 @@ export function MenuPage() {
     0,
   )
 
-  const handleShare = async () => {
+  const handleSharePartyPin = async () => {
+    if (!activePartyPin) return
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?table=${encodeURIComponent(table || '')}&pin=${activePartyPin}`
+    const shareText = `Join our table at ${menu?.businessName || 'Restaurant'} (Table ${table})! 🍽️ Enter Table PIN: ${activePartyPin} or open this link:`
     if (navigator.share) {
       try {
-        await navigator.share({ title: menu?.businessName, url: window.location.href })
+        await navigator.share({
+          title: `Join Table ${table} (PIN: ${activePartyPin})`,
+          text: shareText,
+          url: inviteUrl,
+        })
         return
       } catch {}
     }
-    navigator.clipboard.writeText(window.location.href)
-    showToast('🔗 Menu link copied!')
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(activePartyPin)
+      showToast(`📋 Table PIN ${activePartyPin} copied! Share it with friends at Table ${table}`)
+    } else {
+      showToast(`👥 Table PIN: ${activePartyPin}`)
+    }
+  }
+
+  const handleShare = async () => {
+    const shareUrl = activePartyPin && table
+      ? `${window.location.origin}${window.location.pathname}?table=${encodeURIComponent(table)}&pin=${activePartyPin}`
+      : window.location.href
+    const title = activePartyPin
+      ? `Join Table ${table} at ${menu?.businessName || 'Restaurant'} (PIN: ${activePartyPin})`
+      : (menu?.businessName || 'Restaurant Menu')
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, url: shareUrl })
+        return
+      } catch {}
+    }
+    navigator.clipboard.writeText(shareUrl)
+    showToast(activePartyPin ? `🔗 Table ${table} invite link copied (includes PIN: ${activePartyPin})!` : '🔗 Menu link copied!')
   }
 
   if (loading) {
@@ -768,6 +825,19 @@ export function MenuPage() {
                 >
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
                   <span>{kitchenStatusSummary?.emoji} {totalOrderedItemsCount} Items ({kitchenStatusSummary?.label})</span>
+                </button>
+              )}
+
+              {activePartyPin && (
+                <button
+                  type="button"
+                  onClick={handleSharePartyPin}
+                  className="bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition"
+                  title="Tap to copy Table PIN or share with friends"
+                >
+                  <Users size={12} className="text-amber-400" />
+                  <span>PIN: <span className="font-mono font-black tracking-wider text-white bg-amber-500/30 px-1.5 py-0.5 rounded border border-amber-400/40">{activePartyPin}</span></span>
+                  <Copy size={11} className="text-amber-400/80 ml-0.5" />
                 </button>
               )}
             </div>
@@ -1209,7 +1279,7 @@ export function MenuPage() {
                 )}
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span className={`text-xs font-black uppercase tracking-wide truncate ${
                     allOrdersCancelled ? 'text-rose-400' : 'text-emerald-400'
                   }`}>
@@ -1218,6 +1288,21 @@ export function MenuPage() {
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300 font-semibold shrink-0">
                     {table ? (table.toLowerCase().startsWith('table') ? table : `Table ${table}`) : 'Table'}
                   </span>
+                  {activePartyPin && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleSharePartyPin()
+                      }}
+                      className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 font-mono font-bold flex items-center gap-1 transition cursor-pointer shrink-0"
+                      title="Tap to copy Table PIN"
+                    >
+                      <Users size={10} className="text-amber-400" />
+                      <span>PIN: <strong>{activePartyPin}</strong></span>
+                      <Copy size={9} />
+                    </button>
+                  )}
                 </div>
                 <p className="text-xs font-semibold text-gray-200 mt-0.5 truncate">
                   {allOrdersCancelled
@@ -1300,7 +1385,11 @@ export function MenuPage() {
             return exists ? prev.map((o) => (o.id === order.id ? order : o)) : [...prev, order]
           })
           setIsOrderStatusOpen(true)
-          showToast(`🍳 Round ${order.round} sent to kitchen! Tracking status...`)
+          if (order.partyPin) {
+            showToast(`🍳 Round ${order.round} placed! Table PIN: ${order.partyPin} (share with friends)`)
+          } else {
+            showToast(`🍳 Round ${order.round} sent to kitchen! Tracking status...`)
+          }
           fetchOrders(true)
         }}
         onClose={() => setIsCartOpen(false)}

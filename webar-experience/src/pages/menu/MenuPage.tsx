@@ -810,7 +810,7 @@ export function MenuPage() {
   const heroDish = allDishes.find((d) => d.has3dModel && d.thumbnailUrl) || allDishes[0]
 
   const renderDishGrid = (dishes: PublicMenuDish[]) => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3">
       {dishes.map((dish) => (
         <DishCard
           key={dish.id}

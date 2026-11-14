@@ -10,6 +10,7 @@ import '../../core/utils/owner_navigation.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common/gradient_card.dart';
 import '../../widgets/common/primary_button.dart';
+import '../../core/utils/top_toast.dart';
 
 /// Restaurant Owner Login & Registration screen.
 /// Uses Mobile Number + Password / PIN without OTP.
@@ -67,12 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(formatApiError(e)),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -100,12 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(formatApiError(e)),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

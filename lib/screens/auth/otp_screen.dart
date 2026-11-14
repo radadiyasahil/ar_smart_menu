@@ -12,6 +12,7 @@ import '../../core/constants/app_spacing.dart';
 import '../../core/utils/owner_navigation.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common/primary_button.dart';
+import '../../core/utils/top_toast.dart';
 
 /// OTP verification screen — calls backend API.
 class OtpScreen extends StatefulWidget {
@@ -74,9 +75,7 @@ class _OtpScreenState extends State<OtpScreen> {
 
   Future<void> _verifyOtp() async {
     if (_otp.length != _otpLength) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the full 6-digit OTP')),
-      );
+      TopToast.warning(context, 'Please enter the full 6-digit OTP');
       return;
     }
 
@@ -91,9 +90,7 @@ class _OtpScreenState extends State<OtpScreen> {
       if (mounted) await navigateOwnerAfterAuth(context);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-        );
+        TopToast.error(context, e.toString().replaceFirst('Exception: ', ''));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -109,9 +106,7 @@ class _OtpScreenState extends State<OtpScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-        );
+        TopToast.error(context, e.toString().replaceFirst('Exception: ', ''));
       }
     }
   }

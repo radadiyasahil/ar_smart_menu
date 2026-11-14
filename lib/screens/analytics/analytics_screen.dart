@@ -13,6 +13,7 @@ import '../../providers/business_provider.dart';
 import '../../core/services/analytics_export_service.dart';
 import '../../core/services/billing_service.dart';
 import '../../widgets/common/gradient_card.dart';
+import '../../core/utils/top_toast.dart';
 
 enum ChartMetric { revenue, orders, scans }
 
@@ -55,32 +56,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: AppColors.success,
-            content: Row(
-              children: [
-                Icon(Icons.check_circle_outline, color: Colors.white),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Financial audit report downloaded in Excel (.csv) format.',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-            duration: Duration(seconds: 4),
-          ),
+        TopToast.success(
+          context,
+          'Financial audit report downloaded in Excel (.csv) format.',
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: AppColors.error,
-            content: Text('Failed to generate report: $e'),
-          ),
+        TopToast.error(
+          context,
+          'Failed to generate report: $e',
         );
       }
     } finally {

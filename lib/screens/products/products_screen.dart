@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../widgets/common/hover_card.dart';
 import '../../widgets/products/bulk_import_dialog.dart';
 import '../../core/utils/subscription_guard.dart';
+import '../../core/utils/top_toast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -120,9 +121,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       await provider.reorderProducts(items.map((p) => p.id).toList());
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     } finally {
       if (mounted) setState(() => _isReordering = false);
@@ -139,11 +138,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
       final count = await provider.bulkSetProductStatus(_selectedIds, status);
       if (mounted) {
         final label = status == ProductStatus.live ? 'Live' : 'Paused';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$count dish(es) updated to $label'),
-            backgroundColor: status == ProductStatus.live ? AppColors.success : null,
-          ),
+        TopToast.show(
+          context,
+          '$count dish(es) updated to $label',
+          isError: false,
         );
         setState(() {
           _bulkMode = false;
@@ -152,9 +150,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     } finally {
       if (mounted) setState(() => _isBulkWorking = false);
@@ -165,11 +161,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
     if (_selectedIds.isEmpty) return;
     final isDeactivated = context.read<BusinessProvider>().isDeactivated;
     if (isDeactivated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Business is deactivated. Operations are paused until reactivated.'),
-          backgroundColor: Colors.orange,
-        ),
+      TopToast.warning(
+        context,
+        'Business is deactivated. Operations are paused until reactivated.',
       );
       return;
     }
@@ -180,14 +174,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
         soldOut: soldOut,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              soldOut
-                  ? 'Marked $count item(s) sold out'
-                  : 'Cleared sold out on $count item(s)',
-            ),
-          ),
+        TopToast.show(
+          context,
+          soldOut
+              ? 'Marked $count item(s) sold out'
+              : 'Cleared sold out on $count item(s)',
         );
         setState(() {
           _bulkMode = false;
@@ -196,9 +187,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     } finally {
       if (mounted) setState(() => _isBulkWorking = false);
@@ -837,14 +826,9 @@ class _ProductListTile extends StatelessWidget {
                   onPressed: () async {
                     await context.read<ProductProvider>().setProductStatus(product.id, ProductStatus.paused);
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${product.name} removed from Live menu (Paused).'),
-                          action: SnackBarAction(
-                            label: 'Undo',
-                            onPressed: () => context.read<ProductProvider>().setProductStatus(product.id, ProductStatus.live),
-                          ),
-                        ),
+                      TopToast.show(
+                        context,
+                        '${product.name} removed from Live menu (Paused).',
                       );
                     }
                   },
@@ -858,11 +842,9 @@ class _ProductListTile extends StatelessWidget {
                   onPressed: () async {
                     await context.read<ProductProvider>().setProductStatus(product.id, ProductStatus.live);
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${product.name} is now LIVE on AR menu!'),
-                          backgroundColor: AppColors.success,
-                        ),
+                      TopToast.show(
+                        context,
+                        '${product.name} is now LIVE on AR menu!',
                       );
                     }
                   },

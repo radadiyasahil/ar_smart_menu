@@ -8,6 +8,7 @@ import '../../core/constants/app_routes.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/business_provider.dart';
 import '../../providers/table_orders_provider.dart';
+import '../../core/utils/top_toast.dart';
 
 /// Bottom navigation shell wrapping the main app tabs.
 /// When not logged in, clicking anywhere on the screen displays a login prompt
@@ -83,20 +84,11 @@ class _MainShellState extends State<MainShell> {
     // Only Account tab (index 5) is accessible when not approved yet
     if (!isApproved && index != 5) {
       final isRejected = context.read<BusinessProvider>().isRejected;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isRejected
-                ? 'Your business was rejected by admin. Operational features are locked.'
-                : 'Your business is awaiting admin approval. Operational features are locked.',
-          ),
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: 'View Status',
-            textColor: AppColors.primaryOrange,
-            onPressed: () => context.go(AppRoutes.businessStatus),
-          ),
-        ),
+      TopToast.warning(
+        context,
+        isRejected
+            ? 'Your business was rejected by admin. Operational features are locked.'
+            : 'Your business is awaiting admin approval. Operational features are locked.',
       );
       context.go(AppRoutes.businessStatus);
       return;

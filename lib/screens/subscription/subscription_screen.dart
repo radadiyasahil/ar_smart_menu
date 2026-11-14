@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/services/subscription_service.dart';
 import '../../providers/business_provider.dart';
+import '../../core/utils/top_toast.dart';
 
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({super.key});
@@ -53,23 +54,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     try {
       await businessProvider.activateTrial();
       if (mounted) {
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(
-            content: Text('🎉 7-Day Free Trial activated! All features are unlocked.'),
-            backgroundColor: Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        TopToast.success(context, '🎉 7-Day Free Trial activated! All features are unlocked.');
       }
     } catch (e) {
       if (mounted) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: const Color(0xFFEF4444),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        TopToast.error(context, 'Error: $e');
       }
     }
   }
@@ -227,24 +216,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                                         Navigator.of(dialogCtx).pop();
                                       }
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('🎉 ${plan.name} activated successfully! All services unlocked.'),
-                                            backgroundColor: const Color(0xFF10B981),
-                                            behavior: SnackBarBehavior.floating,
-                                          ),
-                                        );
+                                        TopToast.success(context, '🎉 ${plan.name} activated successfully! All services unlocked.');
                                       }
                                     } catch (err) {
                                       setDialogState(() => isActivating = false);
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Activation failed: $err'),
-                                            backgroundColor: const Color(0xFFEF4444),
-                                            behavior: SnackBarBehavior.floating,
-                                          ),
-                                        );
+                                        TopToast.error(context, 'Activation failed: $err');
                                       }
                                     }
                                   },

@@ -7,6 +7,7 @@ import 'package:pasteboard/pasteboard.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_spacing.dart';
 import '../../core/utils/web_paste_drop_listener.dart';
+import '../../core/utils/top_toast.dart';
 
 /// Single photo uploader & replacer for Standard (2D) dishes.
 /// Supports gallery selection, drag & drop, and clipboard paste (Ctrl+V).
@@ -76,12 +77,7 @@ class _SinglePhotoUploaderState extends State<SinglePhotoUploader> {
       await widget.onPhotoSelected(bytes, filename);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to save photo: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        TopToast.error(context, 'Failed to save photo: $e');
       }
     }
   }
@@ -102,9 +98,7 @@ class _SinglePhotoUploaderState extends State<SinglePhotoUploader> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error choosing photo: $e')),
-        );
+        TopToast.error(context, 'Error choosing photo: $e');
       }
     }
   }
@@ -115,11 +109,9 @@ class _SinglePhotoUploaderState extends State<SinglePhotoUploader> {
       final bytes = await Pasteboard.image;
       if (bytes == null || bytes.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No image on clipboard. Copy an image first, or choose a file.'),
-              backgroundColor: AppColors.primaryOrange,
-            ),
+          TopToast.warning(
+            context,
+            'No image on clipboard. Copy an image first, or choose a file.',
           );
         }
         return;
@@ -127,9 +119,7 @@ class _SinglePhotoUploaderState extends State<SinglePhotoUploader> {
       await _assign(bytes, 'pasted_photo_${DateTime.now().millisecondsSinceEpoch}.png');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Paste failed: $e')),
-        );
+        TopToast.error(context, 'Paste failed: $e');
       }
     }
   }

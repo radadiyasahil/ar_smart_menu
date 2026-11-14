@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/utils/device_location_helper.dart';
+import '../../core/utils/top_toast.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -33,6 +34,11 @@ class AccountScreen extends StatefulWidget {
 }
 
 class _AccountScreenState extends State<AccountScreen> {
+  void _showNotification(String message, {bool isError = false, bool isWarning = false}) {
+    if (!mounted) return;
+    TopToast.show(context, message, isError: isError, isWarning: isWarning);
+  }
+
   _AccountView _currentView = _AccountView.profile;
   _AccountView _previousView = _AccountView.profile;
   _ProfileTab _selectedTab = _ProfileTab.overview;
@@ -115,9 +121,7 @@ class _AccountScreenState extends State<AccountScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to pick profile image: $e')),
-        );
+        _showNotification('Failed to pick profile image: $e', isError: true);
       }
     }
   }
@@ -135,9 +139,7 @@ class _AccountScreenState extends State<AccountScreen> {
         final filename = picked.name.isNotEmpty ? picked.name : 'logo.jpg';
         setState(() => _isSaving = true);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Uploading business profile photo...')),
-          );
+          _showNotification('Uploading business profile photo...');
         }
         if (!mounted) return;
         await context.read<BusinessProvider>().uploadLogo(
@@ -145,19 +147,12 @@ class _AccountScreenState extends State<AccountScreen> {
           filename: filename,
         );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Profile photo updated successfully!'),
-              backgroundColor: AppColors.success,
-            ),
-          );
+          _showNotification('Profile photo updated successfully!');
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to upload profile photo: $e'), backgroundColor: AppColors.error),
-        );
+        _showNotification('Failed to upload profile photo: $e', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -256,29 +251,22 @@ class _AccountScreenState extends State<AccountScreen> {
       try {
         await businessProvider.setBusinessStatus(BusinessStatus.deactivated, reason: 'Owner paused application use');
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Business deactivated. Diners cannot view active menu.')),
-          );
+          _showNotification('Business deactivated. Diners cannot view active menu.', isWarning: true);
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+          _showNotification(e.toString(), isError: true);
         }
       }
     } else {
       try {
         await businessProvider.setBusinessStatus(BusinessStatus.active);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Business reactivated! You are now live for diners.'),
-              backgroundColor: AppColors.success,
-            ),
-          );
+          _showNotification('Business reactivated! You are now live for diners.');
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+          _showNotification(e.toString(), isError: true);
         }
       }
     }
@@ -298,65 +286,47 @@ class _AccountScreenState extends State<AccountScreen> {
     final gstNumber = _gstController.text.trim().toUpperCase();
 
     if (fullName.isEmpty || fullName.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid full name (at least 2 characters)'), backgroundColor: AppColors.error),
-      );
+      _showNotification('Please enter a valid full name (at least 2 characters)', isWarning: true);
       return;
     }
 
     if (phone.isEmpty || phone.length != 10 || !RegExp(r'^[6-9]\d{9}$').hasMatch(phone)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid 10-digit mobile number (starts with 6-9)'), backgroundColor: AppColors.error),
-      );
+      _showNotification('Please enter a valid 10-digit mobile number (starts with 6-9)', isWarning: true);
       return;
     }
 
     if (email.isNotEmpty && !RegExp(r'^[\w\.-]+@[\w\.-]+\.\w{2,}$').hasMatch(email)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid email address'), backgroundColor: AppColors.error),
-      );
+      _showNotification('Please enter a valid email address', isWarning: true);
       return;
     }
 
     if (businessName.isEmpty || businessName.length < 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Restaurant name must be at least 3 characters'), backgroundColor: AppColors.error),
-      );
+      _showNotification('Restaurant name must be at least 3 characters', isWarning: true);
       return;
     }
 
     if (city.isEmpty || city.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('City must be at least 2 characters'), backgroundColor: AppColors.error),
-      );
+      _showNotification('City must be at least 2 characters', isWarning: true);
       return;
     }
 
     if (fullAddress.isEmpty || fullAddress.length < 5) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Address must be at least 5 characters'), backgroundColor: AppColors.error),
-      );
+      _showNotification('Address must be at least 5 characters', isWarning: true);
       return;
     }
 
     if (upiId.isNotEmpty && !RegExp(r'^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$').hasMatch(upiId)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid UPI ID (e.g. restaurant@upi)'), backgroundColor: AppColors.error),
-      );
+      _showNotification('Enter a valid UPI ID (e.g. restaurant@upi)', isWarning: true);
       return;
     }
 
     if (fssaiNumber.isNotEmpty && (fssaiNumber.length != 14 || !RegExp(r'^\d{14}$').hasMatch(fssaiNumber))) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('FSSAI license must be exactly 14 numeric digits'), backgroundColor: AppColors.error),
-      );
+      _showNotification('FSSAI license must be exactly 14 numeric digits', isWarning: true);
       return;
     }
 
     if (gstNumber.isNotEmpty && gstNumber.length != 15) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('GSTIN must be exactly 15 characters'), backgroundColor: AppColors.error),
-      );
+      _showNotification('GSTIN must be exactly 15 characters', isWarning: true);
       return;
     }
 
@@ -393,24 +363,14 @@ class _AccountScreenState extends State<AccountScreen> {
       await prefs.setString('profile_username', _usernameController.text.trim());
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile details updated successfully!'),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        _showNotification('Profile details updated successfully!');
         setState(() {
           _currentView = _previousView;
         });
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        _showNotification('Failed to update: $e', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -423,23 +383,17 @@ class _AccountScreenState extends State<AccountScreen> {
     final pan = _panController.text.trim().toUpperCase();
 
     if (name.isEmpty || name.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your full name as on identity documents'), backgroundColor: AppColors.error),
-      );
+      _showNotification('Please enter your full name as on identity documents', isWarning: true);
       return;
     }
 
     if (aadhaar.length != 4 || !RegExp(r'^\d{4}$').hasMatch(aadhaar)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Aadhaar Last 4 must be exactly 4 numeric digits'), backgroundColor: AppColors.error),
-      );
+      _showNotification('Aadhaar Last 4 must be exactly 4 numeric digits', isWarning: true);
       return;
     }
 
     if (pan.length != 10 || !RegExp(r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$').hasMatch(pan)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid 10-character PAN number (e.g. ABCDE1234F)'), backgroundColor: AppColors.error),
-      );
+      _showNotification('Enter a valid 10-character PAN number (e.g. ABCDE1234F)', isWarning: true);
       return;
     }
 
@@ -451,18 +405,11 @@ class _AccountScreenState extends State<AccountScreen> {
             panNumber: pan,
           );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('KYC details submitted for review'),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        _showNotification('KYC details submitted for review');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-        );
+        _showNotification(e.toString().replaceFirst('Exception: ', ''), isError: true);
       }
     } finally {
       if (mounted) setState(() => _kycLoading = false);
@@ -474,15 +421,11 @@ class _AccountScreenState extends State<AccountScreen> {
     final ifsc = _ifscController.text.trim().toUpperCase();
 
     if (account.length < 9 || account.length > 18 || !RegExp(r'^\d{9,18}$').hasMatch(account)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bank account number must be between 9 and 18 numeric digits'), backgroundColor: AppColors.error),
-      );
+      _showNotification('Bank account number must be between 9 and 18 numeric digits', isWarning: true);
       return;
     }
     if (ifsc.length != 11 || !RegExp(r'^[A-Z]{4}0[A-Z0-9]{6}$').hasMatch(ifsc)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid 11-character IFSC code (e.g. SBIN0001234)'), backgroundColor: AppColors.error),
-      );
+      _showNotification('Enter a valid 11-character IFSC code (e.g. SBIN0001234)', isWarning: true);
       return;
     }
 
@@ -493,18 +436,14 @@ class _AccountScreenState extends State<AccountScreen> {
             ifsc: _ifscController.text.trim().toUpperCase(),
           );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(ok ? 'Bank account verified successfully' : 'Bank verification failed'),
-            backgroundColor: ok ? AppColors.success : AppColors.error,
-          ),
+        _showNotification(
+          ok ? 'Bank account verified successfully' : 'Bank verification failed',
+          isError: !ok,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-        );
+        _showNotification(e.toString().replaceFirst('Exception: ', ''), isError: true);
       }
     } finally {
       if (mounted) setState(() => _bankLoading = false);
@@ -2429,23 +2368,17 @@ class _AccountScreenState extends State<AccountScreen> {
                   'Location captured: ${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)} (±${result.accuracy.round()}m)';
 
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      '📍 Restaurant GPS captured: ${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)} (±${result.accuracy.round()}m). Ensure your device is inside your restaurant premises!',
-                    ),
-                    backgroundColor: Colors.green.shade700,
-                    duration: const Duration(seconds: 5),
-                  ),
+                TopToast.show(
+                  context,
+                  '📍 Restaurant GPS captured: ${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)} (±${result.accuracy.round()}m). Ensure your device is inside your restaurant premises!',
+                  duration: const Duration(seconds: 4),
                 );
               }
             } catch (e) {
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Failed to get GPS location: ${e.toString().replaceFirst("Exception: ", "")}'),
-                    backgroundColor: Colors.redAccent,
-                  ),
+                TopToast.error(
+                  context,
+                  'Failed to get GPS location: ${e.toString().replaceFirst("Exception: ", "")}',
                 );
               }
             } finally {
@@ -2752,7 +2685,6 @@ class _AccountScreenState extends State<AccountScreen> {
                       onPressed: (!canSave || isSaving)
                           ? null
                           : () async {
-                              final scaffoldMessenger = ScaffoldMessenger.of(context);
                               final navigator = Navigator.of(ctx);
 
                               setModalState(() => isSaving = true);
@@ -2766,19 +2698,18 @@ class _AccountScreenState extends State<AccountScreen> {
                                 );
                                 if (mounted) {
                                   navigator.pop();
-                                  scaffoldMessenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text(requireGeofence
-                                          ? 'Geofence settings updated successfully!'
-                                          : 'Geofencing turned off. Diners can order without GPS restriction.'),
-                                      backgroundColor: requireGeofence ? Colors.green.shade700 : Colors.grey.shade800,
-                                    ),
+                                  TopToast.show(
+                                    context,
+                                    requireGeofence
+                                        ? 'Geofence settings updated successfully!'
+                                        : 'Geofencing turned off. Diners can order without GPS restriction.',
                                   );
                                 }
                               } catch (e) {
                                 if (mounted) {
-                                  scaffoldMessenger.showSnackBar(
-                                    SnackBar(content: Text('Failed: ${e.toString().replaceFirst("Exception: ", "")}')),
+                                  TopToast.error(
+                                    context,
+                                    'Failed: ${e.toString().replaceFirst("Exception: ", "")}',
                                   );
                                 }
                               } finally {

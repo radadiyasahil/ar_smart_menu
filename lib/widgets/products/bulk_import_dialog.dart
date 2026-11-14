@@ -9,6 +9,7 @@ import '../../core/services/menu_bulk_import_service.dart';
 import '../../core/utils/api_error_utils.dart';
 import '../../providers/product_provider.dart';
 import '../common/veg_status_badge.dart';
+import '../../core/utils/top_toast.dart';
 
 class BulkImportDialog extends StatefulWidget {
   const BulkImportDialog({super.key});
@@ -103,9 +104,7 @@ class _BulkImportDialogState extends State<BulkImportDialog>
   Future<void> _executeImport() async {
     final selectedDishes = _parsedDishes.where((d) => d.isSelected).toList();
     if (selectedDishes.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least 1 dish to import.')),
-      );
+      TopToast.warning(context, 'Please select at least 1 dish to import.');
       return;
     }
 
@@ -116,12 +115,9 @@ class _BulkImportDialogState extends State<BulkImportDialog>
 
       if (mounted) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('🎉 Successfully imported ${result.createdCount} dishes! All dishes are now LIVE.'),
-            backgroundColor: AppColors.success,
-            duration: const Duration(seconds: 4),
-          ),
+        TopToast.success(
+          context,
+          '🎉 Successfully imported ${result.createdCount} dishes! All dishes are now LIVE.',
         );
       }
     } catch (e) {

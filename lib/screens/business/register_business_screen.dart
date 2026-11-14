@@ -12,6 +12,7 @@ import '../../providers/business_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../widgets/common/primary_button.dart';
+import '../../core/utils/top_toast.dart';
 
 /// Register a new business — sends approval request to admin.
 class RegisterBusinessScreen extends StatefulWidget {
@@ -63,9 +64,7 @@ class _RegisterBusinessScreenState extends State<RegisterBusinessScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-        );
+        TopToast.error(context, e.toString().replaceFirst('Exception: ', ''));
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);

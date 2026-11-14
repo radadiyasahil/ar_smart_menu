@@ -8,6 +8,7 @@ import '../../core/constants/app_routes.dart';
 import '../../core/constants/app_spacing.dart';
 import '../../core/utils/api_error_utils.dart';
 import '../../core/utils/subscription_guard.dart';
+import '../../core/utils/top_toast.dart';
 import '../../models/business_model.dart';
 import '../../models/product_model.dart';
 import '../../providers/business_provider.dart';
@@ -92,9 +93,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     final pricePaise = _parsePricePaise();
     if (_priceController.text.trim().isNotEmpty && pricePaise == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid price')),
-      );
+      TopToast.warning(context, 'Enter a valid price');
       return;
     }
 
@@ -135,17 +134,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
         if (mounted) {
           final count = _pendingPhotos.length;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                count >= 4
-                    ? 'Hero 3D product created — submitted for AR processing!'
-                    : count > 0
-                        ? 'Product created with $count photo(s) — upload remaining on next screen.'
-                        : 'Product created — add 4 photos or upload .glb 3D model',
-              ),
-              backgroundColor: count >= 4 ? AppColors.success : null,
-            ),
+          TopToast.show(
+            context,
+            count >= 4
+                ? 'Hero 3D product created — submitted for AR processing!'
+                : count > 0
+                    ? 'Product created with $count photo(s) — upload remaining on next screen.'
+                    : 'Product created — add 4 photos or upload .glb 3D model',
           );
           context.go(AppRoutes.productDetail(created.id));
         }
@@ -165,20 +160,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
         }
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✨ Dish created and is now LIVE on your customer menu!'),
-              backgroundColor: AppColors.success,
-            ),
+          TopToast.show(
+            context,
+            '✨ Dish created and is now LIVE on your customer menu!',
           );
           context.go(AppRoutes.products);
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -206,8 +197,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
             label: const Text('Bulk Import', style: TextStyle(fontWeight: FontWeight.bold)),
             onPressed: isDeactivated
                 ? () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Business is deactivated. Reactivate to import dishes.')),
+                    TopToast.warning(
+                      context,
+                      'Business is deactivated. Reactivate to import dishes.',
                     );
                   }
                 : () => BulkImportDialog.show(context),

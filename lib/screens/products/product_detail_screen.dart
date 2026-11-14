@@ -9,6 +9,7 @@ import '../../core/constants/app_routes.dart';
 import '../../core/constants/app_spacing.dart';
 import '../../core/utils/api_error_utils.dart';
 import '../../core/utils/ar_preview.dart';
+import '../../core/utils/top_toast.dart';
 import '../../models/product_model.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/business_provider.dart';
@@ -102,18 +103,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 ? 'All 4 photos uploaded — product submitted for AR processing!'
                 : (result.message ??
                     'Photo uploaded ($count/${ProductModel.photosRequiredForSubmit})'));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: result.autoSubmitted ? AppColors.success : null,
-          ),
-        );
+        TopToast.show(context, message);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     } finally {
       if (mounted) {
@@ -139,9 +133,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       final bytes = await file.readAsBytes();
       if (bytes.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not read 3D file data')),
-          );
+          TopToast.error(context, 'Could not read 3D file data');
         }
         return;
       }
@@ -160,19 +152,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           _product = updated;
           _isUploading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('3D Model uploaded successfully! Dish is now Live in AR.'),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        TopToast.show(context, '3D Model uploaded successfully! Dish is now Live in AR.');
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isUploading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     }
   }
@@ -192,11 +177,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       final bytes = await picked.readAsBytes();
       if (bytes.length > 35 * 1024 * 1024) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Video must be under 35 MB to conserve storage.'),
-            ),
-          );
+          TopToast.warning(context, 'Video must be under 35 MB to conserve storage.');
         }
         return;
       }
@@ -215,19 +196,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           _product = updated;
           _isUploading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Walkaround video uploaded! Status updated to Processing.'),
-            backgroundColor: AppColors.primaryOrange,
-          ),
-        );
+        TopToast.show(context, 'Walkaround video uploaded! Status updated to Processing.');
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isUploading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     }
   }
@@ -237,12 +211,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (product == null) return;
     final isDeactivated = context.read<BusinessProvider>().isDeactivated;
     if (isDeactivated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Business is deactivated. Reactivate business to change live status.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      TopToast.warning(context, 'Business is deactivated. Reactivate business to change live status.');
       return;
     }
 
@@ -251,20 +220,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       setState(() => _product = updated);
       if (mounted) {
         final isLive = targetStatus == ProductStatus.live;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isLive
-                ? '${product.name} is now LIVE on AR menu!'
-                : '${product.name} removed from Live menu (Paused).'),
-            backgroundColor: isLive ? AppColors.success : null,
-          ),
-        );
+        TopToast.show(context, isLive ? '${product.name} is now LIVE on AR menu!' : '${product.name} removed from Live menu (Paused).');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     }
   }
@@ -274,12 +234,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (product == null) return;
     final isDeactivated = context.read<BusinessProvider>().isDeactivated;
     if (isDeactivated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Business is deactivated. Reactivate business to update availability.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      TopToast.warning(context, 'Business is deactivated. Reactivate business to update availability.');
       return;
     }
 
@@ -291,9 +246,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       setState(() => _product = updated);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     }
   }
@@ -301,12 +254,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Future<void> _delete() async {
     final isDeactivated = context.read<BusinessProvider>().isDeactivated;
     if (isDeactivated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Business is deactivated. Reactivate business to delete products.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      TopToast.warning(context, 'Business is deactivated. Reactivate business to delete products.');
       return;
     }
     final confirmed = await showDialog<bool>(
@@ -334,17 +282,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       setState(() => _isLoading = true);
       await context.read<ProductProvider>().deleteProduct(widget.productId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Product deleted successfully')),
-        );
+        TopToast.show(context, 'Product deleted successfully');
         context.go(AppRoutes.products);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     }
   }

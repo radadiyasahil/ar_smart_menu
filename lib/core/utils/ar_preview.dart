@@ -8,6 +8,7 @@ import '../../models/qr_code_model.dart';
 import '../../providers/business_provider.dart';
 import '../services/qr_service.dart';
 import '../utils/api_error_utils.dart';
+import 'top_toast.dart';
 
 /// Opens the current authenticated Horeca business's AR digital menu (port 5174).
 /// Dynamically queries the master QR code / menu slug for this owner.
@@ -40,22 +41,18 @@ Future<void> openHorecaMenuAr(BuildContext context, {String? table}) async {
       }
       final ok = await openArMenuUrl(url);
       if (!ok && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Could not open WebAR menu. Ensure WebAR is running on http://localhost:5174.',
-            ),
-          ),
+        TopToast.warning(
+          context,
+          'Could not open WebAR menu. Ensure WebAR is running on http://localhost:5174.',
         );
       }
       return;
     }
 
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not find active AR menu for this business account.'),
-        ),
+      TopToast.warning(
+        context,
+        'Could not find active AR menu for this business account.',
       );
     }
   } catch (e) {
@@ -73,9 +70,7 @@ Future<void> openHorecaMenuAr(BuildContext context, {String? table}) async {
       await openArMenuUrl(url);
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(formatApiError(e))),
-    );
+    TopToast.error(context, formatApiError(e));
   }
 }
 
@@ -99,33 +94,25 @@ Future<void> previewProductInAr(
     final url = _resolvePreviewUrl(match);
     if (url == null) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            productName != null
-                ? 'Generate a QR code for "$productName" first (QR tab).'
-                : 'Generate a QR code for this product first (QR tab).',
-          ),
-        ),
+      TopToast.warning(
+        context,
+        productName != null
+            ? 'Generate a QR code for "$productName" first (QR tab).'
+            : 'Generate a QR code for this product first (QR tab).',
       );
       return;
     }
 
     final launched = await openArMenuUrl(url);
     if (!launched && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not open AR menu. Start WebAR with npm run dev in webar-experience (http://localhost:5174).',
-          ),
-        ),
+      TopToast.warning(
+        context,
+        'Could not open AR menu. Start WebAR with npm run dev in webar-experience (http://localhost:5174).',
       );
     }
   } catch (e) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(formatApiError(e))),
-    );
+    TopToast.error(context, formatApiError(e));
   }
 }
 

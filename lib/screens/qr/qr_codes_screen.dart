@@ -9,6 +9,7 @@ import '../../core/services/qr_service.dart';
 import '../../core/services/table_stand_pdf_service.dart';
 import '../../core/utils/api_error_utils.dart';
 import '../../core/utils/ar_preview.dart';
+import '../../core/utils/top_toast.dart';
 import '../../models/qr_code_model.dart';
 import '../../providers/business_provider.dart';
 import '../../providers/product_provider.dart';
@@ -82,11 +83,9 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
   Future<void> _generateTables() async {
     final businessProvider = context.read<BusinessProvider>();
     if (businessProvider.isDeactivated || businessProvider.isSuspended) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Restaurant operations are deactivated. Please reactivate your business to generate table QRs.'),
-          backgroundColor: AppColors.error,
-        ),
+      TopToast.error(
+        context,
+        'Restaurant operations are deactivated. Please reactivate your business to generate table QRs.',
       );
       return;
     }
@@ -105,18 +104,14 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
         _hasGeneratedTables = true;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$_tableCount Table QR codes generated!'),
-            backgroundColor: AppColors.success,
-          ),
+        TopToast.show(
+          context,
+          '$_tableCount Table QR codes generated!',
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     } finally {
       if (mounted) setState(() => _generatingTables = false);
@@ -131,15 +126,11 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
         _productQrs = [qr, ..._productQrs.where((c) => c.productId != productId)];
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('QR generated for $productName')),
-        );
+        TopToast.show(context, 'QR generated for $productName');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     } finally {
       if (mounted) setState(() => _generatingProductId = null);
@@ -153,18 +144,14 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
         businessName: businessName,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Downloaded all Table Stands PDF!'),
-            backgroundColor: AppColors.success,
-          ),
+        TopToast.show(
+          context,
+          'Downloaded all Table Stands PDF!',
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to download stands: $e')),
-        );
+        TopToast.error(context, 'Failed to download stands: $e');
       }
     }
   }
@@ -177,9 +164,7 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to print stands: $e')),
-        );
+        TopToast.error(context, 'Failed to print stands: $e');
       }
     }
   }
@@ -220,18 +205,14 @@ class _QrCodesScreenState extends State<QrCodesScreen> {
         _tableCount = 3;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('All table QR codes cleared successfully.'),
-            backgroundColor: AppColors.success,
-          ),
+        TopToast.show(
+          context,
+          'All table QR codes cleared successfully.',
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -700,9 +681,7 @@ class _MasterQrStandCard extends StatelessWidget {
                     label: const Text('Copy Link'),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: qr.webUrl));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Menu link copied to clipboard!')),
-                      );
+                      TopToast.show(context, 'Menu link copied to clipboard!');
                     },
                   ),
                 ),
@@ -822,9 +801,7 @@ class _TableQrCard extends StatelessWidget {
             icon: const Icon(Icons.copy, size: 19),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: qr.webUrl));
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('$tableTitle link copied!')),
-              );
+              TopToast.show(context, '$tableTitle link copied!');
             },
           ),
         ],

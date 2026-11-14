@@ -8,6 +8,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_spacing.dart';
 import '../../core/utils/web_paste_drop_listener.dart';
 import '../../models/product_model.dart';
+import '../../core/utils/top_toast.dart';
 
 class FourPhotoUploader extends StatefulWidget {
   const FourPhotoUploader({
@@ -86,14 +87,10 @@ class _FourPhotoUploaderState extends State<FourPhotoUploader> {
     try {
       await widget.onPhotoSelected(angle, bytes, filename);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('✓ Photo added for ${angle.label}!'),
-        backgroundColor: AppColors.success,
-        duration: const Duration(seconds: 2),
-      ));
+      TopToast.success(context, '✓ Photo added for ${angle.label}!');
       setState(() => _selectedAngle = PhotoAngleType.requiredForSubmit.firstWhere((a) => a != angle && !_has(a), orElse: () => angle));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save: $e'), backgroundColor: AppColors.error));
+      if (mounted) TopToast.error(context, 'Failed to save: $e');
     }
   }
 
@@ -103,7 +100,7 @@ class _FourPhotoUploaderState extends State<FourPhotoUploader> {
       final p = await _picker.pickImage(source: ImageSource.gallery, maxWidth: 2048, maxHeight: 2048, imageQuality: 85);
       if (p != null && mounted) await _assign(await p.readAsBytes(), p.name.isNotEmpty ? p.name : '${a.name}.jpg', a);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error choosing file: $e')));
+      if (mounted) TopToast.error(context, 'Error choosing file: $e');
     }
   }
 
@@ -113,12 +110,12 @@ class _FourPhotoUploaderState extends State<FourPhotoUploader> {
     try {
       final b = await Pasteboard.image;
       if (b == null || b.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No image on clipboard. Copy an image first, or press Ctrl+V.'), backgroundColor: AppColors.primaryOrange));
+        if (mounted) TopToast.warning(context, 'No image on clipboard. Copy an image first, or press Ctrl+V.');
         return;
       }
       await _assign(b, 'pasted_${a.name}_${DateTime.now().millisecondsSinceEpoch}.png', a);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Paste failed: $e')));
+      if (mounted) TopToast.error(context, 'Paste failed: $e');
     }
   }
 

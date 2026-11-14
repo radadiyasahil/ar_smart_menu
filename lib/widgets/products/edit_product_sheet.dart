@@ -9,6 +9,7 @@ import '../../models/product_model.dart';
 import '../../providers/business_provider.dart';
 import '../../providers/product_provider.dart';
 import '../common/primary_button.dart';
+import '../../core/utils/top_toast.dart';
 
 /// Bottom sheet to edit name, price, description on live (or any) products.
 Future<void> showEditProductSheet(
@@ -74,17 +75,13 @@ class _EditProductSheetState extends State<_EditProductSheet> {
   Future<void> _save() async {
     final businessProvider = context.read<BusinessProvider>();
     if (businessProvider.isDeactivated || businessProvider.isSuspended) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Restaurant is deactivated. Reactivate to edit dishes.'), backgroundColor: Colors.red),
-      );
+      TopToast.warning(context, 'Restaurant is deactivated. Reactivate to edit dishes.');
       return;
     }
 
     final name = _nameController.text.trim();
     if (name.isEmpty || name.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Product name must be at least 2 characters')),
-      );
+      TopToast.warning(context, 'Product name must be at least 2 characters');
       return;
     }
 
@@ -93,15 +90,11 @@ class _EditProductSheetState extends State<_EditProductSheet> {
     if (priceText.isNotEmpty) {
       final parsed = double.tryParse(priceText);
       if (parsed == null || parsed <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enter a valid price greater than 0')),
-        );
+        TopToast.warning(context, 'Enter a valid price greater than 0');
         return;
       }
       if (parsed > 100000) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Price cannot exceed ₹1,00,000')),
-        );
+        TopToast.warning(context, 'Price cannot exceed ₹1,00,000');
         return;
       }
       pricePaise = (parsed * 100).round();
@@ -119,15 +112,11 @@ class _EditProductSheetState extends State<_EditProductSheet> {
       if (mounted) {
         widget.onSaved(updated);
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Product updated')),
-        );
+        TopToast.success(context, 'Product updated');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatApiError(e))),
-        );
+        TopToast.error(context, formatApiError(e));
       }
     } finally {
       if (mounted) setState(() => _saving = false);

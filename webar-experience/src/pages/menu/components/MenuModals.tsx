@@ -19,7 +19,7 @@ import {
   Users,
 } from 'lucide-react'
 import type { PublicMenuDish } from '@/services/productService'
-import type { CartItem } from '@/types/cart'
+import type { CartItem, DishCustomization } from '@/types/cart'
 import { tableOrderService, type LiveTableOrder } from '@/services/tableOrderService'
 
 function ModalShell({
@@ -528,6 +528,7 @@ export function CartDrawer({
   dinerNickname,
   onNicknameChange,
   lastSharedBy,
+  onCustomizeDish,
 }: {
   isTableOccupied?: boolean
   occupiedMessage?: string
@@ -538,7 +539,7 @@ export function CartDrawer({
   whatsAppNumber?: string
   menuSlug?: string
   onClose: () => void
-  onQuantityChange: (dish: PublicMenuDish, newQuantity: number) => void
+  onQuantityChange: (dish: PublicMenuDish, newQuantity: number, customization?: DishCustomization, cartItemId?: string) => void
   onClearCart: () => void
   onChangeTable: () => void
   onOrderPlaced?: (order: LiveTableOrder) => void
@@ -553,6 +554,7 @@ export function CartDrawer({
   dinerNickname?: string
   onNicknameChange?: (name: string) => void
   lastSharedBy?: string
+  onCustomizeDish?: (dish: PublicMenuDish) => void
 }) {
   const [instructions, setInstructions] = useState('')
   const [waiterSent, setWaiterSent] = useState(false)
@@ -629,7 +631,7 @@ export function CartDrawer({
         }
       }
       return {
-        id: i.dish.id,
+        id: i.id || i.dish.id,
         name: i.dish.name,
         quantity: i.quantity,
         unitPrice: uPrice,
@@ -957,11 +959,21 @@ export function CartDrawer({
 
                   <div className="flex items-center gap-3">
                     <div className="flex items-center bg-[#27272A] border border-[#3F3F46] rounded-full px-2 py-0.5 gap-2">
-                      <button type="button" onClick={() => onQuantityChange(dish, quantity - 1)} className="text-white hover:text-red-400 cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() => onQuantityChange(dish, quantity - 1, customization, itemKey)}
+                        className="text-white hover:text-red-400 cursor-pointer"
+                        title="Decrease quantity"
+                      >
                         {quantity === 1 ? <Trash2 size={12} className="text-red-400" /> : <Minus size={12} />}
                       </button>
                       <span className="text-xs font-bold text-white min-w-[12px] text-center">{quantity}</span>
-                      <button type="button" onClick={() => onQuantityChange(dish, quantity + 1)} className="text-white hover:text-[#EB4F16] cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() => onQuantityChange(dish, quantity + 1, customization, itemKey)}
+                        className="text-white hover:text-[#EB4F16] cursor-pointer"
+                        title="Increase quantity (preserves customizations)"
+                      >
                         <Plus size={12} />
                       </button>
                     </div>
@@ -992,6 +1004,23 @@ export function CartDrawer({
                         📝 &ldquo;{customization.notes}&rdquo;
                       </span>
                     )}
+                  </div>
+                )}
+
+                {/* Add different variation option */}
+                {onCustomizeDish && (
+                  <div className="pt-1 flex items-center justify-between border-t border-white/5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose()
+                        onCustomizeDish(dish)
+                      }}
+                      className="text-[10px] font-semibold text-[#FF7043] hover:text-[#ff8a65] flex items-center gap-1 cursor-pointer transition py-0.5"
+                    >
+                      <Plus size={11} />
+                      <span>Add another variation with different customizations</span>
+                    </button>
                   </div>
                 )}
               </div>

@@ -518,8 +518,10 @@ public class TableOrdersController : ControllerBase
             var clientId = request.ClientId ?? string.Empty;
 
             var existingIndex = state.Items.FindIndex(i =>
-                i.DishId == item.DishId &&
-                string.Join(",", i.Modifiers ?? new List<string>()) == string.Join(",", item.Modifiers ?? new List<string>()));
+                (!string.IsNullOrWhiteSpace(item.Id) && !string.IsNullOrWhiteSpace(i.Id) && i.Id == item.Id) ||
+                (i.DishId == item.DishId &&
+                 string.Join(",", i.Modifiers ?? new List<string>()) == string.Join(",", item.Modifiers ?? new List<string>()) &&
+                 (i.Notes ?? string.Empty).Trim() == (item.Notes ?? string.Empty).Trim()));
 
             if (request.TargetQuantity <= 0)
             {
@@ -533,16 +535,21 @@ public class TableOrdersController : ControllerBase
                 if (existingIndex >= 0)
                 {
                     var existing = state.Items[existingIndex];
+                    if (!string.IsNullOrWhiteSpace(item.Id)) existing.Id = item.Id;
                     existing.Quantity = request.TargetQuantity;
                     if (item.UnitPrice > 0) existing.UnitPrice = item.UnitPrice;
                     if (item.Modifiers != null) existing.Modifiers = item.Modifiers;
-                    if (!string.IsNullOrEmpty(item.Notes)) existing.Notes = item.Notes;
+                    existing.Notes = item.Notes;
                     existing.AddedBy = clientName;
                     existing.ClientId = clientId;
                     existing.UpdatedAt = DateTime.UtcNow;
                 }
                 else
                 {
+                    if (string.IsNullOrWhiteSpace(item.Id))
+                    {
+                        item.Id = Guid.NewGuid().ToString();
+                    }
                     item.Quantity = request.TargetQuantity;
                     item.AddedBy = clientName;
                     item.ClientId = clientId;

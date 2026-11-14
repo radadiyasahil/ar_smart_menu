@@ -25,7 +25,14 @@ import {
   type PublicMenuResponse,
   type PublicMenuDish,
 } from '@/services/productService'
-import type { CartItem, DishCustomization, SharedCartItem, SharedCartResponse } from '@/types/cart'
+import {
+  type CartItem,
+  type DishCustomization,
+  type SharedCartItem,
+  type SharedCartResponse,
+  getCartItemKey,
+  parseCustomizationFromModifiers,
+} from '@/types/cart'
 import { DishCard } from './components/DishCard'
 import { DishCustomizationModal } from './components/DishCustomizationModal'
 import { Interactive3dModal } from './components/Interactive3dModal'
@@ -127,18 +134,21 @@ export function MenuPage() {
 
     const remoteCartMap: Record<string, CartItem> = {}
     for (const item of sc.items) {
-      const dishIdToMatch = item.dishId || item.id
+      const rawDishId = item.dishId || (item.id && item.id.includes('__') ? item.id.split('__')[0] : item.id)
       let dish = currentDishes.find(
-        (d) => d.id === dishIdToMatch || d.name.toLowerCase() === item.name.toLowerCase(),
+        (d) => d.id === rawDishId || d.name.toLowerCase() === item.name.toLowerCase(),
       )
       // Check if we already have this dish loaded in local cart snapshot
-      if (!dish && localCartSnapshot[dishIdToMatch]?.dish) {
-        dish = localCartSnapshot[dishIdToMatch].dish
+      if (!dish && item.id && localCartSnapshot[item.id]?.dish) {
+        dish = localCartSnapshot[item.id].dish
+      }
+      if (!dish && localCartSnapshot[rawDishId]?.dish) {
+        dish = localCartSnapshot[rawDishId].dish
       }
       // If dish metadata is not available yet, create a robust fallback dish
       if (!dish) {
         dish = {
-          id: dishIdToMatch,
+          id: rawDishId,
           name: item.name,
           pricePaise: Math.round(item.unitPrice * 100),
           vegStatus: 0,
@@ -153,14 +163,21 @@ export function MenuPage() {
         }
       }
 
-      remoteCartMap[dish.id] = {
-        id: item.id || dish.id,
+      // Preserve full customization object (including selectedAddons)
+      let customization: DishCustomization | undefined =
+        (item.id && localCartSnapshot[item.id]?.customization) ||
+        parseCustomizationFromModifiers(item.modifiers, item.notes)
+
+      const finalKey = item.id || getCartItemKey(dish.id, customization)
+
+      remoteCartMap[finalKey] = {
+        id: finalKey,
         dish,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         addedBy: item.addedBy || 'Companion',
         clientId: item.clientId,
-        customization: item.notes || item.modifiers ? { notes: item.notes } : undefined,
+        customization,
       }
     }
 
@@ -169,9 +186,9 @@ export function MenuPage() {
       // do NOT let a stale poll wipe out in-flight local additions!
       const isRecentlyEditedLocally = Date.now() - lastLocalEditTimestamp.current < 3000
       if (isFromPoll && isRecentlyEditedLocally) {
-        for (const [dishId, localItem] of Object.entries(currentLocalCart)) {
-          if (!remoteCartMap[dishId] && (localItem.clientId === myClientId || !localItem.clientId)) {
-            remoteCartMap[dishId] = localItem
+        for (const [key, localItem] of Object.entries(currentLocalCart)) {
+          if (!remoteCartMap[key] && (localItem.clientId === myClientId || !localItem.clientId)) {
+            remoteCartMap[key] = localItem
           }
         }
       }
@@ -572,30 +589,55 @@ export function MenuPage() {
     }
   }
 
-  const handleQty = async (dish: PublicMenuDish, qty: number, customization?: DishCustomization) => {
+  const handleQty = async (
+    dish: PublicMenuDish,
+    qty: number,
+    customization?: DishCustomization,
+    cartItemKey?: string,
+  ) => {
     lastLocalEditTimestamp.current = Date.now()
     if (qty > 0 && isTableOccupiedByOther) {
       showToast(`⚠️ Table ${table} is occupied. Please select an available table.`)
       setIsTableOpen(true)
       return
     }
+
+    // Determine target key:
+    let targetKey = cartItemKey
+    if (!targetKey) {
+      targetKey = getCartItemKey(dish.id, customization)
+    }
+
+    // Find existing item in cart: check targetKey, fallback to dish.id if not found
+    const existing = cartRef.current[targetKey] || (targetKey !== dish.id ? cartRef.current[dish.id] : undefined)
+
+    // Effective customization: explicit customization argument takes precedence, then existing customization
+    const effectiveCustomization = customization !== undefined ? customization : existing?.customization
+
     const basePrice = dish.pricePaise ? Math.round(dish.pricePaise / 100) : 0
-    const addonsTotal = customization?.selectedAddons?.reduce((sum, a) => sum + a.price, 0) ?? 0
+    let addonsTotal = 0
+    if (effectiveCustomization?.selectedAddons && effectiveCustomization.selectedAddons.length > 0) {
+      addonsTotal = effectiveCustomization.selectedAddons.reduce((sum, a) => sum + a.price, 0)
+    }
     const itemUnitPrice = basePrice + addonsTotal
+
+    const finalKey = cartItemKey || getCartItemKey(dish.id, effectiveCustomization)
 
     // 1. Optimistic local update
     setCart((prev) => {
       const next = { ...prev }
       if (qty <= 0) {
-        delete next[dish.id]
+        delete next[finalKey]
+        if (finalKey !== dish.id && next[dish.id]) {
+          delete next[dish.id]
+        }
       } else {
-        const existing = next[dish.id]
-        next[dish.id] = {
-          id: dish.id,
+        next[finalKey] = {
+          id: finalKey,
           dish,
           quantity: qty,
-          customization: customization ?? existing?.customization,
-          unitPrice: customization ? itemUnitPrice : (existing?.unitPrice ?? itemUnitPrice),
+          customization: effectiveCustomization,
+          unitPrice: itemUnitPrice > 0 ? itemUnitPrice : (existing?.unitPrice ?? basePrice),
           addedBy: dinerNickname,
           clientId: myClientId,
         }
@@ -606,21 +648,25 @@ export function MenuPage() {
     // 2. Atomic communal table cart update (preserves companion dishes)
     if (slug && table && !isTableOccupiedByOther) {
       const mods: string[] = []
-      if (customization?.spiceLevel) mods.push(`${customization.spiceLevel} Spicy`)
-      if (customization?.dietary && customization.dietary !== 'Regular') mods.push(customization.dietary)
-      if (customization?.selectedAddons) {
-        for (const a of customization.selectedAddons) mods.push(`${a.name} (+₹${a.price})`)
+      if (effectiveCustomization?.spiceLevel) mods.push(`${effectiveCustomization.spiceLevel} Spicy`)
+      if (effectiveCustomization?.dietary && effectiveCustomization.dietary !== 'Regular') {
+        mods.push(effectiveCustomization.dietary)
+      }
+      if (effectiveCustomization?.selectedAddons) {
+        for (const a of effectiveCustomization.selectedAddons) {
+          mods.push(`${a.name} (+₹${a.price})`)
+        }
       }
 
       const sharedItem: SharedCartItem = {
-        id: dish.id,
+        id: finalKey,
         dishId: dish.id,
         name: dish.name,
-        unitPrice: itemUnitPrice,
+        unitPrice: itemUnitPrice > 0 ? itemUnitPrice : (existing?.unitPrice ?? basePrice),
         quantity: qty,
         imageUrl: dish.thumbnailUrl || (dish.photoUrls && dish.photoUrls[0]),
         modifiers: mods.length > 0 ? mods : undefined,
-        notes: customization?.notes,
+        notes: effectiveCustomization?.notes?.trim() || undefined,
         clientId: myClientId,
         addedBy: dinerNickname,
       }
@@ -640,6 +686,36 @@ export function MenuPage() {
       } catch (err) {
         console.warn('Failed to sync item to table cart:', err)
       }
+    }
+  }
+
+  const getDishTotalQty = (dishId: string) => {
+    return Object.values(cart)
+      .filter((i) => i.dish.id === dishId)
+      .reduce((sum, i) => sum + i.quantity, 0)
+  }
+
+  const handleDishCardQty = (dish: PublicMenuDish, newQty: number) => {
+    const itemsForDish = Object.entries(cart).filter(([_, item]) => item.dish.id === dish.id)
+    if (itemsForDish.length === 0) {
+      handleQty(dish, newQty)
+      return
+    }
+
+    if (itemsForDish.length === 1) {
+      const [key, item] = itemsForDish[0]
+      handleQty(dish, newQty, item.customization, key)
+      return
+    }
+
+    // Multiple custom variations exist in cart
+    const currentTotal = itemsForDish.reduce((sum, [_, item]) => sum + item.quantity, 0)
+    if (newQty > currentTotal) {
+      setCustomizingDish(dish)
+      showToast(`Customize another ${dish.name} or adjust quantities in cart.`)
+    } else {
+      setIsCartOpen(true)
+      showToast(`Choose which ${dish.name} to remove in cart.`)
     }
   }
 
@@ -739,8 +815,8 @@ export function MenuPage() {
         <DishCard
           key={dish.id}
           dish={dish}
-          quantity={cart[dish.id]?.quantity || 0}
-          onQuantityChange={handleQty}
+          quantity={getDishTotalQty(dish.id)}
+          onQuantityChange={handleDishCardQty}
           onOpen3d={(d) => setActive3dDish(d)}
           onCustomize={(d) => setCustomizingDish(d)}
         />
@@ -1357,9 +1433,9 @@ export function MenuPage() {
       {active3dDish && (
         <Interactive3dModal
           dish={active3dDish}
-          quantity={cart[active3dDish.id]?.quantity || 0}
+          quantity={getDishTotalQty(active3dDish.id)}
           onClose={() => setActive3dDish(null)}
-          onQuantityChange={handleQty}
+          onQuantityChange={handleDishCardQty}
           onAddedToCart={(d) => showToast(`✨ Added "${d.name}"`)}
         />
       )}
@@ -1411,6 +1487,7 @@ export function MenuPage() {
         isTableOccupied={isTableOccupiedByOther}
         occupiedMessage={occupiedMessage}
         isTableLocked={isTableLocked}
+        onCustomizeDish={(d) => setCustomizingDish(d)}
       />
 
       <TableOrderStatusModal
@@ -1431,9 +1508,24 @@ export function MenuPage() {
           setCart((prev) => {
             const next = { ...prev }
             reorderList.forEach((item) => {
-              const dish = allDishes.find((d) => d.id === item.id || d.name.toLowerCase() === item.name.toLowerCase())
+              const rawDishId = item.id.includes('__') ? item.id.split('__')[0] : item.id
+              const dish = allDishes.find((d) => d.id === rawDishId || d.name.toLowerCase() === item.name.toLowerCase())
               if (dish) {
-                next[dish.id] = { dish, quantity: item.quantity || 1 }
+                const custom = (item as any).modifiers || (item as any).notes
+                  ? parseCustomizationFromModifiers((item as any).modifiers, (item as any).notes)
+                  : undefined
+                const targetKey = item.id || getCartItemKey(dish.id, custom)
+                const basePrice = dish.pricePaise ? Math.round(dish.pricePaise / 100) : 0
+                const addonsTotal = custom?.selectedAddons?.reduce((s, a) => s + a.price, 0) ?? 0
+                next[targetKey] = {
+                  id: targetKey,
+                  dish,
+                  quantity: item.quantity || 1,
+                  customization: custom,
+                  unitPrice: basePrice + addonsTotal,
+                  addedBy: dinerNickname,
+                  clientId: myClientId,
+                }
               }
             })
             return next
@@ -1477,11 +1569,13 @@ export function MenuPage() {
       <DishCustomizationModal
         isOpen={!!customizingDish}
         dish={customizingDish}
-        initialCustomization={customizingDish ? cart[customizingDish.id]?.customization : undefined}
+        initialCustomization={undefined}
         onClose={() => setCustomizingDish(null)}
         onConfirm={(dish, qty, custom) => {
-          handleQty(dish, qty, custom)
-          showToast(`✨ ${dish.name} customized & added to cart!`)
+          const targetKey = getCartItemKey(dish.id, custom)
+          const existingQty = cart[targetKey]?.quantity || 0
+          handleQty(dish, existingQty + qty, custom, targetKey)
+          showToast(`✨ ${qty > 1 ? `${qty}x ` : ''}${dish.name} customized & added to cart!`)
         }}
       />
 

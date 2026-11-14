@@ -358,6 +358,24 @@ export function MenuPage() {
     return () => clearInterval(interval)
   }, [slug, table])
 
+  // Abandon unplaced draft cart when user closes or removes the tab before ordering
+  useEffect(() => {
+    const handleTabUnload = () => {
+      // If customer has NOT placed any orders with the kitchen yet (activeOrders is empty):
+      // Leaving/closing the tab abandons their draft cart so next guest gets an empty cart
+      if (activeOrders.length === 0 && slug && table) {
+        tableOrderService.abandonDraftCart(slug, table)
+      }
+    }
+
+    window.addEventListener('pagehide', handleTabUnload)
+    window.addEventListener('beforeunload', handleTabUnload)
+    return () => {
+      window.removeEventListener('pagehide', handleTabUnload)
+      window.removeEventListener('beforeunload', handleTabUnload)
+    }
+  }, [slug, table, activeOrders.length])
+
   const totalOrderedItemsCount = useMemo(() => {
     return activeOrders
       .filter((o) => o.status !== 'CANCELLED')

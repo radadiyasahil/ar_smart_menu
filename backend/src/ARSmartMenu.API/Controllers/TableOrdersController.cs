@@ -355,14 +355,50 @@ public class TableOrdersController : ControllerBase
 
     }
 
+    private async Task<bool> HasActiveOrdersForTableAsync(Guid businessId, string tableNumber, CancellationToken ct = default)
+    {
+        var cleanTable = tableNumber.Trim().ToLowerInvariant();
+        var altTable = cleanTable.StartsWith("table") ? cleanTable.Replace("table", "").Trim() : ("table " + cleanTable);
+        var tableDigits = Regex.Match(cleanTable, @"\d+").Value;
+        var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
+
+        var cutoff = DateTime.UtcNow.AddHours(-12);
+        var latestSettlement = await _db.TableOrders
+            .AsNoTracking()
+            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
+                        (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
+                         (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum))) &&
+                        (o.Status == "PAID" || o.Status == "SETTLED"))
+            .OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt)
+            .Select(o => (DateTime?)(o.UpdatedAt ?? o.CreatedAt))
+            .FirstOrDefaultAsync(ct);
+
+        var query = _db.TableOrders
+            .AsNoTracking()
+            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
+                        o.Status != "PAID" && o.Status != "SETTLED" && o.Status != "CANCELLED");
+
+        if (latestSettlement != null)
+        {
+            query = query.Where(o => o.CreatedAt > latestSettlement.Value);
+        }
+
+        query = query.Where(o => o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
+                                 (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum)));
+
+        return await query.AnyAsync(ct);
+    }
+
     /// <summary>
     /// Phase 2.4: Multiplayer Collaborative Cart - Get current shared table cart.
+    /// If no active orders exist and the session is new or cart expired (>15m), draft cart is cleared.
     /// </summary>
     [HttpGet("api/public/orders/{slug}/table/{tableNumber}/shared-cart")]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<SharedCartResponse>>> GetSharedCart(
         string slug,
         string tableNumber,
+        [FromQuery] string? sessionToken = null,
         CancellationToken ct = default)
     {
         var cleanSlug = slug.Trim().ToLowerInvariant();
@@ -381,6 +417,27 @@ public class TableOrdersController : ControllerBase
 
         var key = GetChatKey(businessId, tableNumber);
         var state = _tableSharedCartStore.TryGetValue(key, out var s) ? s : new SharedCartState();
+
+        // Check if there are active submitted orders for this table in the kitchen/POS
+        var hasActiveOrders = await HasActiveOrdersForTableAsync(businessId, tableNumber, ct);
+
+        // If no active orders have been placed on this table:
+        // Any draft cart belongs strictly to the active tab session that created it.
+        // If a new customer connects, or if the customer closed/reopened their tab (different sessionToken),
+        // or if it was abandoned for > 15 minutes, clear the old unplaced cart!
+        if (!hasActiveOrders && state.Items.Count > 0)
+        {
+            var isExpired = (DateTime.UtcNow - state.UpdatedAt).TotalMinutes > 15;
+            var isDifferentSession = !string.IsNullOrWhiteSpace(sessionToken) &&
+                                     !string.IsNullOrWhiteSpace(state.SessionToken) &&
+                                     !string.Equals(state.SessionToken, sessionToken.Trim(), StringComparison.OrdinalIgnoreCase);
+
+            if (isExpired || isDifferentSession)
+            {
+                _tableSharedCartStore.TryRemove(key, out _);
+                state = new SharedCartState();
+            }
+        }
 
         var response = new SharedCartResponse
         {
@@ -427,6 +484,10 @@ public class TableOrdersController : ControllerBase
 
         lock (state)
         {
+            if (!string.IsNullOrWhiteSpace(request.SessionToken))
+            {
+                state.SessionToken = request.SessionToken.Trim();
+            }
             var item = request.Item ?? new SharedCartItemDto();
             var clientName = string.IsNullOrWhiteSpace(request.ClientName) ? "Guest" : request.ClientName.Trim();
             var clientId = request.ClientId ?? string.Empty;
@@ -529,6 +590,10 @@ public class TableOrdersController : ControllerBase
 
         lock (state)
         {
+            if (!string.IsNullOrWhiteSpace(request.SessionToken))
+            {
+                state.SessionToken = request.SessionToken.Trim();
+            }
             var incomingItems = request.Items ?? new List<SharedCartItemDto>();
             var clientName = string.IsNullOrWhiteSpace(request.ClientName) ? "Guest" : request.ClientName.Trim();
             var clientId = request.ClientId ?? string.Empty;
@@ -623,6 +688,48 @@ public class TableOrdersController : ControllerBase
         TableSyncManager.Broadcast(businessId, tableNumber, "shared_cart_cleared", new { table = tableNumber });
 
         return Ok(ApiResponse<bool>.Ok(true, "Table cart cleared"));
+    }
+
+    /// <summary>
+    /// Phase 2.4: Instantly clear unplaced draft cart when diner leaves/closes browser tab.
+    /// </summary>
+    [HttpPost("api/public/orders/{slug}/table/{tableNumber}/abandon-cart")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<bool>>> AbandonCart(
+        string slug,
+        string tableNumber,
+        [FromQuery] string? sessionToken = null,
+        CancellationToken ct = default)
+    {
+        var cleanSlug = slug.Trim().ToLowerInvariant();
+        var qr = await _db.QrCodes.AsNoTracking().FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
+        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
+        if (businessId == Guid.Empty)
+        {
+            var b = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
+            if (b != null) businessId = b.Id;
+        }
+
+        if (businessId != Guid.Empty)
+        {
+            var key = GetChatKey(businessId, tableNumber);
+            if (_tableSharedCartStore.TryGetValue(key, out var state))
+            {
+                var hasActiveOrders = await HasActiveOrdersForTableAsync(businessId, tableNumber, ct);
+                if (!hasActiveOrders)
+                {
+                    if (string.IsNullOrWhiteSpace(sessionToken) ||
+                        string.IsNullOrWhiteSpace(state.SessionToken) ||
+                        string.Equals(state.SessionToken, sessionToken.Trim(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        _tableSharedCartStore.TryRemove(key, out _);
+                        TableSyncManager.Broadcast(businessId, tableNumber, "shared_cart_cleared", new { table = tableNumber });
+                    }
+                }
+            }
+        }
+
+        return Ok(ApiResponse<bool>.Ok(true, "Draft cart abandoned"));
     }
 
     /// <summary>Public live order status for diner tracking on their table.</summary>
@@ -1393,6 +1500,10 @@ public class TableOrdersController : ControllerBase
 
         _tableChatStore.TryRemove(chatKey, out _);
         _waiterCallsStore.TryRemove(chatKey, out _);
+        _tableSharedCartStore.TryRemove(chatKey, out _);
+        if (!string.IsNullOrEmpty(altTable)) _tableSharedCartStore.TryRemove(GetChatKey(businessId, altTable), out _);
+        if (!string.IsNullOrEmpty(altTableNum)) _tableSharedCartStore.TryRemove(GetChatKey(businessId, altTableNum), out _);
+        TableSyncManager.Broadcast(businessId, tableNumber, "shared_cart_cleared", new { table = tableNumber });
 
         await tx.CommitAsync(ct);
         TableSyncManager.Broadcast(businessId, tableNumber, "table_closed", new { tableNumber, closedCount = orders.Count });
@@ -2497,6 +2608,7 @@ public class SharedCartItemDto
 
 public class SharedCartState
 {
+    public string? SessionToken { get; set; }
     public List<SharedCartItemDto> Items { get; set; } = new();
     public string? LastUpdatedBy { get; set; }
     public string? LastClientId { get; set; }
@@ -2505,6 +2617,7 @@ public class SharedCartState
 
 public class UpdateSharedCartRequest
 {
+    public string? SessionToken { get; set; }
     public string? ClientId { get; set; }
     public string? ClientName { get; set; }
     public List<SharedCartItemDto> Items { get; set; } = new();
@@ -2512,6 +2625,7 @@ public class UpdateSharedCartRequest
 
 public class SetSharedCartItemRequest
 {
+    public string? SessionToken { get; set; }
     public string? ClientId { get; set; }
     public string? ClientName { get; set; }
     public SharedCartItemDto Item { get; set; } = new();

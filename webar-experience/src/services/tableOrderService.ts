@@ -80,12 +80,18 @@ export const tableOrderService = {
   getOrCreateSessionToken(tableNumber?: string): string {
     try {
       const key = getSessionTokenKey(tableNumber)
-      let token = sessionStorage.getItem(key) || localStorage.getItem(key)
+      let token = sessionStorage.getItem(key)
+      if (!token) {
+        // Only inherit from localStorage if active placed orders were previously stored
+        const hasPlacedOrders = this.getStoredOrderIds(tableNumber).length > 0
+        if (hasPlacedOrders) {
+          token = localStorage.getItem(key)
+        }
+      }
       if (!token) {
         token = 'diner_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36)
-        sessionStorage.setItem(key, token)
-        localStorage.setItem(key, token)
       }
+      sessionStorage.setItem(key, token)
       return token
     } catch {
       return 'diner_' + Date.now().toString(36)
@@ -95,7 +101,14 @@ export const tableOrderService = {
   getSessionToken(tableNumber?: string): string | null {
     try {
       const key = getSessionTokenKey(tableNumber)
-      return sessionStorage.getItem(key) || localStorage.getItem(key)
+      let token = sessionStorage.getItem(key)
+      if (!token) {
+        const hasPlacedOrders = this.getStoredOrderIds(tableNumber).length > 0
+        if (hasPlacedOrders) {
+          token = localStorage.getItem(key)
+        }
+      }
+      return token
     } catch {
       return null
     }
@@ -116,10 +129,11 @@ export const tableOrderService = {
     try {
       const key = getStorageKey(tableNumber)
       const rawSession = sessionStorage.getItem(key)
-      const rawLocal = localStorage.getItem(key)
       const sessionIds: string[] = rawSession ? JSON.parse(rawSession) : []
+      if (sessionIds.length > 0) return sessionIds
+      const rawLocal = localStorage.getItem(key)
       const localIds: string[] = rawLocal ? JSON.parse(rawLocal) : []
-      return Array.from(new Set([...sessionIds, ...localIds]))
+      return localIds
     } catch {
       return []
     }
@@ -135,8 +149,11 @@ export const tableOrderService = {
         sessionStorage.setItem(key, str)
         localStorage.setItem(key, str)
       }
-      // Ensure session token is also persisted
-      this.getOrCreateSessionToken(tableNumber)
+      // Once an order is officially placed with kitchen, persist session token to localStorage
+      const token = this.getOrCreateSessionToken(tableNumber)
+      if (token) {
+        localStorage.setItem(getSessionTokenKey(tableNumber), token)
+      }
     } catch (e) {
       console.warn('Could not store order id:', e)
     }
@@ -144,14 +161,15 @@ export const tableOrderService = {
 
   clearStoredOrderIds(tableNumber?: string) {
     try {
-      if (tableNumber) {
-        sessionStorage.removeItem(getStorageKey(tableNumber))
-        localStorage.removeItem(getStorageKey(tableNumber))
-      }
+      const key = getStorageKey(tableNumber)
+      sessionStorage.removeItem(key)
+      localStorage.removeItem(key)
       sessionStorage.removeItem('ar_placed_order_ids')
       localStorage.removeItem('ar_placed_order_ids')
       this.clearSessionToken(tableNumber)
-    } catch (_) {}
+    } catch (e) {
+      console.warn('Could not clear stored order ids:', e)
+    }
   },
 
   async clearCancelledOrders(slug: string, tableNumber: string): Promise<boolean> {
@@ -424,8 +442,10 @@ export const tableOrderService = {
   async getSharedCart(slug: string, tableNumber: string): Promise<SharedCartResponse | null> {
     if (!slug || !tableNumber) return null
     try {
+      const token = this.getSessionToken(tableNumber)
+      const queryParam = token ? `?sessionToken=${encodeURIComponent(token)}` : ''
       const res = await apiClient.get<ApiEnvelope<SharedCartResponse>>(
-        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/shared-cart`,
+        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/shared-cart${queryParam}`,
       )
       return res.data?.success && res.data.data ? res.data.data : null
     } catch (e) {
@@ -444,9 +464,10 @@ export const tableOrderService = {
   ): Promise<SharedCartResponse | null> {
     if (!slug || !tableNumber) return null
     try {
+      const sessionToken = this.getOrCreateSessionToken(tableNumber)
       const res = await apiClient.post<ApiEnvelope<SharedCartResponse>>(
         `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/shared-cart/item`,
-        { clientId, clientName, item, targetQuantity },
+        { sessionToken, clientId, clientName, item, targetQuantity },
       )
       return res.data?.success && res.data.data ? res.data.data : null
     } catch (e) {
@@ -464,14 +485,31 @@ export const tableOrderService = {
   ): Promise<SharedCartResponse | null> {
     if (!slug || !tableNumber) return null
     try {
+      const sessionToken = this.getOrCreateSessionToken(tableNumber)
       const res = await apiClient.post<ApiEnvelope<SharedCartResponse>>(
         `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/shared-cart`,
-        { clientId, clientName, items },
+        { sessionToken, clientId, clientName, items },
       )
       return res.data?.success && res.data.data ? res.data.data : null
     } catch (e) {
       console.warn('Could not update shared cart:', e)
       return null
+    }
+  },
+
+  abandonDraftCart(slug: string, tableNumber: string) {
+    if (!slug || !tableNumber) return
+    try {
+      const token = this.getSessionToken(tableNumber)
+      const baseUrl = apiClient.defaults.baseURL || ''
+      const url = `${baseUrl}/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/abandon-cart?sessionToken=${encodeURIComponent(token || '')}`
+      if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+        navigator.sendBeacon(url)
+      } else {
+        apiClient.post(`/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/abandon-cart?sessionToken=${encodeURIComponent(token || '')}`).catch(() => {})
+      }
+    } catch (e) {
+      console.warn('Could not abandon draft cart:', e)
     }
   },
 

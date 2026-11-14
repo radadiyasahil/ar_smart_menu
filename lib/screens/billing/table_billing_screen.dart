@@ -180,9 +180,11 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     super.dispose();
   }
 
-  Future<void> _loadBills() async {
+  Future<void> _loadBills({bool showLoading = true}) async {
     final bId = context.read<BusinessProvider>().business?.id.toString() ?? '';
-    setState(() => _loading = true);
+    if (showLoading && mounted) {
+      setState(() => _loading = true);
+    }
 
     await _loadConfiguredQrs();
 
@@ -229,6 +231,14 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
     await _billingService.saveActiveBills(uniqueActive, bId);
 
+    if (!mounted) return;
+
+    final previouslySelectedTableNum = (_activeBills.isNotEmpty &&
+            _selectedTableIndex >= 0 &&
+            _selectedTableIndex < _activeBills.length)
+        ? _activeBills[_selectedTableIndex].tableNumber
+        : null;
+
     setState(() {
       _activeBills = uniqueActive;
 
@@ -238,10 +248,17 @@ class _TableBillingScreenState extends State<TableBillingScreen>
           .where((p) => p.name.trim().isNotEmpty && p.defaultPrice > 0)
           .toList();
 
-      if (_activeBills.isEmpty) {
-        _selectedTableIndex = 0;
-      } else if (_selectedTableIndex >= _activeBills.length) {
-        _selectedTableIndex = _activeBills.length - 1;
+      if (previouslySelectedTableNum != null) {
+        final matchingIdx = uniqueActive.indexWhere(
+          (b) => _isSameTable(b.tableNumber, previouslySelectedTableNum),
+        );
+        if (matchingIdx >= 0) {
+          _selectedTableIndex = matchingIdx;
+        } else if (_selectedTableIndex >= uniqueActive.length) {
+          _selectedTableIndex = uniqueActive.isEmpty ? 0 : uniqueActive.length - 1;
+        }
+      } else if (_selectedTableIndex >= uniqueActive.length) {
+        _selectedTableIndex = uniqueActive.isEmpty ? 0 : uniqueActive.length - 1;
       }
 
       _syncPhone();
@@ -250,123 +267,193 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     });
   }
 
+  bool _isFetchingPendingOrders = false;
+
   Future<void> _loadPendingOrders() async {
-    final bId = context.read<BusinessProvider>().business?.id.toString() ?? '';
+    if (_isFetchingPendingOrders) return;
+    _isFetchingPendingOrders = true;
 
-    if (bId.isNotEmpty) {
-      final all = await _billingService.getPendingOrders(bId);
-      final calls = await _billingService.getWaiterCalls(bId);
+    try {
+      final bId = context.read<BusinessProvider>().business?.id.toString() ?? '';
 
-      if (_historyBills.isEmpty) {
-        try {
-          final serverTodayBills = await _billingService.fetchTodayHistoryOrders(bId);
-          if (serverTodayBills.isNotEmpty && mounted) {
-            setState(() {
-              _historyBills = serverTodayBills;
-            });
-            await _billingService.saveHistoryBills(serverTodayBills, bId);
-          }
-        } catch (_) {}
-      }
+      if (bId.isNotEmpty) {
+        final all = await _billingService.getPendingOrders(bId);
+        final calls = await _billingService.getWaiterCalls(bId);
 
-      if (mounted) {
-        setState(() {
-          _pendingOrders = all.where((o) => o.isPending).toList();
+        if (_historyBills.isEmpty) {
+          try {
+            final serverTodayBills = await _billingService.fetchTodayHistoryOrders(bId);
+            if (serverTodayBills.isNotEmpty && mounted) {
+              setState(() {
+                _historyBills = serverTodayBills;
+              });
+              await _billingService.saveHistoryBills(serverTodayBills, bId);
+            }
+          } catch (_) {}
+        }
 
-          _kitchenOrders = all.where((o) => o.isAccepted).toList();
+        if (mounted) {
+          setState(() {
+            _pendingOrders = all.where((o) => o.isPending).toList();
 
-          final rawBillReqs = all
-              .where(
-                (o) =>
-                    o.billRequested &&
-                    !o.isCancelled &&
-                    (o.isAccepted || o.isCompleted),
-              )
-              .toList();
+            _kitchenOrders = all.where((o) => o.isAccepted).toList();
 
-          // Deduplicate bill requests so each table only appears once with consolidated details
-          final uniqueBillReqs = <PendingTableOrder>[];
-          for (final o in rawBillReqs) {
-            final idx = uniqueBillReqs.indexWhere(
-              (u) => _isSameTable(u.tableNumber, o.tableNumber),
-            );
-            if (idx >= 0) {
-              final prev = uniqueBillReqs[idx];
-              final combinedItems = [...prev.items, ...o.items];
-              final combinedAmount = prev.totalAmount + o.totalAmount;
-              final latestReqAt = (o.billRequestedAt != null &&
-                      (prev.billRequestedAt == null ||
-                          o.billRequestedAt!.isAfter(prev.billRequestedAt!)))
-                  ? o.billRequestedAt
-                  : prev.billRequestedAt;
+            final rawBillReqs = all
+                .where(
+                  (o) =>
+                      o.billRequested &&
+                      !o.isCancelled &&
+                      (o.isAccepted || o.isCompleted),
+                )
+                .toList();
 
-              uniqueBillReqs[idx] = PendingTableOrder(
-                id: o.id,
-                businessId: o.businessId,
-                tableNumber: _canonicalTableName(o.tableNumber),
-                round: o.round > prev.round ? o.round : prev.round,
-                status: o.status,
-                instructions: o.instructions.isNotEmpty
-                    ? o.instructions
-                    : prev.instructions,
-                customerPhone: o.customerPhone.isNotEmpty
-                    ? o.customerPhone
-                    : prev.customerPhone,
-                items: combinedItems,
-                totalAmount: combinedAmount,
-                billRequested: true,
-                billRequestedAt: latestReqAt,
-                createdAt: prev.createdAt.isBefore(o.createdAt)
-                    ? prev.createdAt
-                    : o.createdAt,
+            // Deduplicate bill requests so each table only appears once with consolidated details
+            final uniqueBillReqs = <PendingTableOrder>[];
+            for (final o in rawBillReqs) {
+              final idx = uniqueBillReqs.indexWhere(
+                (u) => _isSameTable(u.tableNumber, o.tableNumber),
               );
-            } else {
-              uniqueBillReqs.add(
-                PendingTableOrder(
+              if (idx >= 0) {
+                final prev = uniqueBillReqs[idx];
+                final combinedItems = [...prev.items, ...o.items];
+                final combinedAmount = prev.totalAmount + o.totalAmount;
+                final latestReqAt = (o.billRequestedAt != null &&
+                        (prev.billRequestedAt == null ||
+                            o.billRequestedAt!.isAfter(prev.billRequestedAt!)))
+                    ? o.billRequestedAt
+                    : prev.billRequestedAt;
+
+                uniqueBillReqs[idx] = PendingTableOrder(
                   id: o.id,
                   businessId: o.businessId,
                   tableNumber: _canonicalTableName(o.tableNumber),
-                  round: o.round,
+                  round: o.round > prev.round ? o.round : prev.round,
                   status: o.status,
-                  instructions: o.instructions,
-                  customerPhone: o.customerPhone,
-                  items: List.from(o.items),
-                  totalAmount: o.totalAmount,
-                  billRequested: o.billRequested,
-                  billRequestedAt: o.billRequestedAt,
-                  createdAt: o.createdAt,
-                ),
-              );
-            }
-          }
-          _billRequests = uniqueBillReqs;
-
-          _waiterCalls = calls;
-
-          // Automatically ensure tables with pending orders, kitchen orders, or bill requests exist in active bills
-          for (final order in (_pendingOrders + _kitchenOrders + _billRequests)) {
-            final canonical = _canonicalTableName(order.tableNumber);
-            final existingIdx = _activeBills.indexWhere(
-              (b) => _isSameTable(b.tableNumber, canonical),
-            );
-            if (existingIdx < 0) {
-              final billId = 'ORD-${order.id.length > 5 ? order.id.substring(0, 5) : order.id}';
-              final newBill = TableBill(
-                id: billId,
-                tableNumber: canonical,
-                createdAt: order.createdAt,
-                customerPhone: order.customerPhone,
-              );
-              if (!order.isPending) {
-                newBill.addItems(order.items);
+                  instructions: o.instructions.isNotEmpty
+                      ? o.instructions
+                      : prev.instructions,
+                  customerPhone: o.customerPhone.isNotEmpty
+                      ? o.customerPhone
+                      : prev.customerPhone,
+                  items: combinedItems,
+                  totalAmount: combinedAmount,
+                  billRequested: true,
+                  billRequestedAt: latestReqAt,
+                  createdAt: prev.createdAt.isBefore(o.createdAt)
+                      ? prev.createdAt
+                      : o.createdAt,
+                );
+              } else {
+                uniqueBillReqs.add(
+                  PendingTableOrder(
+                    id: o.id,
+                    businessId: o.businessId,
+                    tableNumber: _canonicalTableName(o.tableNumber),
+                    round: o.round,
+                    status: o.status,
+                    instructions: o.instructions,
+                    customerPhone: o.customerPhone,
+                    items: List.from(o.items),
+                    totalAmount: o.totalAmount,
+                    billRequested: o.billRequested,
+                    billRequestedAt: o.billRequestedAt,
+                    createdAt: o.createdAt,
+                  ),
+                );
               }
-              _activeBills.add(newBill);
             }
-          }
-          if (_activeBills.isNotEmpty && _selectedTableIndex >= _activeBills.length) {
-            _selectedTableIndex = _activeBills.length - 1;
-          }
+            _billRequests = uniqueBillReqs;
+
+            _waiterCalls = calls;
+
+            // Automatically ensure tables with pending orders, kitchen orders, or bill requests exist in active bills
+            for (final order in (_pendingOrders + _kitchenOrders + _billRequests)) {
+              final canonical = _canonicalTableName(order.tableNumber);
+              final existingIdx = _activeBills.indexWhere(
+                (b) => _isSameTable(b.tableNumber, canonical),
+              );
+              if (existingIdx < 0) {
+                final billId = 'ORD-${order.id.length > 5 ? order.id.substring(0, 5) : order.id}';
+                final newBill = TableBill(
+                  id: billId,
+                  tableNumber: canonical,
+                  createdAt: order.createdAt,
+                  customerPhone: order.customerPhone,
+                );
+                if (!order.isPending) {
+                  newBill.addItems(order.items);
+                }
+                _activeBills.add(newBill);
+              }
+            }
+            if (_activeBills.isNotEmpty && _selectedTableIndex >= _activeBills.length) {
+              _selectedTableIndex = _activeBills.length - 1;
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading pending orders: $e');
+    } finally {
+      _isFetchingPendingOrders = false;
+    }
+  }
+
+  bool _isManualRefreshing = false;
+  DateTime? _lastRefreshedAt;
+
+  Future<void> _manualRefresh() async {
+    if (_isManualRefreshing) return;
+    setState(() => _isManualRefreshing = true);
+
+    try {
+      await _loadBills(showLoading: false);
+      await _loadPendingOrders();
+
+      if (mounted) {
+        setState(() {
+          _lastRefreshedAt = DateTime.now();
         });
+
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Billing updated • ${_activeBills.length} active table${_activeBills.length == 1 ? '' : 's'}',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+            duration: const Duration(milliseconds: 1400),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.green.shade800,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(12),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Manual refresh error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to refresh: $e'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.red.shade800,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isManualRefreshing = false);
       }
     }
   }
@@ -3333,22 +3420,63 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-
           children: [
             const Text(
               'Table Billing & Receipts',
-
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
             ),
-
-            Text(
-              bName,
-
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  bName,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  'Auto-sync',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.green,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
-
+        actions: [
+          _isManualRefreshing
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryOrange),
+                      ),
+                    ),
+                  ),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.refresh_rounded),
+                  tooltip: _lastRefreshedAt != null
+                      ? 'Refresh (Last: ${_lastRefreshedAt!.hour.toString().padLeft(2, '0')}:${_lastRefreshedAt!.minute.toString().padLeft(2, '0')}:${_lastRefreshedAt!.second.toString().padLeft(2, '0')})'
+                      : 'Refresh Billing & Orders',
+                  onPressed: _manualRefresh,
+                ),
+        ],
         bottom: TabBar(
           controller: _tabController,
 
@@ -3578,10 +3706,12 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       filteredTables = allTables;
     }
 
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.md),
-
-      children: [
+    return RefreshIndicator(
+      color: AppColors.primaryOrange,
+      onRefresh: _manualRefresh,
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        children: [
         if (isDeactivated) ...[
           Container(
             padding: const EdgeInsets.all(12),
@@ -3759,7 +3889,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
             },
           ),
       ],
-    );
+    ),
+  );
   }
 
   Widget _buildFloorFilterChip(String key, String label, bool isDark) {
@@ -5643,10 +5774,12 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   // ==========================================
 
   Widget _buildKitchenTab(bool isDark) {
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.md),
-
-      children: [
+    return RefreshIndicator(
+      color: AppColors.primaryOrange,
+      onRefresh: _manualRefresh,
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -5789,7 +5922,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
         else
           ..._kitchenOrders.map((o) => _buildKitchenOrderCard(o)),
       ],
-    );
+    ),
+  );
   }
 
   // ==========================================
@@ -5799,10 +5933,12 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   // ==========================================
 
   Widget _buildBillRequestsTab(bool isDark) {
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.md),
-
-      children: [
+    return RefreshIndicator(
+      color: AppColors.primaryOrange,
+      onRefresh: _manualRefresh,
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        children: [
         Row(
           children: [
             Container(
@@ -6029,7 +6165,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
             );
           }),
       ],
-    );
+    ),
+  );
   }
 
   Future<void> _closeTableSessionDirect(String tableNumber) async {
@@ -6852,10 +6989,20 @@ class _TableBillingScreenState extends State<TableBillingScreen>
         .toList();
 
     if (validBills.isEmpty) {
-      return const Center(
-        child: Text(
-          'No Paid Orders in Today\'s History',
-          style: TextStyle(color: Colors.grey),
+      return RefreshIndicator(
+        color: AppColors.primaryOrange,
+        onRefresh: _manualRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: const [
+            SizedBox(height: 120),
+            Center(
+              child: Text(
+                'No Paid Orders in Today\'s History',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -6863,9 +7010,12 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     final totalRev = validBills.fold(0, (sum, b) => sum + b.grandTotal);
     final fmt = DateFormat('dd MMM, hh:mm a');
 
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      children: [
+    return RefreshIndicator(
+      color: AppColors.primaryOrange,
+      onRefresh: _manualRefresh,
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        children: [
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -6983,7 +7133,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
           ),
         ),
       ],
-    );
+    ),
+  );
   }
 
   Widget _buildPaymentChip(TableBill bill, String mode, String label) {

@@ -20,6 +20,7 @@ import {
   Lock,
   Users,
   Copy,
+  SlidersHorizontal,
 } from 'lucide-react'
 import {
   productService,
@@ -76,6 +77,7 @@ export function MenuPage() {
   const [dietary, setDietary] = useState<'all' | 'veg' | 'non-veg'>('all')
   const [popularOnly, setPopularOnly] = useState(false)
   const [arOnly, setArOnly] = useState(false)
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
 
   // Cart & Modals
   const [cart, setCart] = useState<Record<string, CartItem>>({})
@@ -583,6 +585,10 @@ export function MenuPage() {
     }
     return list
   }, [allDishes, menu, selectedCategory, dietary, popularOnly, arOnly, searchQuery])
+
+  const activeCheckboxFilterCount = (popularOnly ? 1 : 0) + (arOnly ? 1 : 0)
+  const popularCount = useMemo(() => allDishes.filter((d) => d.isBestseller).length, [allDishes])
+  const arCount = useMemo(() => allDishes.filter((d) => d.has3dModel).length, [allDishes])
 
   const handleNicknameChange = (newName: string) => {
     tableOrderService.setDinerNickname(newName)
@@ -1159,13 +1165,55 @@ export function MenuPage() {
                 <span>Non-Veg</span>
               </button>
             </div>
+
+            {/* Checkbox Filter Icon Button (Row 1) */}
+            <button
+              type="button"
+              onClick={() => setIsFilterModalOpen(true)}
+              className={`h-12 px-3 sm:px-3.5 rounded-full border flex items-center justify-center gap-1.5 cursor-pointer transition shadow-md flex-shrink-0 ${
+                activeCheckboxFilterCount > 0
+                  ? 'bg-[#FF5353] border-[#FF5353] text-white shadow-lg shadow-[#FF5353]/30'
+                  : 'bg-[#1C1E28] border-[#2D3142] text-gray-400 hover:text-white hover:border-gray-500'
+              }`}
+              title="More filters (Popular, 3D AR)"
+              aria-label="Dish filters"
+            >
+              <SlidersHorizontal size={16} />
+              <span className="hidden sm:inline text-xs font-bold">Filter</span>
+              {activeCheckboxFilterCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-white text-[#FF5353] text-[9px] font-extrabold flex items-center justify-center">
+                  {activeCheckboxFilterCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
         {/* ========================================================= */}
-        {/* 3. STICKY CATEGORY PILLS BAR (Matching Reference Screen 2) */}
+        {/* 3. STICKY CATEGORY PILLS BAR (Pure single-select categories) */}
         {/* ========================================================= */}
-        <div className="sticky top-0 z-30 bg-[#121319]/90 backdrop-blur-xl border-b border-white/5 px-4 sm:px-6 lg:px-8 pt-2 pb-3.5 mb-6 flex gap-2.5 overflow-x-auto no-scrollbar">
+        <div className="sticky top-0 z-30 bg-[#121319]/90 backdrop-blur-xl border-b border-white/5 px-4 sm:px-6 lg:px-8 pt-2 pb-3.5 mb-4 flex gap-2.5 items-center overflow-x-auto no-scrollbar">
+          {/* Checkbox Filter Icon Pill in category bar */}
+          <button
+            type="button"
+            onClick={() => setIsFilterModalOpen(true)}
+            className={`category-pill px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer flex items-center gap-1.5 transition flex-shrink-0 ${
+              activeCheckboxFilterCount > 0
+                ? 'bg-[#FF5353] text-white shadow-md shadow-[#FF5353]/30 border border-[#FF5353]'
+                : 'bg-[#1C1E28] border border-[#2D3142] text-gray-300 hover:text-white hover:border-gray-500'
+            }`}
+            title="Filter by Popular or 3D AR"
+          >
+            <SlidersHorizontal size={13} className={activeCheckboxFilterCount > 0 ? 'text-white' : 'text-gray-400'} />
+            <span>Filter</span>
+            {activeCheckboxFilterCount > 0 && (
+              <span className="w-4 h-4 rounded-full font-extrabold text-[10px] bg-white text-[#FF5353] flex items-center justify-center">
+                {activeCheckboxFilterCount}
+              </span>
+            )}
+          </button>
+
+          {/* Single-select category tabs (All, MainCourse, Starter, Beverage, Dessert...) */}
           {categoriesWithCounts.map(({ name, count }) => {
             const active = selectedCategory === name
             return (
@@ -1188,28 +1236,47 @@ export function MenuPage() {
               </button>
             )
           })}
-
-          <button
-            type="button"
-            onClick={() => setPopularOnly(!popularOnly)}
-            className={`category-pill px-4.5 py-2 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer ${
-              popularOnly ? 'category-pill-active' : 'category-pill-inactive'
-            }`}
-          >
-            🔥 Popular
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setArOnly(!arOnly)}
-            className={`category-pill px-4.5 py-2 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-              arOnly ? 'category-pill-active' : 'category-pill-inactive'
-            }`}
-          >
-            <Sparkles size={12} />
-            <span>3D AR Only ({allDishes.filter((d) => d.has3dModel).length})</span>
-          </button>
         </div>
+
+        {/* Active Filter Chips (Instant removal when Popular or 3D AR is active) */}
+        {activeCheckboxFilterCount > 0 && (
+          <div className="px-4 sm:px-6 lg:px-8 -mt-2 mb-4 flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] text-gray-400 font-medium">Active filters:</span>
+            {popularOnly && (
+              <button
+                type="button"
+                onClick={() => setPopularOnly(false)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FF5353]/15 border border-[#FF5353]/40 text-[#FF5353] text-xs font-bold hover:bg-[#FF5353]/25 cursor-pointer transition"
+                title="Remove Popular filter"
+              >
+                <span>🔥 Popular</span>
+                <X size={12} />
+              </button>
+            )}
+            {arOnly && (
+              <button
+                type="button"
+                onClick={() => setArOnly(false)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#8B5CF6]/15 border border-[#8B5CF6]/40 text-[#A78BFA] text-xs font-bold hover:bg-[#8B5CF6]/25 cursor-pointer transition"
+                title="Remove 3D AR filter"
+              >
+                <Sparkles size={11} />
+                <span>3D AR Only</span>
+                <X size={12} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setPopularOnly(false)
+                setArOnly(false)
+              }}
+              className="text-xs text-gray-400 hover:text-white underline cursor-pointer ml-1"
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         {/* ========================================================= */}
         {/* 4. DISHES RESPONSIVE LIST (Directly from Reference Screen 2)*/}
@@ -1646,6 +1713,149 @@ export function MenuPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* Checkbox Filter Modal Dialog (Popular & 3D AR Only)      */}
+      {/* ========================================================= */}
+      {isFilterModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setIsFilterModalOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="filter-dialog-title"
+        >
+          <div
+            className="w-full max-w-sm bg-[#1C1E28] border border-[#2D3142] rounded-3xl p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#2D3142]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-[#FF5353]/15 flex items-center justify-center text-[#FF5353]">
+                  <SlidersHorizontal size={16} />
+                </div>
+                <div>
+                  <h3 id="filter-dialog-title" className="text-sm font-bold text-white">
+                    Dish Filters
+                  </h3>
+                  <p className="text-[11px] text-gray-400">
+                    Select checkboxes to filter menu
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFilterModalOpen(false)}
+                className="text-gray-400 hover:text-white p-1 rounded-full transition cursor-pointer"
+                aria-label="Close filters"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Checkbox Options */}
+            <div className="space-y-2.5">
+              {/* Checkbox 1: Popular Dishes */}
+              <label
+                className={`flex items-center justify-between p-3.5 rounded-2xl border transition cursor-pointer select-none ${
+                  popularOnly
+                    ? 'bg-[#FF5353]/15 border-[#FF5353] text-white shadow-sm'
+                    : 'bg-[#141620] border-[#2A2D3C] text-gray-300 hover:border-gray-500'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-5 h-5 rounded-md border flex items-center justify-center transition flex-shrink-0 ${
+                      popularOnly ? 'bg-[#FF5353] border-[#FF5353]' : 'border-gray-500 bg-[#1E202C]'
+                    }`}
+                  >
+                    {popularOnly && <Check size={13} className="text-white stroke-[3]" />}
+                  </div>
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={popularOnly}
+                    onChange={(e) => setPopularOnly(e.target.checked)}
+                  />
+                  <div>
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                      <span>🔥 Popular Dishes</span>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Bestselling customer favorites</p>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#252837] text-gray-300">
+                  {popularCount}
+                </span>
+              </label>
+
+              {/* Checkbox 2: 3D AR Only */}
+              <label
+                className={`flex items-center justify-between p-3.5 rounded-2xl border transition cursor-pointer select-none ${
+                  arOnly
+                    ? 'bg-[#8B5CF6]/15 border-[#8B5CF6] text-white shadow-sm'
+                    : 'bg-[#141620] border-[#2A2D3C] text-gray-300 hover:border-gray-500'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-5 h-5 rounded-md border flex items-center justify-center transition flex-shrink-0 ${
+                      arOnly ? 'bg-[#8B5CF6] border-[#8B5CF6]' : 'border-gray-500 bg-[#1E202C]'
+                    }`}
+                  >
+                    {arOnly && <Check size={13} className="text-white stroke-[3]" />}
+                  </div>
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={arOnly}
+                    onChange={(e) => setArOnly(e.target.checked)}
+                  />
+                  <div>
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                      <Sparkles size={13} className="text-[#A78BFA]" />
+                      <span>3D AR Only</span>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Interactive augmented reality 3D</p>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#252837] text-gray-300">
+                  {arCount}
+                </span>
+              </label>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-2 flex items-center justify-between border-t border-[#2D3142]">
+              <div className="text-xs text-gray-400">
+                Matches: <strong className="text-white">{filteredDishes.length}</strong> dishes
+              </div>
+              <div className="flex items-center gap-2">
+                {activeCheckboxFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPopularOnly(false)
+                      setArOnly(false)
+                    }}
+                    className="text-xs font-semibold text-gray-400 hover:text-white px-3 py-1.5 rounded-full hover:bg-white/5 transition cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsFilterModalOpen(false)}
+                  className="px-5 py-2 rounded-full bg-gradient-to-r from-[#FF5353] to-[#FF793F] text-white text-xs font-bold shadow-md cursor-pointer hover:opacity-95 transition"
+                >
+                  Apply Filters
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

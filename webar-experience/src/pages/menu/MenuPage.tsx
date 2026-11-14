@@ -16,6 +16,7 @@ import {
   ChefHat,
   XCircle,
   AlertTriangle,
+  AlertCircle,
   Lock,
   Users,
   Copy,
@@ -87,13 +88,21 @@ export function MenuPage() {
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [isInfoOpen, setIsInfoOpen] = useState(false)
   const [isTableOpen, setIsTableOpen] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null)
   const toastTimer = useRef<number | null>(null)
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, isError?: boolean) => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
-    setToast(msg)
-    toastTimer.current = window.setTimeout(() => setToast(null), 2500)
+    const errorFlag =
+      isError !== undefined
+        ? isError
+        : msg.includes('⚠️') ||
+          msg.includes('❌') ||
+          msg.toLowerCase().includes('fail') ||
+          msg.toLowerCase().includes('error') ||
+          msg.toLowerCase().includes('occupied')
+    setToast({ message: msg, isError: errorFlag })
+    toastTimer.current = window.setTimeout(() => setToast(null), 3000)
   }
 
   // Table occupancy state when another customer has occupied this table
@@ -1641,11 +1650,23 @@ export function MenuPage() {
         </div>
       )}
 
-      {/* Floating Toast Notification */}
+      {/* Floating Toast Notification - Positioned at Right Top */}
       {toast && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-[#1F2028] border border-[#2B2C38] text-white px-4 py-2 rounded-full text-xs font-bold shadow-2xl flex items-center gap-2 animate-in fade-in duration-200">
-          <Check size={13} className="text-[#20BF6B]" />
-          <span>{toast}</span>
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed top-4 right-4 z-50 max-w-sm px-4 py-2.5 rounded-2xl text-xs font-bold shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200 border backdrop-blur-md ${
+            toast.isError
+              ? 'bg-[#2A1519]/95 border-rose-500/40 text-rose-200 shadow-rose-950/40'
+              : 'bg-[#15261D]/95 border-emerald-500/40 text-emerald-200 shadow-emerald-950/40'
+          }`}
+        >
+          {toast.isError ? (
+            <AlertCircle size={16} className="text-rose-400 shrink-0" />
+          ) : (
+            <Check size={16} className="text-emerald-400 shrink-0" />
+          )}
+          <span className="leading-snug">{toast.message}</span>
         </div>
       )}
     </div>

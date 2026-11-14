@@ -11,6 +11,7 @@ import '../../core/constants/app_spacing.dart';
 import '../../core/services/billing_service.dart';
 import '../../core/services/bill_receipt_pdf_service.dart';
 import '../../core/utils/kitchen_sound_alert.dart';
+import '../../core/utils/top_toast.dart';
 import '../../models/bill_model.dart';
 import '../../providers/business_provider.dart';
 import '../../providers/product_provider.dart';
@@ -38,6 +39,15 @@ class TableBillingScreen extends StatefulWidget {
 
 class _TableBillingScreenState extends State<TableBillingScreen>
     with SingleTickerProviderStateMixin {
+  void _showNotification(
+    String message, {
+    bool isError = false,
+    bool isWarning = false,
+  }) {
+    if (!mounted) return;
+    TopToast.show(context, message, isError: isError, isWarning: isWarning);
+  }
+
   final _billingService = BillingService();
 
   late final TabController _tabController = TabController(
@@ -415,41 +425,14 @@ class _TableBillingScreenState extends State<TableBillingScreen>
           _lastRefreshedAt = DateTime.now();
         });
 
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Billing updated • ${_activeBills.length} active table${_activeBills.length == 1 ? '' : 's'}',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-            duration: const Duration(milliseconds: 1400),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.green.shade800,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            margin: const EdgeInsets.all(12),
-          ),
+        _showNotification(
+          'Billing updated • ${_activeBills.length} active table${_activeBills.length == 1 ? '' : 's'}',
         );
       }
     } catch (e) {
       debugPrint('Manual refresh error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to refresh: $e'),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.red.shade800,
-          ),
-        );
+        _showNotification('Failed to refresh: $e', isError: true);
       }
     } finally {
       if (mounted) {
@@ -464,13 +447,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     final success = await _billingService.attendWaiterCall(bId, tableNumber);
     await _loadPendingOrders();
     if (mounted && success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Attended waiter request for ${_canonicalTableName(tableNumber)}.'),
-          backgroundColor: const Color(0xFF10B981),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      _showNotification('Attended waiter request for ${_canonicalTableName(tableNumber)}.');
     }
   }
 
@@ -481,13 +458,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     await _loadPendingOrders();
     await _loadBills();
     if (mounted && success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✅ ${_canonicalTableName(tableNumber)} verified & reset for New Party!'),
-          backgroundColor: const Color(0xFF8B5CF6),
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      _showNotification('✅ ${_canonicalTableName(tableNumber)} verified & reset for New Party!');
     }
   }
 
@@ -500,14 +471,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     await _loadPendingOrders();
 
     if (mounted && success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${_canonicalTableName(order.tableNumber)} (Round ${order.round}) marked as SERVED! Customer updated.',
-          ),
-
-          backgroundColor: const Color(0xFF10B981),
-        ),
+      _showNotification(
+        '${_canonicalTableName(order.tableNumber)} (Round ${order.round}) marked as SERVED! Customer updated.',
       );
     }
   }
@@ -536,14 +501,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
     if (mounted && success) {
       KitchenSoundAlert.playOrderServedChime();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'All dishes for ${_canonicalTableName(bill.tableNumber)} marked as SERVED! Customer view updated.',
-          ),
-
-          backgroundColor: const Color(0xFF10B981),
-        ),
+      _showNotification(
+        'All dishes for ${_canonicalTableName(bill.tableNumber)} marked as SERVED! Customer view updated.',
       );
     }
   }
@@ -552,14 +511,9 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     final isDeactivated = context.read<BusinessProvider>().isDeactivated;
 
     if (isDeactivated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Cannot accept orders while business is deactivated. Please reactivate your business.',
-          ),
-
-          backgroundColor: Colors.orange,
-        ),
+      _showNotification(
+        'Cannot accept orders while business is deactivated. Please reactivate your business.',
+        isWarning: true,
       );
 
       return;
@@ -613,14 +567,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     // Customer tracks order live in WebAR experience; no return WhatsApp message sent upon acceptance.
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Order for $canonicalOrderTable accepted into kitchen! Dishes added to bill.',
-          ),
-
-          backgroundColor: const Color(0xFF10B981),
-        ),
+      _showNotification(
+        'Order for $canonicalOrderTable accepted into kitchen! Dishes added to bill.',
       );
     }
   }
@@ -636,12 +584,9 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     await _loadPendingOrders();
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Order for ${_canonicalTableName(order.tableNumber)} declined.',
-          ),
-        ),
+      _showNotification(
+        'Order for ${_canonicalTableName(order.tableNumber)} declined.',
+        isError: true,
       );
     }
   }
@@ -915,14 +860,9 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     final isDeactivated = context.read<BusinessProvider>().isDeactivated;
 
     if (isDeactivated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Business is deactivated. Reactivate to add items to bills.',
-          ),
-
-          backgroundColor: Colors.orange,
-        ),
+      _showNotification(
+        'Business is deactivated. Reactivate to add items to bills.',
+        isWarning: true,
       );
 
       return;
@@ -952,13 +892,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       );
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Added "${p.name}" to bill!'),
-
-        duration: const Duration(seconds: 1),
-      ),
-    );
+    _showNotification('Added "${p.name}" to bill!');
   }
 
   Future<void> _deleteQuickPreset(QuickCustomPreset p) async {
@@ -969,9 +903,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
         .toList());
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Removed "${p.name}" from Quick Items List.')),
-      );
+      _showNotification('Removed "${p.name}" from Quick Items List.');
     }
   }
 
@@ -1162,21 +1094,14 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                 final p = int.tryParse(priceCtl.text.trim()) ?? 0;
 
                 if (n.length < 2) {
-                  messenger.showSnackBar(
-                    const SnackBar(
-                      content: Text('Item name must be at least 2 characters.'),
-                    ),
-                  );
+                  TopToast.warning(context, 'Item name must be at least 2 characters.');
                   return;
                 }
 
                 if (p <= 0 || p > 100000) {
-                  messenger.showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Please enter a valid price between ₹1 and ₹1,00,000.',
-                      ),
-                    ),
+                  TopToast.warning(
+                    context,
+                    'Please enter a valid price between ₹1 and ₹1,00,000.',
                   );
                   return;
                 }
@@ -1218,15 +1143,11 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
                 if (ctx.mounted) Navigator.pop(ctx);
 
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      addToCurrentBill && bill != null
-                          ? 'Added $quantity× "$n (₹$p)" to $tableName bill!'
-                          : 'Saved "$n (₹$p)" to Quick Items list!',
-                    ),
-                    backgroundColor: const Color(0xFF10B981),
-                  ),
+                TopToast.success(
+                  context,
+                  addToCurrentBill && bill != null
+                      ? 'Added $quantity× "$n (₹$p)" to $tableName bill!'
+                      : 'Saved "$n (₹$p)" to Quick Items list!',
                 );
               },
               child: Text(
@@ -1249,14 +1170,9 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     final isDeactivated = context.read<BusinessProvider>().isDeactivated;
 
     if (isDeactivated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Business is currently deactivated. Reactivate to add menu items.',
-          ),
-
-          backgroundColor: Colors.orange,
-        ),
+      _showNotification(
+        'Business is currently deactivated. Reactivate to add menu items.',
+        isWarning: true,
       );
 
       return;
@@ -1507,14 +1423,9 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     final isDeactivated = context.read<BusinessProvider>().isDeactivated;
 
     if (isDeactivated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Cannot open tables while business is deactivated. Please reactivate your business.',
-          ),
-
-          backgroundColor: Colors.orange,
-        ),
+      _showNotification(
+        'Cannot open tables while business is deactivated. Please reactivate your business.',
+        isWarning: true,
       );
 
       return;
@@ -1564,12 +1475,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
               final raw = ctl.text.trim();
 
               if (raw.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please enter a table number or name.'),
-                  ),
-                );
-
+                TopToast.warning(context, 'Please enter a table number or name.');
                 return;
               }
 
@@ -1620,26 +1526,16 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     final bill = _currentBill;
 
     if (bill == null || bill.items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please add at least 1 item to the bill.'),
-        ),
-      );
-
+      _showNotification('Please add at least 1 item to the bill.', isWarning: true);
       return;
     }
 
     final isDeactivated = context.read<BusinessProvider>().isDeactivated;
 
     if (isDeactivated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Business is deactivated. Operations are paused until reactivated.',
-          ),
-
-          backgroundColor: Colors.orange,
-        ),
+      _showNotification(
+        'Business is deactivated. Operations are paused until reactivated.',
+        isWarning: true,
       );
 
       return;
@@ -1651,14 +1547,9 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       final phoneRegex = RegExp(r'^[6-9]\d{9}$');
 
       if (!phoneRegex.hasMatch(phone)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Please enter a valid 10-digit mobile number starting with 6-9.',
-            ),
-
-            backgroundColor: Colors.redAccent,
-          ),
+        _showNotification(
+          'Please enter a valid 10-digit mobile number starting with 6-9.',
+          isError: true,
         );
 
         return;
@@ -1697,11 +1588,9 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
   void _showDynamicUpiQrDialog(TableBill bill) {
     if (bill.grandTotal <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('⚠️ Table total is ₹0. Please add items to the table before generating a payment QR.'),
-          backgroundColor: Colors.amber,
-        ),
+      _showNotification(
+        '⚠️ Table total is ₹0. Please add items to the table before generating a payment QR.',
+        isWarning: true,
       );
       return;
     }
@@ -1853,12 +1742,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                         InkWell(
                           onTap: () {
                             Clipboard.setData(ClipboardData(text: upiUri));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('📋 UPI payment link copied to clipboard!'),
-                                duration: Duration(seconds: 2),
-                              ),
-                            );
+                            TopToast.success(context, '📋 UPI payment link copied to clipboard!');
                           },
                           child: const Padding(
                             padding: EdgeInsets.all(4),
@@ -1909,12 +1793,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                         child: OutlinedButton.icon(
                           onPressed: () {
                             Clipboard.setData(ClipboardData(text: upiUri));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('📋 UPI payment link copied to clipboard!'),
-                                duration: Duration(seconds: 2),
-                              ),
-                            );
+                            TopToast.success(context, '📋 UPI payment link copied to clipboard!');
                           },
                           icon: const Icon(Icons.copy, size: 14),
                           label: const Text('Copy Link', style: TextStyle(fontSize: 12)),
@@ -1954,11 +1833,9 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       );
     } catch (e, st) {
       debugPrint('Error showing UPI QR dialog: $e\n$st');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not open UPI QR: ${e.toString().replaceFirst("Exception: ", "")}'),
-          backgroundColor: Colors.redAccent,
-        ),
+      _showNotification(
+        'Could not open UPI QR: ${e.toString().replaceFirst("Exception: ", "")}',
+        isError: true,
       );
     }
   }
@@ -2240,11 +2117,9 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       );
     } catch (e, st) {
       debugPrint('Error showing settle dialog: $e\n$st');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not open Settle dialog: ${e.toString().replaceFirst("Exception: ", "")}'),
-          backgroundColor: Colors.redAccent,
-        ),
+      _showNotification(
+        'Could not open Settle dialog: ${e.toString().replaceFirst("Exception: ", "")}',
+        isError: true,
       );
     }
   }
@@ -2286,10 +2161,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
   Future<void> _printBill(TableBill bill) async {
     if (bill.items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cannot print an empty bill.')),
-      );
-
+      _showNotification('Cannot print an empty bill.', isWarning: true);
       return;
     }
 
@@ -2313,9 +2185,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Print error: $e')));
+        _showNotification('Print error: $e', isError: true);
       }
     }
   }
@@ -2323,9 +2193,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   Future<void> _printKot(PendingTableOrder order) async {
     if (order.items.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cannot print an empty order ticket.')),
-        );
+        _showNotification('Cannot print an empty order ticket.', isWarning: true);
       }
       return;
     }
@@ -2340,19 +2208,14 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('KOT Print error: $e')));
+        _showNotification('KOT Print error: $e', isError: true);
       }
     }
   }
 
   Future<void> _downloadBill(TableBill bill) async {
     if (bill.items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cannot download an empty bill.')),
-      );
-
+      _showNotification('Cannot download an empty bill.', isWarning: true);
       return;
     }
 
@@ -2376,21 +2239,13 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Receipt PDF for ${_canonicalTableName(bill.tableNumber)} downloaded!',
-            ),
-
-            backgroundColor: const Color(0xFF10B981),
-          ),
+        _showNotification(
+          'Receipt PDF for ${_canonicalTableName(bill.tableNumber)} downloaded!',
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Download error: $e')));
+        _showNotification('Download error: $e', isError: true);
       }
     }
   }
@@ -3227,23 +3082,16 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
       if (mounted) {
         KitchenSoundAlert.playBillSettledTone();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '${_canonicalTableName(bill.tableNumber)} completed! Saved to paid history.',
-            ),
-            backgroundColor: const Color(0xFF10B981),
-          ),
+        _showNotification(
+          '${_canonicalTableName(bill.tableNumber)} completed! Saved to paid history.',
         );
       }
     } catch (e, st) {
       debugPrint('Error archiving bill: $e\n$st');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to complete settlement: ${e.toString().replaceFirst("Exception: ", "")}'),
-            backgroundColor: Colors.redAccent,
-          ),
+        _showNotification(
+          'Failed to complete settlement: ${e.toString().replaceFirst("Exception: ", "")}',
+          isError: true,
         );
       }
     }
@@ -3346,12 +3194,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     await _loadBills();
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${_canonicalTableName(bill.tableNumber)} discarded without saving to history.',
-          ),
-        ),
+      _showNotification(
+        '${_canonicalTableName(bill.tableNumber)} discarded without saving to history.',
       );
     }
   }
@@ -3398,9 +3242,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       await _billingService.saveHistoryBills(_historyBills, bId);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bill removed from history.')),
-        );
+        _showNotification('Bill removed from history.');
       }
     }
   }
@@ -6429,13 +6271,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
     if (mounted) {
       KitchenSoundAlert.playBillSettledTone();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${_canonicalTableName(tableNumber)} closed and settled.',
-          ),
-          backgroundColor: const Color(0xFF10B981),
-        ),
+      _showNotification(
+        '${_canonicalTableName(tableNumber)} closed and settled.',
       );
     }
   }

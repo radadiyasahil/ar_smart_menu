@@ -428,7 +428,11 @@ public record PublicMenuResponse(
     IReadOnlyList<string>? AvailableTables = null,
     string? WifiName = null,
     string? WifiPassword = null,
-    string? UpiId = null);
+    string? UpiId = null,
+    bool RequireGeofence = false,
+    int GeofenceRadiusMeters = 200,
+    double? Latitude = null,
+    double? Longitude = null);
 
 public record PublicMenuCategoryDto(
     string CategoryName,

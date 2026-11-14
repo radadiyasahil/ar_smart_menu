@@ -40,6 +40,7 @@ export interface PlaceTableOrderPayload {
   previousOrderIds?: string[]
   customerLatitude?: number
   customerLongitude?: number
+  requireGeofence?: boolean
   partyPin?: string
   items: {
     id: string
@@ -246,18 +247,49 @@ export const tableOrderService = {
     }
   },
 
+  getCachedCoordinates(): { latitude: number; longitude: number } | null {
+    try {
+      const lat = sessionStorage.getItem('ar_customer_lat')
+      const lng = sessionStorage.getItem('ar_customer_lng')
+      const time = sessionStorage.getItem('ar_customer_coords_time')
+      if (lat && lng && time) {
+        const age = Date.now() - parseInt(time, 10)
+        if (age < 15 * 60 * 1000) {
+          const parsedLat = parseFloat(lat)
+          const parsedLng = parseFloat(lng)
+          if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+            return { latitude: parsedLat, longitude: parsedLng }
+          }
+        }
+      }
+    } catch {}
+    return null
+  },
+
   async getCurrentCoordinates(): Promise<{ latitude: number; longitude: number } | null> {
+    const cached = this.getCachedCoordinates()
+    if (cached) return cached
+
     if (typeof navigator === 'undefined' || !navigator.geolocation) return null
     return new Promise((resolve) => {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          resolve({
+          const coords = {
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
-          })
+          }
+          try {
+            sessionStorage.setItem('ar_customer_lat', String(coords.latitude))
+            sessionStorage.setItem('ar_customer_lng', String(coords.longitude))
+            sessionStorage.setItem('ar_customer_coords_time', String(Date.now()))
+          } catch {}
+          resolve(coords)
         },
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 },
+        (err) => {
+          console.warn('Geolocation permission not granted or error:', err?.message || err)
+          resolve(null)
+        },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 },
       )
     })
   },
@@ -315,8 +347,15 @@ export const tableOrderService = {
       const storedIds = this.getStoredOrderIds(payload.tableNumber)
 
       let coords: { latitude: number; longitude: number } | null = null
-      if (payload.customerLatitude === undefined || payload.customerLongitude === undefined) {
-        coords = await this.getCurrentCoordinates()
+      // ONLY request GPS coordinates if geofence is explicitly required by this restaurant
+      if (payload.requireGeofence) {
+        if (payload.customerLatitude !== undefined && payload.customerLongitude !== undefined) {
+          coords = { latitude: payload.customerLatitude, longitude: payload.customerLongitude }
+        } else {
+          coords = await this.getCurrentCoordinates()
+        }
+      } else if (payload.customerLatitude !== undefined && payload.customerLongitude !== undefined) {
+        coords = { latitude: payload.customerLatitude, longitude: payload.customerLongitude }
       }
 
       const fullPayload: PlaceTableOrderPayload = {

@@ -529,9 +529,11 @@ export function CartDrawer({
   onNicknameChange,
   lastSharedBy,
   onCustomizeDish,
+  requireGeofence = false,
 }: {
   isTableOccupied?: boolean
   occupiedMessage?: string
+  requireGeofence?: boolean
   isOpen: boolean
   items: CartItem[]
   tableNumber: string
@@ -607,7 +609,11 @@ export function CartDrawer({
       : 'Dine-in'
 
   const handleSendOrderDirectly = async () => {
-    if (isSubmitting || items.length === 0) return
+    if (isSubmitting) return
+    if (!items || items.length === 0) {
+      alert('Your cart is empty. Please add dishes from the menu first.')
+      return
+    }
     if (!isTableValid) {
       alert(`Table "${tableNumber}" is not a valid table at this restaurant. Please change your table to continue.`)
       onChangeTable()
@@ -615,8 +621,10 @@ export function CartDrawer({
     }
     setIsSubmitting(true)
 
+    // Capture frozen snapshot of items so any concurrent background sync doesn't mutate items
+    const itemsSnapshot = [...items]
     const round = nextRound ?? getOrderRound()
-    const orderItems = items.map((i) => {
+    const orderItems = itemsSnapshot.map((i) => {
       const uPrice = i.unitPrice ?? (i.dish.pricePaise ? Math.round(i.dish.pricePaise / 100) : 0)
       const mods: string[] = []
       if (i.customization?.spiceLevel) {
@@ -655,6 +663,7 @@ export function CartDrawer({
           round,
           instructions: instructions.trim(),
           customerPhone: '',
+          requireGeofence: requireGeofence,
           items: orderItems,
         })
       }
@@ -664,6 +673,12 @@ export function CartDrawer({
       if (err.message && err.message.toLowerCase().includes('occupied')) {
         onChangeTable()
       }
+      // DO NOT clear cart on failure! Keep items intact!
+      return
+    }
+
+    if (!placedOrder) {
+      setIsSubmitting(false)
       return
     }
 
@@ -676,7 +691,7 @@ export function CartDrawer({
     onClearCart()
     onClose()
 
-    if (placedOrder && onOrderPlaced) {
+    if (onOrderPlaced) {
       onOrderPlaced(placedOrder)
     } else if (onOpenOrderStatus) {
       onOpenOrderStatus()

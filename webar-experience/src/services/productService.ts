@@ -37,6 +37,10 @@ export interface PublicMenuResponse {
   wifiName?: string
   wifiPassword?: string
   upiId?: string
+  requireGeofence?: boolean
+  geofenceRadiusMeters?: number
+  latitude?: number
+  longitude?: number
 }
 
 import { apiClient, type ApiEnvelope } from './apiClient'

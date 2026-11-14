@@ -80,9 +80,26 @@ export function MenuPage() {
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
 
   // Cart & Modals
-  const [cart, setCart] = useState<Record<string, CartItem>>({})
+  const [cart, setCart] = useState<Record<string, CartItem>>(() => {
+    try {
+      const saved = sessionStorage.getItem(`ar_cart_${slug || ''}_${table || ''}`)
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return {}
+  })
   const cartRef = useRef<Record<string, CartItem>>({})
   cartRef.current = cart
+
+  useEffect(() => {
+    try {
+      const key = `ar_cart_${slug || ''}_${table || ''}`
+      if (Object.keys(cart).length > 0) {
+        sessionStorage.setItem(key, JSON.stringify(cart))
+      } else {
+        sessionStorage.removeItem(key)
+      }
+    } catch {}
+  }, [cart, slug, table])
   const allDishesRef = useRef<PublicMenuDish[]>([])
   const lastLocalEditTimestamp = useRef<number>(0)
   const [active3dDish, setActive3dDish] = useState<PublicMenuDish | null>(null)
@@ -193,10 +210,17 @@ export function MenuPage() {
     }
 
     setCart((currentLocalCart) => {
-      // If this call came from polling and user recently modified cart locally (< 3s),
-      // do NOT let a stale poll wipe out in-flight local additions!
-      const isRecentlyEditedLocally = Date.now() - lastLocalEditTimestamp.current < 3000
-      if (isFromPoll && isRecentlyEditedLocally) {
+      const localKeys = Object.keys(currentLocalCart)
+      const remoteKeys = Object.keys(remoteCartMap)
+
+      // CRITICAL SAFEGUARD: If background poll returned an empty remote cart,
+      // NEVER wipe out items that the current diner added locally!
+      if (isFromPoll && remoteKeys.length === 0 && localKeys.length > 0) {
+        return currentLocalCart
+      }
+
+      // If this call came from polling, preserve local additions created by this client
+      if (isFromPoll) {
         for (const [key, localItem] of Object.entries(currentLocalCart)) {
           if (!remoteCartMap[key] && (localItem.clientId === myClientId || !localItem.clientId)) {
             remoteCartMap[key] = localItem
@@ -205,10 +229,10 @@ export function MenuPage() {
       }
 
       const currentKeys = Object.keys(currentLocalCart)
-      const remoteKeys = Object.keys(remoteCartMap)
+      const finalRemoteKeys = Object.keys(remoteCartMap)
       const isDifferent =
-        currentKeys.length !== remoteKeys.length ||
-        remoteKeys.some(
+        currentKeys.length !== finalRemoteKeys.length ||
+        finalRemoteKeys.some(
           (k) =>
             !currentLocalCart[k] ||
             currentLocalCart[k].quantity !== remoteCartMap[k].quantity ||
@@ -428,10 +452,8 @@ export function MenuPage() {
       }
     }
 
-    window.addEventListener('pagehide', handleTabUnload)
     window.addEventListener('beforeunload', handleTabUnload)
     return () => {
-      window.removeEventListener('pagehide', handleTabUnload)
       window.removeEventListener('beforeunload', handleTabUnload)
     }
   }, [slug, table, activeOrders.length])
@@ -1563,6 +1585,7 @@ export function MenuPage() {
         isTableOccupied={isTableOccupiedByOther}
         occupiedMessage={occupiedMessage}
         isTableLocked={isTableLocked}
+        requireGeofence={menu?.requireGeofence ?? false}
         onCustomizeDish={(d) => setCustomizingDish(d)}
       />
 

@@ -196,7 +196,11 @@ public class PublicArService : IPublicArService
             orderedAvailableTables,
             business.WifiName,
             business.WifiPassword,
-            business.UpiId
+            business.UpiId,
+            business.RequireGeofence,
+            business.GeofenceRadiusMeters > 0 ? business.GeofenceRadiusMeters : 200,
+            business.Latitude,
+            business.Longitude
         );
     }
 

@@ -421,6 +421,31 @@ public class TableOrdersController : ControllerBase
         // Check if there are active submitted orders for this table in the kitchen/POS
         var hasActiveOrders = await HasActiveOrdersForTableAsync(businessId, tableNumber, ct);
 
+        // If active orders exist for this table, verify if caller belongs to this table's party
+        if (hasActiveOrders)
+        {
+            var isDinerSession = false;
+            if (!string.IsNullOrWhiteSpace(sessionToken) &&
+                _activeTableSessionTokens.TryGetValue(key, out var activeToken) &&
+                activeToken == sessionToken.Trim())
+            {
+                isDinerSession = true;
+            }
+
+            if (!isDinerSession)
+            {
+                // A stranger is scanning an occupied table: do NOT share the active diner's cart
+                return Ok(ApiResponse<SharedCartResponse>.Ok(new SharedCartResponse
+                {
+                    TableNumber = tableNumber,
+                    Items = new List<SharedCartItemDto>(),
+                    TotalItems = 0,
+                    TotalAmount = 0,
+                    UpdatedAt = DateTime.UtcNow,
+                }));
+            }
+        }
+
         // If no active orders have been placed on this table:
         // Any draft cart belongs strictly to the active tab session that created it.
         // If a new customer connects, or if the customer closed/reopened their tab (different sessionToken),
@@ -884,21 +909,14 @@ public class TableOrdersController : ControllerBase
 
             if (!isDinerSession)
             {
-                // Return TABLE_OCCUPIED with sanitized orders (PartyPin = null so strangers cannot see the PIN)
-                var sanitizedOrders = nonCancelledOrders.Select(o =>
-                {
-                    var r = ToResponse(o);
-                    r.PartyPin = null;
-                    return r;
-                }).ToList();
-
+                // Return TABLE_OCCUPIED with empty orders list so strangers cannot view or track existing diner orders
                 return Ok(new ApiResponse<List<TableOrderResponse>>
                 {
                     Success = false,
                     Code = "TABLE_OCCUPIED",
                     Error = $"Table '{tableNumber}' has an active order.",
                     Message = $"Table '{tableNumber}' currently has an active order. If you are sitting with friends, please enter the 3-digit Table PIN to join.",
-                    Data = sanitizedOrders
+                    Data = new List<TableOrderResponse>()
                 });
             }
 
@@ -1353,6 +1371,25 @@ public class TableOrdersController : ControllerBase
                         (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable))
 
             .ToListAsync(ct);
+
+
+
+        var chatKey = GetChatKey(businessId, cleanTable);
+        if (_activeTableSessionTokens.TryGetValue(chatKey, out var activeSessionToken) &&
+            !string.IsNullOrWhiteSpace(activeSessionToken))
+        {
+            var isAuthorized = false;
+            if (!string.IsNullOrWhiteSpace(body?.SessionToken) &&
+                string.Equals(body.SessionToken.Trim(), activeSessionToken, StringComparison.OrdinalIgnoreCase))
+            {
+                isAuthorized = true;
+            }
+
+            if (!isAuthorized)
+            {
+                return BadRequest(ApiResponse<TableOrderResponse>.Fail("Unauthorized: Only diners seated at this table can request the bill."));
+            }
+        }
 
 
 
@@ -2529,6 +2566,8 @@ public class RequestBillDto
     public string? TableNumber { get; set; }
 
     public string? CustomerPhone { get; set; }
+
+    public string? SessionToken { get; set; }
 
 }
 

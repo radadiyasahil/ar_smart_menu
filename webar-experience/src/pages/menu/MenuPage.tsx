@@ -214,6 +214,9 @@ export function MenuPage() {
       setIsTableOccupiedByOther(res.isOccupiedByOther)
       if (res.isOccupiedByOther) {
         setOccupiedMessage(res.occupiedMessage || `Table ${table} is currently occupied by another customer.`)
+        setActiveOrders([])
+        setIsOrderStatusOpen(false)
+        return
       } else {
         setOccupiedMessage('')
       }
@@ -454,6 +457,7 @@ export function MenuPage() {
   }, [activeOrders])
 
   const isTableLocked = useMemo(() => {
+    if (isTableOccupiedByOther) return false
     if (!table || !table.trim()) return false
     if (allOrdersCancelled) return false
     if (hasNonCancelledOrders) return true
@@ -465,7 +469,7 @@ export function MenuPage() {
       if (storedIds && storedIds.length > 0) return true
     } catch {}
     return false
-  }, [table, allOrdersCancelled, hasNonCancelledOrders, nextRoundNumber])
+  }, [table, allOrdersCancelled, hasNonCancelledOrders, nextRoundNumber, isTableOccupiedByOther])
 
   // Sync table if URL parameter ?table=... changes (e.g. scanning/opening a different table QR code)
   useEffect(() => {
@@ -816,7 +820,7 @@ export function MenuPage() {
                 )}
               </button>
 
-              {activeOrders.length > 0 && (
+              {!isTableOccupiedByOther && activeOrders.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setIsOrderStatusOpen(true)}
@@ -828,7 +832,7 @@ export function MenuPage() {
                 </button>
               )}
 
-              {activePartyPin && (
+              {!isTableOccupiedByOther && activePartyPin && (
                 <button
                   type="button"
                   onClick={handleSharePartyPin}
@@ -1251,7 +1255,7 @@ export function MenuPage() {
             </button>
           </div>
         </div>
-      ) : activeOrders.length > 0 && !(allOrdersCancelled && isDeclinedBannerDismissed) ? (
+      ) : !isTableOccupiedByOther && activeOrders.length > 0 && !(allOrdersCancelled && isDeclinedBannerDismissed) ? (
         <div className={`floating-cart-glass fixed bottom-4 inset-x-4 max-w-xl mx-auto z-40 p-3.5 rounded-2xl border backdrop-blur-md shadow-2xl ${
           allOrdersCancelled
             ? 'border-rose-500/30 bg-[#20181A]/95'
@@ -1410,7 +1414,7 @@ export function MenuPage() {
       />
 
       <TableOrderStatusModal
-        isOpen={isOrderStatusOpen}
+        isOpen={isOrderStatusOpen && !isTableOccupiedByOther}
         onClose={() => setIsOrderStatusOpen(false)}
         orders={activeOrders}
         restaurantName={menu.businessName}

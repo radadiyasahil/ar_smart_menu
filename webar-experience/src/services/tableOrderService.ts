@@ -220,26 +220,25 @@ export const tableOrderService = {
         }
       }
       if (res.data?.code === 'TABLE_OCCUPIED' || res.data?.error?.includes('occupied') || res.data?.message?.includes('occupied')) {
-        const previewOrders = Array.isArray(res.data.data) ? res.data.data : []
         return {
-          orders: previewOrders,
+          orders: [],
           isOccupiedByOther: true,
           canJoin: true,
-          activeOrdersCount: previewOrders.length,
+          activeOrdersCount: 0,
           occupiedMessage: res.data.message || `Table ${tableNumber} is currently occupied by another customer.`,
-          sharedCart,
+          sharedCart: null,
         }
       }
       return { orders: [], isOccupiedByOther: false, sharedCart }
     } catch (err: any) {
       if (err?.response?.data?.code === 'TABLE_OCCUPIED' || err?.response?.data?.message?.includes('occupied')) {
-        const previewOrders = Array.isArray(err.response.data?.data) ? err.response.data.data : []
         return {
-          orders: previewOrders,
+          orders: [],
           isOccupiedByOther: true,
           canJoin: true,
-          activeOrdersCount: previewOrders.length,
-          occupiedMessage: err.response.data.message || `Table ${tableNumber} is currently occupied by another customer.`,
+          activeOrdersCount: 0,
+          occupiedMessage: err.response.data?.message || `Table ${tableNumber} is currently occupied by another customer.`,
+          sharedCart: null,
         }
       }
       console.warn('Failed to fetch table orders:', err)
@@ -376,9 +375,10 @@ export const tableOrderService = {
 
   async requestBill(slug: string, tableNumber: string, customerPhone?: string): Promise<RequestBillResult> {
     try {
+      const token = this.getSessionToken(tableNumber)
       const res = await apiClient.post<ApiEnvelope<LiveTableOrder>>(
         `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/request-bill`,
-        { tableNumber, customerPhone: customerPhone || '' },
+        { tableNumber, customerPhone: customerPhone || '', sessionToken: token || undefined },
       )
       if (res.data?.success && res.data.data) {
         return {

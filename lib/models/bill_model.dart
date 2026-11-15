@@ -1,5 +1,23 @@
 import 'package:intl/intl.dart';
 
+/// Parses any date string or object into a local DateTime.
+/// If the string lacks a timezone offset or 'Z' (e.g. from SQL Server datetime2),
+/// it treats it as UTC and converts to the local system timezone.
+DateTime parseDateTime(dynamic val) {
+  if (val == null) return DateTime.now();
+  final s = val.toString().trim();
+  if (s.isEmpty) return DateTime.now();
+  try {
+    var str = s;
+    if (!str.endsWith('Z') && !str.contains('+') && !RegExp(r'-\d{2}:\d{2}$').hasMatch(str)) {
+      str += 'Z';
+    }
+    return DateTime.parse(str).toLocal();
+  } catch (_) {
+    return DateTime.tryParse(s)?.toLocal() ?? DateTime.now();
+  }
+}
+
 class BillItem {
   final String id;
   final String name;
@@ -167,8 +185,8 @@ class TableBill {
   Map<String, dynamic> toJson() => {
     'id': id,
     'tableNumber': tableNumber,
-    'createdAt': createdAt.toIso8601String(),
-    'paidAt': paidAt?.toIso8601String(),
+    'createdAt': createdAt.toUtc().toIso8601String(),
+    'paidAt': paidAt?.toUtc().toIso8601String(),
     'isPaid': isPaid,
     'paymentMode': paymentMode,
     'gstRate': gstRate,
@@ -180,9 +198,9 @@ class TableBill {
   factory TableBill.fromJson(Map<String, dynamic> json) => TableBill(
     id: json['id'] as String,
     tableNumber: json['tableNumber'] as String? ?? 'Dine-in',
-    createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
+    createdAt: parseDateTime(json['createdAt']),
     paidAt: json['paidAt'] != null
-        ? DateTime.parse(json['paidAt'] as String).toLocal()
+        ? parseDateTime(json['paidAt'])
         : null,
     isPaid: json['isPaid'] as bool? ?? false,
     paymentMode: json['paymentMode'] as String? ?? 'UPI (GPay)',
@@ -253,13 +271,11 @@ class PendingTableOrder {
         totalAmount: json['totalAmount'] as int? ?? 0,
         billRequested: json['billRequested'] as bool? ?? false,
         billRequestedAt: json['billRequestedAt'] != null
-            ? DateTime.tryParse(json['billRequestedAt'].toString())?.toLocal()
+            ? parseDateTime(json['billRequestedAt'])
             : null,
-        createdAt: json['createdAt'] != null
-            ? DateTime.parse(json['createdAt'] as String).toLocal()
-            : DateTime.now(),
+        createdAt: parseDateTime(json['createdAt']),
         completedAt: json['completedAt'] != null
-            ? DateTime.tryParse(json['completedAt'].toString())?.toLocal()
+            ? parseDateTime(json['completedAt'])
             : null,
       );
 }
@@ -288,9 +304,7 @@ class WaiterCallItem {
         businessId: json['businessId'] as String? ?? '',
         tableNumber: json['tableNumber'] as String? ?? '',
         note: json['note'] as String? ?? 'Need assistance',
-        createdAt: json['createdAt'] != null
-            ? DateTime.tryParse(json['createdAt'].toString())?.toLocal() ?? DateTime.now()
-            : DateTime.now(),
+        createdAt: parseDateTime(json['createdAt']),
         isAttended: json['isAttended'] as bool? ?? false,
       );
 }

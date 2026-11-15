@@ -2231,13 +2231,13 @@ public class TableOrdersController : ControllerBase
 
             BillRequested = o.BillRequested,
 
-            BillRequestedAt = o.BillRequestedAt,
+            BillRequestedAt = o.BillRequestedAt.HasValue ? DateTime.SpecifyKind(o.BillRequestedAt.Value, DateTimeKind.Utc) : null,
 
-            CreatedAt = o.CreatedAt,
+            CreatedAt = DateTime.SpecifyKind(o.CreatedAt, DateTimeKind.Utc),
 
-            AcceptedAt = o.AcceptedAt,
+            AcceptedAt = o.AcceptedAt.HasValue ? DateTime.SpecifyKind(o.AcceptedAt.Value, DateTimeKind.Utc) : null,
 
-            CompletedAt = o.CompletedAt,
+            CompletedAt = o.CompletedAt.HasValue ? DateTime.SpecifyKind(o.CompletedAt.Value, DateTimeKind.Utc) : null,
 
             PartyPin = o.PartyPin,
 

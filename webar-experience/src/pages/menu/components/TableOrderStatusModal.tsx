@@ -184,16 +184,32 @@ export function TableOrderStatusModal({
 
   if (!isOpen) return null
 
+  const parseIsoToDate = (isoString?: string): Date | null => {
+    if (!isoString) return null
+    try {
+      let str = isoString.trim()
+      if (!str.endsWith('Z') && !str.includes('+') && !/-\d{2}:\d{2}$/.test(str)) {
+        str += 'Z'
+      }
+      const d = new Date(str)
+      return isNaN(d.getTime()) ? new Date(isoString) : d
+    } catch {
+      return null
+    }
+  }
+
   // Sort orders chronologically or by round
   const sortedOrders = [...orders].sort((a, b) => {
     if (a.round !== b.round) return a.round - b.round
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    const da = parseIsoToDate(a.createdAt)?.getTime() ?? 0
+    const db = parseIsoToDate(b.createdAt)?.getTime() ?? 0
+    return da - db
   })
 
   const formatTime = (isoString?: string) => {
-    if (!isoString) return ''
+    const d = parseIsoToDate(isoString)
+    if (!d) return ''
     try {
-      const d = new Date(isoString)
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     } catch {
       return ''

@@ -342,9 +342,15 @@ public class TableOrdersController : ControllerBase
         await tx.CommitAsync(ct);
 
         _tableSharedCartStore.TryRemove(chatKey, out _);
+        _tableSharedCartStore.TryRemove(GetChatKey(business.Id, request.TableNumber), out _);
+        _tableSharedCartStore.TryRemove(GetChatKey(business.Id, cleanTable), out _);
+        if (!string.IsNullOrEmpty(altTable)) _tableSharedCartStore.TryRemove(GetChatKey(business.Id, altTable), out _);
+        if (!string.IsNullOrEmpty(altTableNum)) _tableSharedCartStore.TryRemove(GetChatKey(business.Id, altTableNum), out _);
 
         TableSyncManager.Broadcast(business.Id, order.TableNumber, "order_placed", new { orderId = order.Id, round = order.Round, table = order.TableNumber });
         TableSyncManager.Broadcast(business.Id, order.TableNumber, "shared_cart_cleared", new { table = order.TableNumber });
+        if (!string.IsNullOrEmpty(altTable)) TableSyncManager.Broadcast(business.Id, altTable, "shared_cart_cleared", new { table = altTable });
+        if (!string.IsNullOrEmpty(altTableNum)) TableSyncManager.Broadcast(business.Id, altTableNum, "shared_cart_cleared", new { table = altTableNum });
         return Ok(ApiResponse<TableOrderResponse>.Ok(ToResponse(order), "Order submitted to kitchen"));
         }
         catch
@@ -714,10 +720,20 @@ public class TableOrdersController : ControllerBase
             return NotFound(ApiResponse<bool>.Fail("Restaurant not found"));
         }
 
+        var cleanTable = tableNumber.Trim().ToLowerInvariant();
+        var altTable = cleanTable.StartsWith("table") ? cleanTable.Replace("table", "").Trim() : ("table " + cleanTable);
+        var tableDigits = Regex.Match(cleanTable, @"\d+").Value;
+        var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
+
         var key = GetChatKey(businessId, tableNumber);
         _tableSharedCartStore.TryRemove(key, out _);
+        _tableSharedCartStore.TryRemove(GetChatKey(businessId, cleanTable), out _);
+        if (!string.IsNullOrEmpty(altTable)) _tableSharedCartStore.TryRemove(GetChatKey(businessId, altTable), out _);
+        if (!string.IsNullOrEmpty(altTableNum)) _tableSharedCartStore.TryRemove(GetChatKey(businessId, altTableNum), out _);
 
         TableSyncManager.Broadcast(businessId, tableNumber, "shared_cart_cleared", new { table = tableNumber });
+        if (!string.IsNullOrEmpty(altTable)) TableSyncManager.Broadcast(businessId, altTable, "shared_cart_cleared", new { table = altTable });
+        if (!string.IsNullOrEmpty(altTableNum)) TableSyncManager.Broadcast(businessId, altTableNum, "shared_cart_cleared", new { table = altTableNum });
 
         return Ok(ApiResponse<bool>.Ok(true, "Table cart cleared"));
     }

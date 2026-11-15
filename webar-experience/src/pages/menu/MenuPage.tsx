@@ -261,14 +261,30 @@ export function MenuPage() {
       const localKeys = Object.keys(currentLocalCart)
       const remoteKeys = Object.keys(remoteCartMap)
 
-      // CRITICAL SAFEGUARD: If background poll returned an empty remote cart,
-      // NEVER wipe out items that the current diner added locally!
-      if (isFromPoll && remoteKeys.length === 0 && localKeys.length > 0) {
+      // Diner recently tapped / edited their cart locally within the last 4 seconds
+      const isRecentlyEditedLocally = Date.now() - lastLocalEditTimestamp.current < 4000
+
+      // If remote cart is empty:
+      // If diner tapped something locally in the last 4 seconds, keep local cart (pending network push).
+      // Otherwise, the table cart on backend is genuinely empty (order placed or cart cleared).
+      if (remoteKeys.length === 0) {
+        if (isRecentlyEditedLocally && localKeys.length > 0) {
+          return currentLocalCart
+        }
+        if (localKeys.length > 0) {
+          try {
+            if (slug && table) {
+              sessionStorage.removeItem(`ar_cart_${slug}_${table}`)
+            }
+          } catch {}
+          return {}
+        }
         return currentLocalCart
       }
 
-      // If this call came from polling, preserve local additions created by this client
-      if (isFromPoll) {
+      // If this call came from background polling and user recently tapped locally,
+      // preserve in-flight local additions that have not reached server yet
+      if (isFromPoll && isRecentlyEditedLocally) {
         for (const [key, localItem] of Object.entries(currentLocalCart)) {
           if (!remoteCartMap[key] && (localItem.clientId === myClientId || !localItem.clientId)) {
             remoteCartMap[key] = localItem
@@ -441,7 +457,15 @@ export function MenuPage() {
         setIsTableOccupiedByOther(false)
         setEnteredPin('')
         setActiveOrders(res.orders)
+        // Reset stale local cart when joining a table party
+        setCart({})
+        try {
+          sessionStorage.removeItem(`ar_cart_${slug}_${table}`)
+        } catch {}
+        lastLocalEditTimestamp.current = 0
+        lastSyncCartVersion.current = ''
         showToast(`🤝 Joined Table ${table}! You can now view and add orders together.`)
+        fetchOrders(true)
       } else {
         setPinErrorMessage(res.message || 'Invalid Table PIN. Please check with your friends.')
       }
@@ -466,7 +490,15 @@ export function MenuPage() {
           setIsJoinPinModalOpen(false)
           setIsTableOccupiedByOther(false)
           setActiveOrders(res.orders)
+          // Reset stale local cart when joining a table party
+          setCart({})
+          try {
+            sessionStorage.removeItem(`ar_cart_${slug}_${table}`)
+          } catch {}
+          lastLocalEditTimestamp.current = 0
+          lastSyncCartVersion.current = ''
           showToast(`🤝 Joined Table ${table} party with PIN ${pinFromUrl}!`)
+          fetchOrders(true)
         }
       })
       .catch((err) => {
@@ -1769,6 +1801,14 @@ export function MenuPage() {
           setIsDeclinedBannerDismissed(false)
           sessionStorage.removeItem('ar_declined_dismissed')
           setCart({})
+          if (slug && table) {
+            try {
+              sessionStorage.removeItem(`ar_cart_${slug}_${table}`)
+            } catch {}
+            tableOrderService.clearSharedCart(slug, table).catch(() => {})
+          }
+          lastLocalEditTimestamp.current = 0
+          lastSyncCartVersion.current = ''
           setActiveOrders((prev) => {
             const exists = prev.some((o) => o.id === order.id)
             return exists ? prev.map((o) => (o.id === order.id ? order : o)) : [...prev, order]

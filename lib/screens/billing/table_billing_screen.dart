@@ -4571,32 +4571,24 @@ class _TableBillingScreenState extends State<TableBillingScreen>
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-
                   children: [
                     Text(
-                      '$canonicalTable • Bill #${bill.id}',
-
+                      canonicalTable,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                        fontSize: 15,
                       ),
-
                       overflow: TextOverflow.ellipsis,
                     ),
-
                     const SizedBox(height: 2),
-
                     Text(
                       hasBillReq
                           ? '🔔 Bill Requested • Total: ₹${bill.grandTotal}'
-                          : 'Dining Session • Started at $timeStr',
-
+                          : 'Started at $timeStr',
                       style: TextStyle(
                         color: hasBillReq ? Colors.amberAccent : Colors.white70,
-
                         fontSize: 11,
-
                         fontWeight: hasBillReq
                             ? FontWeight.bold
                             : FontWeight.normal,

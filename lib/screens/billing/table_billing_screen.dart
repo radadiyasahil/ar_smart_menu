@@ -3219,53 +3219,6 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     }
   }
 
-  Future<void> _removeHistoryBill(TableBill bill) async {
-    final bId = context.read<BusinessProvider>().business?.id.toString() ?? '';
-    final confirmed = await showDialog<bool>(
-      context: context,
-
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E202A),
-
-        title: const Text(
-          'Remove from History?',
-
-          style: TextStyle(color: Colors.white, fontSize: 16),
-        ),
-
-        content: Text(
-          'Remove bill #${bill.id} (${_canonicalTableName(bill.tableNumber)}) from history?',
-        ),
-
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-          ),
-
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-
-            onPressed: () => Navigator.pop(ctx, true),
-
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      setState(() => _historyBills.removeWhere((b) => b.id == bill.id));
-
-      await _billingService.saveHistoryBills(_historyBills, bId);
-
-      if (mounted) {
-        _showNotification('Bill removed from history.');
-      }
-    }
-  }
-
   Widget _box({
     required Widget child,
 
@@ -7132,15 +7085,6 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                     ),
                     tooltip: 'Download PDF',
                     onPressed: () => _downloadBill(b),
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      size: 16,
-                      color: Colors.grey,
-                    ),
-                    tooltip: 'Remove from History',
-                    onPressed: () => _removeHistoryBill(b),
                   ),
                 ],
               ),

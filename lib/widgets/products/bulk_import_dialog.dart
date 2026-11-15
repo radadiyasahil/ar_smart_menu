@@ -134,15 +134,19 @@ class _BulkImportDialogState extends State<BulkImportDialog>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final size = MediaQuery.of(context).size;
+    final isCompact = size.width < 600;
 
     return Dialog(
       backgroundColor: isDark ? const Color(0xFF1E2029) : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: isCompact ? 10 : 16,
+        vertical: isCompact ? 16 : 24,
+      ),
       child: Container(
         width: 860,
-        height: size.height * 0.88,
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        height: size.height * (isCompact ? 0.92 : 0.88),
+        padding: EdgeInsets.all(isCompact ? 14 : AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -191,7 +195,7 @@ class _BulkImportDialogState extends State<BulkImportDialog>
             color: AppColors.primaryOrange.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(Icons.bolt_rounded, color: AppColors.primaryOrange, size: 26),
+          child: const Icon(Icons.bolt_rounded, color: AppColors.primaryOrange, size: 24),
         ),
         const SizedBox(width: AppSpacing.md),
         Expanded(
@@ -199,12 +203,15 @@ class _BulkImportDialogState extends State<BulkImportDialog>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Fast Menu Importer (200+ Dishes in Seconds)',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                'Fast Menu Importer',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
               ),
               Text(
-                'Upload Excel/CSV or paste physical menu text. Standard items go live immediately.',
+                'Upload Excel/CSV or paste menu text. Items go live immediately.',
                 style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : AppColors.mediumGray),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -245,38 +252,88 @@ class _BulkImportDialogState extends State<BulkImportDialog>
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
             ),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline, color: AppColors.primaryOrange, size: 22),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 520;
+                if (isCompact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('1-Click Excel / CSV Template', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Download the template, paste items from your POS, and import.',
-                        style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54),
+                      Row(
+                        children: [
+                          const Icon(Icons.info_outline, color: AppColors.primaryOrange, size: 22),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  '1-Click Excel / CSV Template',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Download template, paste items from your POS, and import.',
+                                  style: TextStyle(fontSize: 11, color: isDark ? Colors.white60 : Colors.black54),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isDark ? const Color(0xFF34384B) : Colors.white,
+                          foregroundColor: AppColors.primaryOrange,
+                          elevation: 1,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: const BorderSide(color: AppColors.primaryOrange),
+                          ),
+                        ),
+                        onPressed: () => MenuBulkImportService.instance.downloadSampleCsv(),
+                        icon: const Icon(Icons.download_rounded, size: 18),
+                        label: const Text('Download CSV Template'),
                       ),
                     ],
-                  ),
-                ),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isDark ? const Color(0xFF34384B) : Colors.white,
-                    foregroundColor: AppColors.primaryOrange,
-                    elevation: 1,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      side: const BorderSide(color: AppColors.primaryOrange),
+                  );
+                }
+
+                return Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: AppColors.primaryOrange, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('1-Click Excel / CSV Template', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Download the template, paste items from your POS, and import.',
+                            style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  onPressed: () => MenuBulkImportService.instance.downloadSampleCsv(),
-                  icon: const Icon(Icons.download_rounded, size: 18),
-                  label: const Text('Download CSV Template'),
-                ),
-              ],
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isDark ? const Color(0xFF34384B) : Colors.white,
+                        foregroundColor: AppColors.primaryOrange,
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: const BorderSide(color: AppColors.primaryOrange),
+                        ),
+                      ),
+                      onPressed: () => MenuBulkImportService.instance.downloadSampleCsv(),
+                      icon: const Icon(Icons.download_rounded, size: 18),
+                      label: const Text('Download CSV Template'),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
           const SizedBox(height: AppSpacing.xl),
@@ -321,15 +378,28 @@ class _BulkImportDialogState extends State<BulkImportDialog>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          runSpacing: 4,
           children: [
-            Text('Paste Menu Text / WhatsApp Menu:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isDark ? Colors.white70 : Colors.black87)),
+            Text(
+              'Paste Menu Text / WhatsApp Menu:',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white70 : Colors.black87,
+              ),
+            ),
             TextButton.icon(
               onPressed: _loadSampleMenuText,
               icon: const Icon(Icons.auto_awesome, size: 16),
               label: const Text('Try Sample Menu (20+ Items)'),
-              style: TextButton.styleFrom(foregroundColor: AppColors.primaryOrange),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primaryOrange,
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
             ),
           ],
         ),
@@ -351,7 +421,11 @@ class _BulkImportDialogState extends State<BulkImportDialog>
         ),
         const SizedBox(height: AppSpacing.md),
         FilledButton.icon(
-          style: FilledButton.styleFrom(backgroundColor: AppColors.primaryOrange, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14)),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.primaryOrange,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
           onPressed: _parsePastedMenuText,
           icon: const Icon(Icons.auto_awesome),
           label: const Text('Auto-Detect & Structure Dishes'),
@@ -370,14 +444,30 @@ class _BulkImportDialogState extends State<BulkImportDialog>
 
     final allSelected = visibleDishes.isNotEmpty && visibleDishes.every((d) => d.isSelected);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 560;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: SizedBox(
+            if (isCompact) ...[
+              SizedBox(
                 height: 38,
+                child: TextField(
+                  controller: _searchFilterController,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    hintText: 'Search parsed dishes...',
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    contentPadding: EdgeInsets.zero,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                  ),
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 36,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: categories.length,
@@ -401,145 +491,271 @@ class _BulkImportDialogState extends State<BulkImportDialog>
                   },
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 200,
-              height: 38,
-              child: TextField(
-                controller: _searchFilterController,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: 'Search parsed...',
-                  prefixIcon: const Icon(Icons.search, size: 18),
-                  contentPadding: EdgeInsets.zero,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+            ] else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 38,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: categories.length,
+                        separatorBuilder: (_, index) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final cat = categories.elementAt(index);
+                          final active = _selectedCategoryFilter == cat;
+                          final count = cat == 'All' ? _parsedDishes.length : _parsedDishes.where((d) => d.categoryRaw == cat).length;
+                          return FilterChip(
+                            selected: active,
+                            showCheckmark: false,
+                            label: Text('$cat ($count)'),
+                            selectedColor: AppColors.primaryOrange.withValues(alpha: 0.2),
+                            labelStyle: TextStyle(
+                              fontSize: 12,
+                              fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                              color: active ? AppColors.primaryOrange : (isDark ? Colors.white70 : Colors.black87),
+                            ),
+                            onSelected: (_) => setState(() => _selectedCategoryFilter = cat),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 200,
+                    height: 38,
+                    child: TextField(
+                      controller: _searchFilterController,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        hintText: 'Search parsed...',
+                        prefixIcon: const Icon(Icons.search, size: 18),
+                        contentPadding: EdgeInsets.zero,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                      ),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Checkbox(
+                  value: allSelected,
+                  activeColor: AppColors.primaryOrange,
+                  onChanged: (val) {
+                    final select = val ?? true;
+                    setState(() {
+                      for (final d in visibleDishes) {
+                        d.isSelected = select;
+                      }
+                    });
+                  },
                 ),
-                style: const TextStyle(fontSize: 12),
+                Expanded(
+                  child: Text(
+                    'Select All (${_parsedDishes.where((d) => d.isSelected).length}/${_parsedDishes.length} items ready to go LIVE)',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                  color: isDark ? const Color(0xFF161822) : const Color(0xFFFAFAFA),
+                ),
+                child: ListView.separated(
+                  itemCount: visibleDishes.length,
+                  separatorBuilder: (_, index) => Divider(height: 1, color: isDark ? Colors.white10 : Colors.black12),
+                  itemBuilder: (context, index) {
+                    final dish = visibleDishes[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: dish.isSelected,
+                            activeColor: AppColors.primaryOrange,
+                            onChanged: (val) => setState(() => dish.isSelected = val ?? false),
+                          ),
+                          VegStatusBadge(vegStatus: dish.vegStatus, size: 15),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  dish.name,
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (isCompact) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    dish.categoryRaw,
+                                    style: TextStyle(fontSize: 10, color: isDark ? Colors.white54 : AppColors.mediumGray),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          if (!isCompact) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.white10 : Colors.black12,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(dish.categoryRaw, style: const TextStyle(fontSize: 11)),
+                            ),
+                            const SizedBox(width: 14),
+                          ],
+                          Text(
+                            '₹${dish.priceRupees.toStringAsFixed(0)}',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primaryOrange),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                            color: Colors.redAccent,
+                            tooltip: 'Remove',
+                            onPressed: () => setState(() => _parsedDishes.remove(dish)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
           ],
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Row(
-          children: [
-            Checkbox(
-              value: allSelected,
-              activeColor: AppColors.primaryOrange,
-              onChanged: (val) {
-                final select = val ?? true;
-                setState(() {
-                  for (final d in visibleDishes) {
-                    d.isSelected = select;
-                  }
-                });
-              },
-            ),
-            Text(
-              'Select All (${_parsedDishes.where((d) => d.isSelected).length}/${_parsedDishes.length} items ready to go LIVE)',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
-              color: isDark ? const Color(0xFF161822) : const Color(0xFFFAFAFA),
-            ),
-            child: ListView.separated(
-              itemCount: visibleDishes.length,
-              separatorBuilder: (_, index) => Divider(height: 1, color: isDark ? Colors.white10 : Colors.black12),
-              itemBuilder: (context, index) {
-                final dish = visibleDishes[index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  child: Row(
-                    children: [
-                      Checkbox(
-                        value: dish.isSelected,
-                        activeColor: AppColors.primaryOrange,
-                        onChanged: (val) => setState(() => dish.isSelected = val ?? false),
-                      ),
-                      // Reusable VegStatusBadge
-                      VegStatusBadge(vegStatus: dish.vegStatus, size: 15),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(dish.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: isDark ? Colors.white10 : Colors.black12,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(dish.categoryRaw, style: const TextStyle(fontSize: 11)),
-                      ),
-                      const SizedBox(width: 14),
-                      Text(
-                        '₹${dish.priceRupees.toStringAsFixed(0)}',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primaryOrange),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                        color: Colors.redAccent,
-                        tooltip: 'Remove',
-                        onPressed: () => setState(() => _parsedDishes.remove(dish)),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 
   Widget _buildBottomBar() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        if (_parsedDishes.isNotEmpty)
-          TextButton.icon(
-            onPressed: () => setState(() => _parsedDishes = []),
-            icon: const Icon(Icons.arrow_back, size: 16),
-            label: const Text('Back to File / Text Upload'),
-            style: TextButton.styleFrom(foregroundColor: AppColors.mediumGray),
-          )
-        else
-          const SizedBox.shrink(),
-        Row(
-          children: [
-            OutlinedButton(
-              onPressed: _isImporting ? null : () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            if (_parsedDishes.isNotEmpty) ...[
-              const SizedBox(width: AppSpacing.md),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primaryOrange,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 540;
+        if (isCompact) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_parsedDishes.isNotEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() => _parsedDishes = []),
+                    icon: const Icon(Icons.arrow_back, size: 16),
+                    label: const Text('Back to File / Text Upload'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.mediumGray,
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
                 ),
-                onPressed: _isImporting ? null : _executeImport,
-                icon: _isImporting
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.cloud_upload_outlined, size: 18),
-                label: Text(
-                  _isImporting
-                      ? 'Importing Dishes...'
-                      : 'Import ${_parsedDishes.where((d) => d.isSelected).length} Dishes Live',
-                ),
+              if (_parsedDishes.isNotEmpty) const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 1,
+                    child: OutlinedButton(
+                      onPressed: _isImporting ? null : () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  if (_parsedDishes.isNotEmpty) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primaryOrange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: _isImporting ? null : _executeImport,
+                        icon: _isImporting
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.cloud_upload_outlined, size: 18),
+                        label: Text(
+                          _isImporting
+                              ? 'Importing...'
+                              : 'Import ${_parsedDishes.where((d) => d.isSelected).length} Dishes Live',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
+          );
+        }
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            if (_parsedDishes.isNotEmpty)
+              TextButton.icon(
+                onPressed: () => setState(() => _parsedDishes = []),
+                icon: const Icon(Icons.arrow_back, size: 16),
+                label: const Text('Back to File / Text Upload'),
+                style: TextButton.styleFrom(foregroundColor: AppColors.mediumGray),
+              )
+            else
+              const SizedBox.shrink(),
+            Row(
+              children: [
+                OutlinedButton(
+                  onPressed: _isImporting ? null : () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                if (_parsedDishes.isNotEmpty) ...[
+                  const SizedBox(width: AppSpacing.md),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primaryOrange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                    onPressed: _isImporting ? null : _executeImport,
+                    icon: _isImporting
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.cloud_upload_outlined, size: 18),
+                    label: Text(
+                      _isImporting
+                          ? 'Importing Dishes...'
+                          : 'Import ${_parsedDishes.where((d) => d.isSelected).length} Dishes Live',
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 }

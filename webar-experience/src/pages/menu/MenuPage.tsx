@@ -1132,18 +1132,18 @@ export function MenuPage() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="font-bold text-white text-sm flex items-center gap-2">
-                <span>Table {table} is Occupied</span>
+                <span>Table {table} has an Active Order</span>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  Not Available
+                  In Use
                 </span>
               </div>
               <p className="text-xs text-amber-200/90 mt-1 leading-relaxed">
-                {occupiedMessage || `Table "${table}" currently has an active order.`} If you are dining with friends, join with PIN. If previous guests left, alert your server:
+                Someone at this table is already ordering. If you are joining friends, enter their Table PIN. If you just sat down at a new table, tap below to alert staff:
               </p>
               {isNewPartyClaimed ? (
                 <div className="flex items-center gap-2 text-xs font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 rounded-xl px-3 py-2 mt-3 animate-pulse">
                   <span className="w-2 h-2 rounded-full bg-amber-400 inline-block animate-ping" />
-                  <span>🔔 Waiter alerted: "New Party at Table {table}". Please wait while staff verifies to unlock this table.</span>
+                  <span>🔔 Staff notified for Table {table}! A team member will unlock your table shortly.</span>
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-2 mt-3">
@@ -1163,7 +1163,7 @@ export function MenuPage() {
                     className="px-3.5 py-1.5 text-xs font-black rounded-xl bg-amber-500 hover:bg-amber-400 text-black shadow-md shadow-amber-950/20 border border-amber-300 transition cursor-pointer flex items-center gap-1.5"
                   >
                     <Sparkles className="w-3.5 h-3.5 text-black" />
-                    <span>{isClaimingParty ? 'Alerting Staff...' : 'New Party at Table (Reset)'}</span>
+                    <span>{isClaimingParty ? 'Alerting Staff...' : 'I Just Sat Down (Call Staff)'}</span>
                   </button>
                   <button
                     type="button"

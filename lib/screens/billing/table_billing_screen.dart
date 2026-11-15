@@ -931,7 +931,6 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
     final bill = _currentBill;
     final tableName = bill != null ? _canonicalTableName(bill.tableNumber) : '';
-    final messenger = ScaffoldMessenger.of(context);
 
     await showDialog(
       context: context,
@@ -5209,6 +5208,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                 // 2. COOKING IN KITCHEN (READY TO SERVE STATUS & BUTTON)
                 // ==========================================
                 ...kitchenDishes.map((order) {
+                  final orderTime = DateFormat('hh:mm a').format(order.createdAt.toLocal());
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(12),
@@ -5715,7 +5715,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
                   IconButton.filled(
                     onPressed: _shareWhatsApp,
-                    style: IconButton.filled(
+                    style: IconButton.styleFrom(
                       backgroundColor: const Color(0xFF25D366),
                       padding: const EdgeInsets.all(10),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

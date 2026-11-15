@@ -116,28 +116,34 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     await _loadPendingOrders();
   }
 
+  static final _doubleTableRegex = RegExp(r'^table\s+table\s*', caseSensitive: false);
+  static final _singleTableRegex = RegExp(r'^table\s+', caseSensitive: false);
+  static final _pureNumberRegex = RegExp(r'^(\d+)$');
+  static final _tablePrefixRegex = RegExp(r'^(?:table|t|tbl)[-_\s]*(\d+)$', caseSensitive: false);
+  static final _hhmmFormatter = DateFormat('hh:mm a');
+
+  static String formatTime(DateTime? dt) {
+    if (dt == null) return '';
+    return _hhmmFormatter.format(dt.toLocal());
+  }
+
   static String _canonicalTableName(String raw) {
     var clean = raw.trim();
     if (clean.isEmpty) return 'Table 1';
 
     // Strip duplicate leading 'Table' words: e.g. 'Table Table 1' -> 'Table 1'
-    while (RegExp(r'^table\s+table\s*', caseSensitive: false).hasMatch(clean)) {
-      clean = clean
-          .replaceFirst(RegExp(r'^table\s+', caseSensitive: false), '')
-          .trim();
+    while (_doubleTableRegex.hasMatch(clean)) {
+      clean = clean.replaceFirst(_singleTableRegex, '').trim();
     }
 
     // Pure number: '2' -> 'Table 2'
-    final m1 = RegExp(r'^(\d+)$').firstMatch(clean);
+    final m1 = _pureNumberRegex.firstMatch(clean);
     if (m1 != null) {
       return 'Table ${int.parse(m1.group(1)!)}';
     }
 
     // 'table 2', 'Table 02', 't-2', 't2', 'tbl 2' -> 'Table 2'
-    final m2 = RegExp(
-      r'^(?:table|t|tbl)[-_\s]*(\d+)$',
-      caseSensitive: false,
-    ).firstMatch(clean);
+    final m2 = _tablePrefixRegex.firstMatch(clean);
     if (m2 != null) {
       return 'Table ${int.parse(m2.group(1)!)}';
     }
@@ -3879,7 +3885,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     );
 
     final timeStr = bill != null
-        ? DateFormat('hh:mm a').format(bill.createdAt.toLocal())
+        ? formatTime(bill.createdAt)
         : '';
 
     return InkWell(
@@ -4484,7 +4490,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     bool isDark,
     bool isDeactivated,
   ) {
-    final timeStr = DateFormat('hh:mm a').format(bill.createdAt.toLocal());
+    final timeStr = formatTime(bill.createdAt);
 
     final hasBillReq = _billRequests.any(
       (r) => _isSameTable(r.tableNumber, bill.tableNumber),
@@ -5055,7 +5061,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                 // 1. INCOMING ORDER TICKETS (ACCEPT / DISCARD)
                 // ==========================================
                 ...pendingForTable.map((order) {
-                  final orderTime = DateFormat('hh:mm a').format(order.createdAt.toLocal());
+                  final orderTime = formatTime(order.createdAt);
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(12),
@@ -5208,7 +5214,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                 // 2. COOKING IN KITCHEN (READY TO SERVE STATUS & BUTTON)
                 // ==========================================
                 ...kitchenDishes.map((order) {
-                  final orderTime = DateFormat('hh:mm a').format(order.createdAt.toLocal());
+                  final orderTime = formatTime(order.createdAt);
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(12),
@@ -5536,7 +5542,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                           .map(
                         (preset) => Padding(
                           padding: const EdgeInsets.only(right: 6),
-                          child: ActionChip(
+                          child: InputChip(
                             visualDensity: VisualDensity.compact,
                             padding: const EdgeInsets.symmetric(horizontal: 4),
                             avatar: const Icon(
@@ -5553,6 +5559,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                               ),
                             ),
                             onPressed: () => _addQuickPreset(preset),
+                            onDeleted: () => _deleteQuickPreset(preset),
+                            deleteIcon: const Icon(Icons.close, size: 13),
                           ),
                         ),
                       ),
@@ -5987,8 +5995,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
             final bill = _findActiveBill(req.tableNumber);
 
             final timeStr = req.billRequestedAt != null
-                ? DateFormat('hh:mm a').format(req.billRequestedAt!.toLocal())
-                : DateFormat('hh:mm a').format(req.createdAt.toLocal());
+                ? formatTime(req.billRequestedAt)
+                : formatTime(req.createdAt);
 
             final amount = (bill != null && bill.grandTotal > 0)
                 ? bill.grandTotal
@@ -6193,7 +6201,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   }
 
   Widget _buildKitchenOrderCard(PendingTableOrder o) {
-    final timeStr = DateFormat('hh:mm a').format(o.createdAt.toLocal());
+    final timeStr = formatTime(o.createdAt);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -6420,7 +6428,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   }
 
   Widget _buildPendingOrderCard(PendingTableOrder o) {
-    final timeStr = DateFormat('hh:mm a').format(o.createdAt.toLocal());
+    final timeStr = formatTime(o.createdAt);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),

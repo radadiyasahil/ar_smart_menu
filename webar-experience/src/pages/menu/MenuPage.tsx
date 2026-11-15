@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import {
   Search,
@@ -743,12 +743,6 @@ export function MenuPage() {
     }
   }
 
-  const getDishTotalQty = (dishId: string) => {
-    return Object.values(cart)
-      .filter((i) => i.dish.id === dishId)
-      .reduce((sum, i) => sum + i.quantity, 0)
-  }
-
   const handleDishCardQty = (dish: PublicMenuDish, newQty: number) => {
     const itemsForDish = Object.entries(cart).filter(([_, item]) => item.dish.id === dish.id)
     if (itemsForDish.length === 0) {
@@ -777,6 +771,17 @@ export function MenuPage() {
       showToast(`Choose which ${dish.name} to remove in cart.`)
     }
   }
+
+  const dishQtyMap = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const item of Object.values(cart)) {
+      map[item.dish.id] = (map[item.dish.id] || 0) + item.quantity
+    }
+    return map
+  }, [cart])
+
+  const handleOpen3d = useCallback((d: PublicMenuDish) => setActive3dDish(d), [])
+  const handleCustomize = useCallback((d: PublicMenuDish) => setCustomizingDish(d), [])
 
   const cartItems = useMemo(() => Object.values(cart), [cart])
   const cartCount = cartItems.reduce((s, i) => s + i.quantity, 0)
@@ -874,10 +879,10 @@ export function MenuPage() {
         <DishCard
           key={dish.id}
           dish={dish}
-          quantity={getDishTotalQty(dish.id)}
+          quantity={dishQtyMap[dish.id] || 0}
           onQuantityChange={handleDishCardQty}
-          onOpen3d={(d) => setActive3dDish(d)}
-          onCustomize={(d) => setCustomizingDish(d)}
+          onOpen3d={handleOpen3d}
+          onCustomize={handleCustomize}
         />
       ))}
     </div>
@@ -1691,7 +1696,7 @@ export function MenuPage() {
       {active3dDish && (
         <Interactive3dModal
           dish={active3dDish}
-          quantity={getDishTotalQty(active3dDish.id)}
+          quantity={dishQtyMap[active3dDish.id] || 0}
           onClose={() => setActive3dDish(null)}
           onQuantityChange={handleDishCardQty}
           onAddedToCart={(d) => showToast(`✨ Added "${d.name}"`)}

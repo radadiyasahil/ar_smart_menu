@@ -32,48 +32,16 @@ export interface PublicMenuDish {
   categoryName?: string
 }
 
+const SWEET_OR_BEVERAGE_REGEX = /ice\s*cream|shake|beverage|drink|dessert|juice|soda|coke|pepsi|coffee|tea|water|smoothie|pastry|cake|mithai|halwa|gulab\s*jamun|rasgulla|kulfi|falooda/i
+const NON_CUSTOM_REGEX = /water\s*bottle|mineral\s*water|soda\s*can|soft\s*drink|canned|packaged/i
+
 export function isSweetOrBeverageDish(dish: PublicMenuDish): boolean {
-  const name = (dish.name || '').toLowerCase()
-  const cat = (dish.categoryName || '').toLowerCase()
-  const keywords = [
-    'ice cream',
-    'icecream',
-    'shake',
-    'beverage',
-    'drink',
-    'dessert',
-    'juice',
-    'soda',
-    'coke',
-    'pepsi',
-    'coffee',
-    'tea',
-    'water',
-    'smoothie',
-    'pastry',
-    'cake',
-    'mithai',
-    'halwa',
-    'gulab jamun',
-    'rasgulla',
-    'kulfi',
-    'falooda',
-  ]
-  return keywords.some((k) => name.includes(k) || cat.includes(k))
+  return SWEET_OR_BEVERAGE_REGEX.test(dish.name) || (Boolean(dish.categoryName) && SWEET_OR_BEVERAGE_REGEX.test(dish.categoryName!))
 }
 
 export function isNonCustomizableDish(dish: PublicMenuDish): boolean {
   if (dish.customization?.isCustomizable === false) return true
-  const name = (dish.name || '').toLowerCase()
-  const nonCustomWords = [
-    'water bottle',
-    'mineral water',
-    'soda can',
-    'soft drink',
-    'canned',
-    'packaged',
-  ]
-  return nonCustomWords.some((w) => name.includes(w))
+  return NON_CUSTOM_REGEX.test(dish.name)
 }
 
 export interface PublicMenuCategory {

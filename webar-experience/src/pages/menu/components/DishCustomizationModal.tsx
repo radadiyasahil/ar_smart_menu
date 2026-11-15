@@ -10,6 +10,53 @@ const DEFAULT_FOOD_ADDONS: DishAddon[] = [
   { id: 'cold_beverage', name: 'Chilled Drink Combo 🥤', price: 45 },
 ]
 
+const SPICE_OPTIONS = [
+  { value: 'Mild', label: 'Mild', icon: '🟢' },
+  { value: 'Medium', label: 'Medium', icon: '🟡' },
+  { value: 'Spicy', label: 'Spicy', icon: '🌶️' },
+] as const
+
+const DIETARY_OPTIONS = [
+  { value: 'Regular', label: 'Regular', icon: '✨' },
+  { value: 'Jain', label: 'Jain', icon: '🧅🚫' },
+  { value: 'Vegan', label: 'Vegan', icon: '🌱' },
+] as const
+
+function OptionButtonGroup<T extends string>({
+  options,
+  selected,
+  onSelect,
+  activeClass,
+}: {
+  options: readonly { value: T; label: string; icon: string }[]
+  selected: T
+  onSelect: (val: T) => void
+  activeClass: string
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {options.map((opt) => {
+        const isSelected = selected === opt.value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onSelect(opt.value)}
+            className={`py-2.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition ${
+              isSelected
+                ? `${activeClass} shadow-sm`
+                : 'bg-[#20222C] border-white/10 text-gray-300 hover:border-white/20'
+            }`}
+          >
+            <span>{opt.icon}</span>
+            <span>{opt.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function DishCustomizationModal({
   isOpen,
   dish,
@@ -131,32 +178,12 @@ export function DishCustomizationModal({
                 </span>
                 <span className="text-[11px] text-gray-400">Selected: {spiceLevel}</span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {(
-                  [
-                    { level: 'Mild', label: 'Mild', icon: '🟢' },
-                    { level: 'Medium', label: 'Medium', icon: '🟡' },
-                    { level: 'Spicy', label: 'Spicy', icon: '🌶️' },
-                  ] as const
-                ).map((opt) => {
-                  const isSelected = spiceLevel === opt.level
-                  return (
-                    <button
-                      key={opt.level}
-                      type="button"
-                      onClick={() => setSpiceLevel(opt.level)}
-                      className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
-                        isSelected
-                          ? 'bg-amber-500/15 border-amber-500 text-amber-300 shadow-sm'
-                          : 'bg-[#20222C] border-white/10 text-gray-300 hover:border-white/20'
-                      }`}
-                    >
-                      <span>{opt.icon}</span>
-                      <span>{opt.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
+              <OptionButtonGroup
+                options={SPICE_OPTIONS}
+                selected={spiceLevel}
+                onSelect={(val) => setSpiceLevel(val as 'Mild' | 'Medium' | 'Spicy')}
+                activeClass="bg-amber-500/15 border-amber-500 text-amber-300"
+              />
             </div>
           )}
 
@@ -169,32 +196,12 @@ export function DishCustomizationModal({
                 </span>
                 <span className="text-[11px] text-gray-400">Selected: {dietary}</span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {(
-                  [
-                    { type: 'Regular', label: 'Regular', icon: '✨' },
-                    { type: 'Jain', label: 'Jain', icon: '🧅🚫' },
-                    { type: 'Vegan', label: 'Vegan', icon: '🌱' },
-                  ] as const
-                ).map((opt) => {
-                  const isSelected = dietary === opt.type
-                  return (
-                    <button
-                      key={opt.type}
-                      type="button"
-                      onClick={() => setDietary(opt.type)}
-                      className={`py-2.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition ${
-                        isSelected
-                          ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300 shadow-sm'
-                          : 'bg-[#20222C] border-white/10 text-gray-300 hover:border-white/20'
-                      }`}
-                    >
-                      <span>{opt.icon}</span>
-                      <span>{opt.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
+              <OptionButtonGroup
+                options={DIETARY_OPTIONS}
+                selected={dietary}
+                onSelect={(val) => setDietary(val as 'Regular' | 'Jain' | 'Vegan')}
+                activeClass="bg-emerald-500/15 border-emerald-500 text-emerald-300"
+              />
             </div>
           )}
 

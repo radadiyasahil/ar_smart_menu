@@ -1,7 +1,8 @@
+import { memo } from 'react'
 import { Sparkles, Plus, Minus, Flame, SlidersHorizontal } from 'lucide-react'
 import { isNonCustomizableDish, type PublicMenuDish } from '@/services/productService'
 
-export function DishCard({
+export const DishCard = memo(function DishCard({
   dish,
   quantity,
   onQuantityChange,
@@ -157,4 +158,4 @@ export function DishCard({
       </div>
     </div>
   )
-}
+})

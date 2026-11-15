@@ -50,7 +50,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   Future<void> _handleActivateTrial() async {
     final businessProvider = context.read<BusinessProvider>();
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
     try {
       await businessProvider.activateTrial();
       if (mounted) {

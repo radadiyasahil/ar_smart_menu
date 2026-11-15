@@ -1,3 +1,16 @@
+export interface PublicMenuDishAddon {
+  id: string
+  name: string
+  price: number
+}
+
+export interface PublicMenuDishCustomization {
+  isCustomizable?: boolean
+  allowSpiceLevel?: boolean
+  allowDietary?: boolean
+  addons?: PublicMenuDishAddon[]
+}
+
 export interface PublicMenuDish {
   id: string
   name: string
@@ -14,6 +27,53 @@ export interface PublicMenuDish {
   usdzUrl?: string
   has3dModel: boolean
   dishSlug: string
+  customizationJson?: string
+  customization?: PublicMenuDishCustomization
+  categoryName?: string
+}
+
+export function isSweetOrBeverageDish(dish: PublicMenuDish): boolean {
+  const name = (dish.name || '').toLowerCase()
+  const cat = (dish.categoryName || '').toLowerCase()
+  const keywords = [
+    'ice cream',
+    'icecream',
+    'shake',
+    'beverage',
+    'drink',
+    'dessert',
+    'juice',
+    'soda',
+    'coke',
+    'pepsi',
+    'coffee',
+    'tea',
+    'water',
+    'smoothie',
+    'pastry',
+    'cake',
+    'mithai',
+    'halwa',
+    'gulab jamun',
+    'rasgulla',
+    'kulfi',
+    'falooda',
+  ]
+  return keywords.some((k) => name.includes(k) || cat.includes(k))
+}
+
+export function isNonCustomizableDish(dish: PublicMenuDish): boolean {
+  if (dish.customization?.isCustomizable === false) return true
+  const name = (dish.name || '').toLowerCase()
+  const nonCustomWords = [
+    'water bottle',
+    'mineral water',
+    'soda can',
+    'soft drink',
+    'canned',
+    'packaged',
+  ]
+  return nonCustomWords.some((w) => name.includes(w))
 }
 
 export interface PublicMenuCategory {
@@ -183,7 +243,22 @@ export const productService = {
     if (!res.data.success || !res.data.data) {
       throw new Error(res.data.error || 'Menu not found')
     }
-    return res.data.data
+    const menu = res.data.data
+    if (menu?.categories) {
+      for (const cat of menu.categories) {
+        for (const dish of cat.dishes) {
+          dish.categoryName = cat.categoryName
+          if (dish.customizationJson) {
+            try {
+              dish.customization = JSON.parse(dish.customizationJson)
+            } catch {
+              // Ignore parse error
+            }
+          }
+        }
+      }
+    }
+    return menu
   },
 
   /** Fetch a specific dish AR experience dynamically from the backend */

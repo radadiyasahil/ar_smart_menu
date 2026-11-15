@@ -124,7 +124,8 @@ public class PublicArService : IPublicArService
                 glbUrl,
                 p.Model3d?.UsdzUrl,
                 p.Model3d is not null && !string.IsNullOrEmpty(glbUrl),
-                dishSlug
+                dishSlug,
+                p.CustomizationJson
             );
         }).ToList();
 

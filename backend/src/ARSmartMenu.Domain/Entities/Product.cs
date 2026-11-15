@@ -20,6 +20,7 @@ public class Product : BaseEntity
     public bool SoldOutToday { get; set; }
     public DateOnly? SoldOutDate { get; set; }
     public int DisplayOrder { get; set; }
+    public string? CustomizationJson { get; set; }
 
     public ICollection<ProductPhoto> Photos { get; set; } = [];
     public Model3d? Model3d { get; set; }

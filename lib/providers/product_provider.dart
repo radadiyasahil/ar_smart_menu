@@ -116,6 +116,7 @@ class ProductProvider extends ChangeNotifier {
     bool isNew = false,
     bool enable3dAr = false,
     ProductStatus? status,
+    String? customizationJson,
   }) async {
     final product = await _productService.create(
       name: name,
@@ -128,6 +129,7 @@ class ProductProvider extends ChangeNotifier {
       isNew: isNew,
       enable3dAr: enable3dAr,
       status: status,
+      customizationJson: customizationJson,
     );
     _products = [product, ..._products];
     _isLoaded = true;
@@ -156,6 +158,7 @@ class ProductProvider extends ChangeNotifier {
     bool? isBestseller,
     bool? isNew,
     int? displayOrder,
+    String? customizationJson,
   }) async {
     final updated = await _productService.update(
       id: id,
@@ -168,6 +171,7 @@ class ProductProvider extends ChangeNotifier {
       isBestseller: isBestseller,
       isNew: isNew,
       displayOrder: displayOrder,
+      customizationJson: customizationJson,
     );
     _replaceLocal(updated);
     await _persistProducts();

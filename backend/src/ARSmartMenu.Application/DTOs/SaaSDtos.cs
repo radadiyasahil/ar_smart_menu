@@ -83,7 +83,8 @@ public record CreateProductRequest(
     bool IsBestseller = false,
     bool IsNew = false,
     bool Enable3dAr = false,
-    ProductStatus? Status = null);
+    ProductStatus? Status = null,
+    string? CustomizationJson = null);
 
 public record BulkCreateProductItem(
     string Name,
@@ -109,7 +110,8 @@ public record UpdateProductRequest(
     bool? IsBestseller = null,
     bool? IsNew = null,
     int? DisplayOrder = null,
-    ProductStatus? Status = null);
+    ProductStatus? Status = null,
+    string? CustomizationJson = null);
 
 public record UpdateProductStatusRequest(ProductStatus Status);
 public record BulkUpdateProductStatusRequest(IReadOnlyList<Guid> ProductIds, ProductStatus Status);
@@ -148,7 +150,8 @@ public record ProductDto(
     int DisplayOrder,
     IReadOnlyList<ProductPhotoDto> Photos,
     Model3dSummaryDto? Model3d,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? CustomizationJson = null);
 
 public record UploadPhotoResponse(
     ProductPhotoDto Photo,
@@ -454,7 +457,8 @@ public record PublicMenuDishDto(
     string? GlbUrl,
     string? UsdzUrl,
     bool Has3dModel,
-    string DishSlug);
+    string DishSlug,
+    string? CustomizationJson = null);
 
 public record LogScanRequest(
     string? SessionId = null,

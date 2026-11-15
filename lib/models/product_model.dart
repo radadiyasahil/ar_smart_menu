@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'business_model.dart';
 
 enum ProductStatus {
@@ -174,6 +175,66 @@ class ProductPhotoModel {
       };
 }
 
+class ProductCustomAddon {
+  final String id;
+  final String name;
+  final int price;
+
+  const ProductCustomAddon({
+    required this.id,
+    required this.name,
+    required this.price,
+  });
+
+  factory ProductCustomAddon.fromJson(Map<String, dynamic> json) => ProductCustomAddon(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        price: json['price'] as int? ?? 0,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'price': price,
+      };
+}
+
+class ProductCustomizationConfig {
+  final bool isCustomizable;
+  final bool allowSpiceLevel;
+  final bool allowDietary;
+  final List<ProductCustomAddon> addons;
+
+  const ProductCustomizationConfig({
+    this.isCustomizable = true,
+    this.allowSpiceLevel = true,
+    this.allowDietary = true,
+    this.addons = const [],
+  });
+
+  factory ProductCustomizationConfig.fromJson(Map<String, dynamic> json) {
+    final rawAddons = json['addons'] as List<dynamic>? ?? [];
+    return ProductCustomizationConfig(
+      isCustomizable: json['isCustomizable'] as bool? ?? true,
+      allowSpiceLevel: json['allowSpiceLevel'] as bool? ?? true,
+      allowDietary: json['allowDietary'] as bool? ?? true,
+      addons: rawAddons
+          .whereType<Map<String, dynamic>>()
+          .map(ProductCustomAddon.fromJson)
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'isCustomizable': isCustomizable,
+        'allowSpiceLevel': allowSpiceLevel,
+        'allowDietary': allowDietary,
+        'addons': addons.map((a) => a.toJson()).toList(),
+      };
+
+  String toJsonString() => jsonEncode(toJson());
+}
+
 class ProductModel {
   const ProductModel({
     required this.id,
@@ -192,6 +253,7 @@ class ProductModel {
     this.displayOrder = 0,
     this.photos = const [],
     this.createdAt,
+    this.customizationJson,
   });
 
   final String id;
@@ -210,6 +272,30 @@ class ProductModel {
   final int displayOrder;
   final List<ProductPhotoModel> photos;
   final DateTime? createdAt;
+  final String? customizationJson;
+
+  ProductCustomizationConfig get customizationConfig {
+    if (customizationJson == null || customizationJson!.trim().isEmpty) {
+      final isSweetOrDrink = category == ProductCategory.beverage ||
+          category == ProductCategory.dessert ||
+          category == ProductCategory.cake ||
+          category == ProductCategory.pastry ||
+          category == ProductCategory.mithai;
+      return ProductCustomizationConfig(
+        isCustomizable: true,
+        allowSpiceLevel: !isSweetOrDrink,
+        allowDietary: !isSweetOrDrink,
+        addons: const [],
+      );
+    }
+    try {
+      final decoded = jsonDecode(customizationJson!);
+      if (decoded is Map<String, dynamic>) {
+        return ProductCustomizationConfig.fromJson(decoded);
+      }
+    } catch (_) {}
+    return const ProductCustomizationConfig();
+  }
 
   bool get isLive => status == ProductStatus.live;
   bool get isPaused => status == ProductStatus.paused;
@@ -332,6 +418,7 @@ class ProductModel {
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String)
           : null,
+      customizationJson: json['customizationJson'] as String?,
     );
   }
 
@@ -353,5 +440,6 @@ class ProductModel {
         'displayOrder': displayOrder,
         'photos': photos.map((p) => p.toJson()).toList(),
         'createdAt': createdAt?.toIso8601String(),
+        'customizationJson': customizationJson,
       };
 }

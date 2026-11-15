@@ -1,5 +1,5 @@
 import { Sparkles, Plus, Minus, Flame, SlidersHorizontal } from 'lucide-react'
-import type { PublicMenuDish } from '@/services/productService'
+import { isNonCustomizableDish, type PublicMenuDish } from '@/services/productService'
 
 export function DishCard({
   dish,
@@ -110,7 +110,7 @@ export function DishCard({
           </button>
         )}
 
-        {onCustomize && (
+        {onCustomize && !isNonCustomizableDish(dish) && (
           <button
             type="button"
             onClick={() => onCustomize(dish)}

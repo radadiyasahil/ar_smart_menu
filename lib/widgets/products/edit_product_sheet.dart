@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_spacing.dart';
 import '../../core/utils/api_error_utils.dart';
 import '../../models/business_model.dart';
@@ -47,6 +48,10 @@ class _EditProductSheetState extends State<_EditProductSheet> {
   late final TextEditingController _priceController;
   ProductCategory? _category;
   bool _saving = false;
+  late bool _isCustomizable;
+  late bool _allowSpiceLevel;
+  late bool _allowDietary;
+  late List<ProductCustomAddon> _addons;
 
   @override
   void initState() {
@@ -62,6 +67,69 @@ class _EditProductSheetState extends State<_EditProductSheet> {
           : '',
     );
     _category = widget.product.category;
+
+    final cfg = widget.product.customizationConfig;
+    _isCustomizable = cfg.isCustomizable;
+    _allowSpiceLevel = cfg.allowSpiceLevel;
+    _allowDietary = cfg.allowDietary;
+    _addons = List<ProductCustomAddon>.from(cfg.addons);
+  }
+
+  void _showAddAddonDialog() {
+    final nameCtl = TextEditingController();
+    final priceCtl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Custom Add-on', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtl,
+              decoration: const InputDecoration(
+                labelText: 'Add-on Name *',
+                hintText: 'e.g. Extra Cheese 🧀, Extra Mayo, Ice Cream Scoop',
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: priceCtl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Price (₹) *',
+                prefixText: '₹ ',
+                hintText: 'e.g. 30',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final n = nameCtl.text.trim();
+              final p = int.tryParse(priceCtl.text.trim());
+              if (n.isNotEmpty && p != null && p >= 0) {
+                setState(() {
+                  _addons.add(ProductCustomAddon(
+                    id: 'addon_${DateTime.now().millisecondsSinceEpoch}',
+                    name: n,
+                    price: p,
+                  ));
+                });
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -102,12 +170,21 @@ class _EditProductSheetState extends State<_EditProductSheet> {
 
     setState(() => _saving = true);
     try {
+      final config = ProductCustomizationConfig(
+        isCustomizable: _isCustomizable,
+        allowSpiceLevel: _allowSpiceLevel,
+        allowDietary: _allowDietary,
+        addons: _addons,
+      );
+      final customizationJson = config.toJsonString();
+
       final updated = await context.read<ProductProvider>().updateProduct(
             id: widget.product.id,
             name: name,
             description: _descriptionController.text.trim(),
             pricePaise: pricePaise,
             category: _category,
+            customizationJson: customizationJson,
           );
       if (mounted) {
         widget.onSaved(updated);
@@ -130,14 +207,18 @@ class _EditProductSheetState extends State<_EditProductSheet> {
             BusinessType.restaurant;
     final categories = ProductCategory.forBusinessType(businessType);
 
-    return Padding(
-      padding: EdgeInsets.only(
-        left: AppSpacing.lg,
-        right: AppSpacing.lg,
-        top: AppSpacing.sm,
-        bottom: MediaQuery.viewInsetsOf(context).bottom + AppSpacing.lg,
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
       ),
-      child: Column(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          left: AppSpacing.lg,
+          right: AppSpacing.lg,
+          top: AppSpacing.sm,
+          bottom: MediaQuery.viewInsetsOf(context).bottom + AppSpacing.lg,
+        ),
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -182,7 +263,121 @@ class _EditProductSheetState extends State<_EditProductSheet> {
                   ),
                 )
                 .toList(),
-            onChanged: (value) => setState(() => _category = value),
+            onChanged: (value) {
+              setState(() {
+                _category = value;
+                if (value == ProductCategory.beverage ||
+                    value == ProductCategory.dessert ||
+                    value == ProductCategory.cake ||
+                    value == ProductCategory.pastry ||
+                    value == ProductCategory.mithai) {
+                  _allowSpiceLevel = false;
+                  _allowDietary = false;
+                }
+              });
+            },
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // Customization settings Card
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(Icons.tune, size: 18, color: AppColors.primaryOrange),
+                        SizedBox(width: 8),
+                        Text(
+                          'Dish Customization',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    Switch(
+                      value: _isCustomizable,
+                      activeThumbColor: AppColors.primaryOrange,
+                      onChanged: (val) => setState(() => _isCustomizable = val),
+                    ),
+                  ],
+                ),
+                Text(
+                  _isCustomizable
+                      ? 'Customers can customize spice, dietary preference, or add-ons.'
+                      : 'Non-customizable item. Customers add directly to cart with 1-click.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                ),
+                if (_isCustomizable) ...[
+                  const Divider(height: 20),
+                  CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Show Spice Level (Mild / Medium / Spicy)', style: TextStyle(fontSize: 12.5)),
+                    value: _allowSpiceLevel,
+                    activeColor: AppColors.primaryOrange,
+                    onChanged: (val) => setState(() => _allowSpiceLevel = val ?? false),
+                  ),
+                  CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Show Dietary Option (Regular / Jain / Vegan)', style: TextStyle(fontSize: 12.5)),
+                    value: _allowDietary,
+                    activeColor: AppColors.primaryOrange,
+                    onChanged: (val) => setState(() => _allowDietary = val ?? false),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Custom Add-ons (${_addons.length})',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      TextButton.icon(
+                        onPressed: _showAddAddonDialog,
+                        icon: const Icon(Icons.add, size: 15),
+                        label: const Text('Add Add-on', style: TextStyle(fontSize: 12)),
+                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                      ),
+                    ],
+                  ),
+                  if (_addons.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        'No custom add-ons added. Tap "+ Add Add-on" to create options (e.g., Extra Cheese ₹40, Ice Cream Scoop ₹35).',
+                        style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey.shade400),
+                      ),
+                    )
+                  else
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: _addons.map((addon) {
+                        return Chip(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          label: Text('${addon.name} (+₹${addon.price})', style: const TextStyle(fontSize: 11)),
+                          deleteIcon: const Icon(Icons.close, size: 14),
+                          onDeleted: () {
+                            setState(() {
+                              _addons.removeWhere((a) => a.id == addon.id);
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                ],
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.lg),
           PrimaryButton(
@@ -192,6 +387,7 @@ class _EditProductSheetState extends State<_EditProductSheet> {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 }

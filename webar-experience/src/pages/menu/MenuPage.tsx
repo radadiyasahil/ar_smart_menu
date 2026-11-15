@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import {
   productService,
+  isNonCustomizableDish,
   type PublicMenuResponse,
   type PublicMenuDish,
 } from '@/services/productService'
@@ -764,6 +765,11 @@ export function MenuPage() {
     // Multiple custom variations exist in cart
     const currentTotal = itemsForDish.reduce((sum, [_, item]) => sum + item.quantity, 0)
     if (newQty > currentTotal) {
+      if (isNonCustomizableDish(dish)) {
+        const [firstKey, firstItem] = itemsForDish[0]
+        handleQty(dish, newQty, firstItem.customization, firstKey)
+        return
+      }
       setCustomizingDish(dish)
       showToast(`Customize another ${dish.name} or adjust quantities in cart.`)
     } else {

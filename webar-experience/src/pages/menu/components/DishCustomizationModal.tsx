@@ -1,9 +1,9 @@
-import { useState, useId } from 'react'
+import { useState, useId, useMemo } from 'react'
 import { X, Check, ChefHat, Sparkles, Plus, Minus } from 'lucide-react'
-import type { PublicMenuDish } from '@/services/productService'
+import { isSweetOrBeverageDish, type PublicMenuDish } from '@/services/productService'
 import type { DishAddon, DishCustomization } from '@/types/cart'
 
-const DEFAULT_ADDONS: DishAddon[] = [
+const DEFAULT_FOOD_ADDONS: DishAddon[] = [
   { id: 'extra_cheese', name: 'Extra Cheese 🧀', price: 40 },
   { id: 'signature_dip', name: 'Signature Dip / Chutney 🥣', price: 25 },
   { id: 'extra_butter', name: 'Extra Butter 🧈', price: 20 },
@@ -36,12 +36,33 @@ export function DishCustomizationModal({
   const [notes, setNotes] = useState(initialCustomization?.notes ?? '')
   const [quantity, setQuantity] = useState(1)
 
+  const isSweetOrDrink = dish ? isSweetOrBeverageDish(dish) : false
+  const showSpiceLevel = dish?.customization?.allowSpiceLevel ?? !isSweetOrDrink
+  const showDietary = dish?.customization?.allowDietary ?? !isSweetOrDrink
+
+  const availableAddons: DishAddon[] = useMemo(() => {
+    if (!dish) return []
+    // 1. Restaurant defined custom add-ons on this dish
+    if (dish.customization?.addons && dish.customization.addons.length > 0) {
+      return dish.customization.addons
+    }
+    // 2. Owner explicitly configured 0 add-ons for this dish
+    if (dish.customization?.addons !== undefined && dish.customization.addons.length === 0) {
+      return []
+    }
+    // 3. Category smart default: hide savory add-ons for sweet items/beverages
+    if (isSweetOrDrink) {
+      return []
+    }
+    return DEFAULT_FOOD_ADDONS
+  }, [dish, isSweetOrDrink])
+
   if (!isOpen || !dish) return null
 
   const isVeg = dish.vegStatus === 0 || dish.vegStatus === 2
   const basePrice = dish.pricePaise ? Math.round(dish.pricePaise / 100) : 0
 
-  const activeAddons = DEFAULT_ADDONS.filter((a) => selectedAddonIds.includes(a.id))
+  const activeAddons = availableAddons.filter((a) => selectedAddonIds.includes(a.id))
   const addonsTotal = activeAddons.reduce((sum, a) => sum + a.price, 0)
   const itemUnitPrice = basePrice + addonsTotal
   const finalTotal = itemUnitPrice * quantity
@@ -54,8 +75,8 @@ export function DishCustomizationModal({
 
   const handleSave = () => {
     const custom: DishCustomization = {
-      spiceLevel,
-      dietary,
+      spiceLevel: showSpiceLevel ? spiceLevel : undefined,
+      dietary: showDietary ? dietary : undefined,
       selectedAddons: activeAddons,
       notes: notes.trim(),
     }
@@ -101,121 +122,127 @@ export function DishCustomizationModal({
 
         {/* Scrollable Customization Content */}
         <div className="p-4 sm:p-5 space-y-5 overflow-y-auto">
-          {/* 1. Spice Level */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
-                <span>Spice Level</span>
-              </span>
-              <span className="text-[11px] text-gray-400">Selected: {spiceLevel}</span>
+          {/* 1. Spice Level (Hidden for beverages, desserts, or when disabled) */}
+          {showSpiceLevel && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>Spice Level</span>
+                </span>
+                <span className="text-[11px] text-gray-400">Selected: {spiceLevel}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    { level: 'Mild', label: 'Mild', icon: '🟢' },
+                    { level: 'Medium', label: 'Medium', icon: '🟡' },
+                    { level: 'Spicy', label: 'Spicy', icon: '🌶️' },
+                  ] as const
+                ).map((opt) => {
+                  const isSelected = spiceLevel === opt.level
+                  return (
+                    <button
+                      key={opt.level}
+                      type="button"
+                      onClick={() => setSpiceLevel(opt.level)}
+                      className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                        isSelected
+                          ? 'bg-amber-500/15 border-amber-500 text-amber-300 shadow-sm'
+                          : 'bg-[#20222C] border-white/10 text-gray-300 hover:border-white/20'
+                      }`}
+                    >
+                      <span>{opt.icon}</span>
+                      <span>{opt.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {(
-                [
-                  { level: 'Mild', label: 'Mild', icon: '🟢' },
-                  { level: 'Medium', label: 'Medium', icon: '🟡' },
-                  { level: 'Spicy', label: 'Spicy', icon: '🌶️' },
-                ] as const
-              ).map((opt) => {
-                const isSelected = spiceLevel === opt.level
-                return (
-                  <button
-                    key={opt.level}
-                    type="button"
-                    onClick={() => setSpiceLevel(opt.level)}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
-                      isSelected
-                        ? 'bg-amber-500/15 border-amber-500 text-amber-300 shadow-sm'
-                        : 'bg-[#20222C] border-white/10 text-gray-300 hover:border-white/20'
-                    }`}
-                  >
-                    <span>{opt.icon}</span>
-                    <span>{opt.label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+          )}
 
-          {/* 2. Dietary Preference */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
-                <span>Dietary Preference</span>
-              </span>
-              <span className="text-[11px] text-gray-400">Selected: {dietary}</span>
+          {/* 2. Dietary Preference (Hidden for beverages, desserts, or when disabled) */}
+          {showDietary && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>Dietary Preference</span>
+                </span>
+                <span className="text-[11px] text-gray-400">Selected: {dietary}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    { type: 'Regular', label: 'Regular', icon: '✨' },
+                    { type: 'Jain', label: 'Jain', icon: '🧅🚫' },
+                    { type: 'Vegan', label: 'Vegan', icon: '🌱' },
+                  ] as const
+                ).map((opt) => {
+                  const isSelected = dietary === opt.type
+                  return (
+                    <button
+                      key={opt.type}
+                      type="button"
+                      onClick={() => setDietary(opt.type)}
+                      className={`py-2.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition ${
+                        isSelected
+                          ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300 shadow-sm'
+                          : 'bg-[#20222C] border-white/10 text-gray-300 hover:border-white/20'
+                      }`}
+                    >
+                      <span>{opt.icon}</span>
+                      <span>{opt.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {(
-                [
-                  { type: 'Regular', label: 'Regular', icon: '✨' },
-                  { type: 'Jain', label: 'Jain', icon: '🧅🚫' },
-                  { type: 'Vegan', label: 'Vegan', icon: '🌱' },
-                ] as const
-              ).map((opt) => {
-                const isSelected = dietary === opt.type
-                return (
-                  <button
-                    key={opt.type}
-                    type="button"
-                    onClick={() => setDietary(opt.type)}
-                    className={`py-2.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition ${
-                      isSelected
-                        ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300 shadow-sm'
-                        : 'bg-[#20222C] border-white/10 text-gray-300 hover:border-white/20'
-                    }`}
-                  >
-                    <span>{opt.icon}</span>
-                    <span>{opt.label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+          )}
 
-          {/* 3. Popular Add-ons */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles size={13} className="text-amber-400" />
-                <span>Popular Add-ons (Optional)</span>
-              </span>
-              <span className="text-[11px] text-gray-400">
-                {activeAddons.length > 0 ? `+₹${addonsTotal}` : 'None'}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {DEFAULT_ADDONS.map((addon) => {
-                const isSelected = selectedAddonIds.includes(addon.id)
-                return (
-                  <button
-                    key={addon.id}
-                    type="button"
-                    onClick={() => toggleAddon(addon.id)}
-                    className={`w-full py-2.5 px-3 rounded-xl border flex items-center justify-between text-xs cursor-pointer transition ${
-                      isSelected
-                        ? 'bg-[#FF5353]/15 border-[#FF5353] text-white'
-                        : 'bg-[#20222C] border-white/10 text-gray-300 hover:border-white/20'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className={`w-4 h-4 rounded border flex items-center justify-center transition ${
-                          isSelected
-                            ? 'bg-[#FF5353] border-[#FF5353] text-white'
-                            : 'border-gray-500 bg-transparent'
-                        }`}
-                      >
-                        {isSelected && <Check size={11} strokeWidth={3} />}
+          {/* 3. Dynamic Restaurant Add-ons */}
+          {availableAddons.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles size={13} className="text-amber-400" />
+                  <span>Available Add-ons (Optional)</span>
+                </span>
+                <span className="text-[11px] text-gray-400">
+                  {activeAddons.length > 0 ? `+₹${addonsTotal}` : 'None'}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {availableAddons.map((addon) => {
+                  const isSelected = selectedAddonIds.includes(addon.id)
+                  return (
+                    <button
+                      key={addon.id}
+                      type="button"
+                      onClick={() => toggleAddon(addon.id)}
+                      className={`w-full py-2.5 px-3 rounded-xl border flex items-center justify-between text-xs cursor-pointer transition ${
+                        isSelected
+                          ? 'bg-[#FF5353]/15 border-[#FF5353] text-white'
+                          : 'bg-[#20222C] border-white/10 text-gray-300 hover:border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-4 h-4 rounded border flex items-center justify-center transition ${
+                            isSelected
+                              ? 'bg-[#FF5353] border-[#FF5353] text-white'
+                              : 'border-gray-500 bg-transparent'
+                          }`}
+                        >
+                          {isSelected && <Check size={11} strokeWidth={3} />}
+                        </div>
+                        <span className="font-semibold">{addon.name}</span>
                       </div>
-                      <span className="font-semibold">{addon.name}</span>
-                    </div>
-                    <span className="font-bold text-amber-400">+₹{addon.price}</span>
-                  </button>
-                )
-              })}
+                      <span className="font-bold text-amber-400">+₹{addon.price}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 4. Special Kitchen Instructions */}
           <div>

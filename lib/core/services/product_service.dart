@@ -87,6 +87,7 @@ class ProductService {
     bool isNew = false,
     bool enable3dAr = false,
     ProductStatus? status,
+    String? customizationJson,
   }) async {
     final response = await _dio.post<Map<String, dynamic>>(
       '/products',
@@ -101,6 +102,7 @@ class ProductService {
         'isNew': isNew,
         'enable3dAr': enable3dAr,
         if (status != null) 'status': status.value,
+        if (customizationJson != null) 'customizationJson': customizationJson,
       },
     );
     return _parseOne(response.data!);
@@ -134,6 +136,7 @@ class ProductService {
     bool? isBestseller,
     bool? isNew,
     int? displayOrder,
+    String? customizationJson,
   }) async {
     final response = await _dio.put<Map<String, dynamic>>(
       '/products/$id',
@@ -147,6 +150,7 @@ class ProductService {
         if (isBestseller != null) 'isBestseller': isBestseller,
         if (isNew != null) 'isNew': isNew,
         if (displayOrder != null) 'displayOrder': displayOrder,
+        if (customizationJson != null) 'customizationJson': customizationJson,
       },
     );
     return _parseOne(response.data!);

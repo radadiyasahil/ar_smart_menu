@@ -96,6 +96,7 @@ public class ProductService : IProductService
             IsBestseller = request.IsBestseller,
             IsNew = request.IsNew,
             Status = status,
+            CustomizationJson = request.CustomizationJson,
         };
 
         _db.Products.Add(product);
@@ -198,6 +199,8 @@ public class ProductService : IProductService
             product.DisplayOrder = request.DisplayOrder.Value;
         if (request.Status.HasValue)
             product.Status = request.Status.Value;
+        if (request.CustomizationJson is not null)
+            product.CustomizationJson = request.CustomizationJson;
 
         product.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -633,7 +636,8 @@ public class ProductService : IProductService
         product.DisplayOrder,
         product.Photos.OrderBy(p => p.SortOrder).Select(p => MapPhoto(p)).ToList(),
         product.Model3d is null ? null : MapModel(product.Model3d),
-        product.CreatedAt);
+        product.CreatedAt,
+        product.CustomizationJson);
 
     private ProductPhotoDto MapPhoto(ProductPhoto photo) => new(
         photo.Id,

@@ -37,6 +37,9 @@ public static class DatabaseSeeder
 
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[TableOrders]') AND name = 'PartyPin')
                     ALTER TABLE [TableOrders] ADD [PartyPin] nvarchar(max) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Products]') AND name = 'CustomizationJson')
+                    ALTER TABLE [Products] ADD [CustomizationJson] nvarchar(max) NULL;
             ");
         }
         catch (Exception ex)

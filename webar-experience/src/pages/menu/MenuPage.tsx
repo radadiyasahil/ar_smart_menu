@@ -77,7 +77,23 @@ export function MenuPage() {
   const [dietary, setDietary] = useState<'all' | 'veg' | 'non-veg'>('all')
   const [popularOnly, setPopularOnly] = useState(false)
   const [arOnly, setArOnly] = useState(false)
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false)
+  const filterDropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isFilterDropdownOpen) return
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target as Node)) {
+        setIsFilterDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('touchstart', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+    }
+  }, [isFilterDropdownOpen])
 
   // Cart & Modals
   const [cart, setCart] = useState<Record<string, CartItem>>(() => {
@@ -1109,7 +1125,7 @@ export function MenuPage() {
         {/* 2. SEARCH BAR & QUICK FILTERS (Matching Reference Screen 3)*/}
         {/* ========================================================= */}
         <div
-          className="px-4 sm:px-6 lg:px-8"
+          className="relative z-35 px-4 sm:px-6 lg:px-8"
           style={{ marginTop: '28px', marginBottom: '12px' }}
         >
           <div className="flex items-center gap-3">
@@ -1188,26 +1204,154 @@ export function MenuPage() {
               </button>
             </div>
 
-            {/* Checkbox Filter Icon Button (Row 1) */}
-            <button
-              type="button"
-              onClick={() => setIsFilterModalOpen(true)}
-              className={`h-12 px-3 sm:px-3.5 rounded-full border flex items-center justify-center gap-1.5 cursor-pointer transition shadow-md flex-shrink-0 ${
-                activeCheckboxFilterCount > 0
-                  ? 'bg-[#FF5353] border-[#FF5353] text-white shadow-lg shadow-[#FF5353]/30'
-                  : 'bg-[#1C1E28] border-[#2D3142] text-gray-400 hover:text-white hover:border-gray-500'
-              }`}
-              title="More filters (Popular, 3D AR)"
-              aria-label="Dish filters"
-            >
-              <SlidersHorizontal size={16} />
-              <span className="hidden sm:inline text-xs font-bold">Filter</span>
-              {activeCheckboxFilterCount > 0 && (
-                <span className="w-4 h-4 rounded-full bg-white text-[#FF5353] text-[9px] font-extrabold flex items-center justify-center">
-                  {activeCheckboxFilterCount}
-                </span>
+            {/* Checkbox Filter Icon Button & Dropdown (Row 1) */}
+            <div className="relative flex-shrink-0" ref={filterDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsFilterDropdownOpen((prev) => !prev)}
+                className={`h-12 px-3 sm:px-3.5 rounded-full border flex items-center justify-center gap-1.5 cursor-pointer transition shadow-md ${
+                  activeCheckboxFilterCount > 0
+                    ? 'bg-[#FF5353] border-[#FF5353] text-white shadow-lg shadow-[#FF5353]/30'
+                    : isFilterDropdownOpen
+                    ? 'bg-[#252837] border-gray-400 text-white'
+                    : 'bg-[#1C1E28] border-[#2D3142] text-gray-400 hover:text-white hover:border-gray-500'
+                }`}
+                title="Filter by Popular, 3D AR"
+                aria-label="Dish filters"
+                aria-expanded={isFilterDropdownOpen}
+              >
+                <SlidersHorizontal size={16} />
+                <span className="hidden sm:inline text-xs font-bold">Filter</span>
+                {activeCheckboxFilterCount > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-white text-[#FF5353] text-[9px] font-extrabold flex items-center justify-center">
+                    {activeCheckboxFilterCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Small Dropdown Popover Box (No full modal, No background blur) */}
+              {isFilterDropdownOpen && (
+                <div
+                  className="absolute right-0 top-full mt-2 w-72 sm:w-80 max-w-[calc(100vw-32px)] bg-[#1C1E28] border border-[#2D3142] rounded-2xl p-3.5 shadow-2xl shadow-black/80 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-2.5"
+                  role="menu"
+                  aria-label="Dish filters menu"
+                >
+                  {/* Dropdown Header */}
+                  <div className="flex items-center justify-between pb-2 border-b border-[#2D3142]/80 px-1">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                      <SlidersHorizontal size={13} className="text-[#FF5353]" />
+                      <span>Dish Filters</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {activeCheckboxFilterCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPopularOnly(false)
+                            setArOnly(false)
+                          }}
+                          className="text-[11px] font-semibold text-[#FF5353] hover:text-[#ff7043] transition cursor-pointer"
+                        >
+                          Reset
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsFilterDropdownOpen(false)}
+                        className="w-5 h-5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition cursor-pointer"
+                        aria-label="Close filters"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Checkbox Options */}
+                  <div className="space-y-1.5">
+                    {/* Checkbox 1: Popular Dishes */}
+                    <label
+                      className={`flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer select-none ${
+                        popularOnly
+                          ? 'bg-[#FF5353]/15 border-[#FF5353] text-white shadow-sm'
+                          : 'bg-[#141620] border-[#2A2D3C] text-gray-300 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-4 h-4 rounded-md border flex items-center justify-center transition flex-shrink-0 ${
+                            popularOnly ? 'bg-[#FF5353] border-[#FF5353]' : 'border-gray-500 bg-[#1E202C]'
+                          }`}
+                        >
+                          {popularOnly && <Check size={11} className="text-white stroke-[3]" />}
+                        </div>
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={popularOnly}
+                          onChange={(e) => setPopularOnly(e.target.checked)}
+                        />
+                        <div>
+                          <span className="font-bold text-xs text-white">🔥 Popular Dishes</span>
+                          <p className="text-[10px] text-gray-400">Bestseller favorites</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#252837] text-gray-300">
+                        {popularCount}
+                      </span>
+                    </label>
+
+                    {/* Checkbox 2: 3D AR Only */}
+                    <label
+                      className={`flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer select-none ${
+                        arOnly
+                          ? 'bg-[#8B5CF6]/15 border-[#8B5CF6] text-white shadow-sm'
+                          : 'bg-[#141620] border-[#2A2D3C] text-gray-300 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-4 h-4 rounded-md border flex items-center justify-center transition flex-shrink-0 ${
+                            arOnly ? 'bg-[#8B5CF6] border-[#8B5CF6]' : 'border-gray-500 bg-[#1E202C]'
+                          }`}
+                        >
+                          {arOnly && <Check size={11} className="text-white stroke-[3]" />}
+                        </div>
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={arOnly}
+                          onChange={(e) => setArOnly(e.target.checked)}
+                        />
+                        <div>
+                          <div className="flex items-center gap-1 font-bold text-xs text-white">
+                            <Sparkles size={11} className="text-[#A78BFA]" />
+                            <span>3D AR Only</span>
+                          </div>
+                          <p className="text-[10px] text-gray-400">Interactive 3D view</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#252837] text-gray-300">
+                        {arCount}
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Dropdown Footer */}
+                  <div className="pt-2 flex items-center justify-between border-t border-[#2D3142]/80 px-1">
+                    <span className="text-[11px] text-gray-400">
+                      Matches: <strong className="text-white">{filteredDishes.length}</strong> dishes
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsFilterDropdownOpen(false)}
+                      className="px-3.5 py-1 rounded-full bg-gradient-to-r from-[#FF5353] to-[#FF793F] text-white text-[11px] font-bold shadow-sm hover:opacity-95 transition cursor-pointer"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
               )}
-            </button>
+            </div>
           </div>
         </div>
 
@@ -1218,10 +1362,20 @@ export function MenuPage() {
           {/* Checkbox Filter Icon Pill in category bar */}
           <button
             type="button"
-            onClick={() => setIsFilterModalOpen(true)}
+            onClick={() => {
+              setIsFilterDropdownOpen((prev) => {
+                const next = !prev
+                if (next && filterDropdownRef.current) {
+                  filterDropdownRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                }
+                return next
+              })
+            }}
             className={`category-pill px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer flex items-center gap-1.5 transition flex-shrink-0 ${
               activeCheckboxFilterCount > 0
                 ? 'bg-[#FF5353] text-white shadow-md shadow-[#FF5353]/30 border border-[#FF5353]'
+                : isFilterDropdownOpen
+                ? 'bg-[#252837] border-gray-400 text-white'
                 : 'bg-[#1C1E28] border border-[#2D3142] text-gray-300 hover:text-white hover:border-gray-500'
             }`}
             title="Filter by Popular or 3D AR"
@@ -1740,148 +1894,7 @@ export function MenuPage() {
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* Checkbox Filter Modal Dialog (Popular & 3D AR Only)      */}
-      {/* ========================================================= */}
-      {isFilterModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setIsFilterModalOpen(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="filter-dialog-title"
-        >
-          <div
-            className="w-full max-w-sm bg-[#1C1E28] border border-[#2D3142] rounded-3xl p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#2D3142]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[#FF5353]/15 flex items-center justify-center text-[#FF5353]">
-                  <SlidersHorizontal size={16} />
-                </div>
-                <div>
-                  <h3 id="filter-dialog-title" className="text-sm font-bold text-white">
-                    Dish Filters
-                  </h3>
-                  <p className="text-[11px] text-gray-400">
-                    Select checkboxes to filter menu
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsFilterModalOpen(false)}
-                className="text-gray-400 hover:text-white p-1 rounded-full transition cursor-pointer"
-                aria-label="Close filters"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            {/* Checkbox Options */}
-            <div className="space-y-2.5">
-              {/* Checkbox 1: Popular Dishes */}
-              <label
-                className={`flex items-center justify-between p-3.5 rounded-2xl border transition cursor-pointer select-none ${
-                  popularOnly
-                    ? 'bg-[#FF5353]/15 border-[#FF5353] text-white shadow-sm'
-                    : 'bg-[#141620] border-[#2A2D3C] text-gray-300 hover:border-gray-500'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-5 h-5 rounded-md border flex items-center justify-center transition flex-shrink-0 ${
-                      popularOnly ? 'bg-[#FF5353] border-[#FF5353]' : 'border-gray-500 bg-[#1E202C]'
-                    }`}
-                  >
-                    {popularOnly && <Check size={13} className="text-white stroke-[3]" />}
-                  </div>
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={popularOnly}
-                    onChange={(e) => setPopularOnly(e.target.checked)}
-                  />
-                  <div>
-                    <div className="flex items-center gap-1.5 font-bold text-xs text-white">
-                      <span>🔥 Popular Dishes</span>
-                    </div>
-                    <p className="text-[11px] text-gray-400 mt-0.5">Bestselling customer favorites</p>
-                  </div>
-                </div>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#252837] text-gray-300">
-                  {popularCount}
-                </span>
-              </label>
-
-              {/* Checkbox 2: 3D AR Only */}
-              <label
-                className={`flex items-center justify-between p-3.5 rounded-2xl border transition cursor-pointer select-none ${
-                  arOnly
-                    ? 'bg-[#8B5CF6]/15 border-[#8B5CF6] text-white shadow-sm'
-                    : 'bg-[#141620] border-[#2A2D3C] text-gray-300 hover:border-gray-500'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-5 h-5 rounded-md border flex items-center justify-center transition flex-shrink-0 ${
-                      arOnly ? 'bg-[#8B5CF6] border-[#8B5CF6]' : 'border-gray-500 bg-[#1E202C]'
-                    }`}
-                  >
-                    {arOnly && <Check size={13} className="text-white stroke-[3]" />}
-                  </div>
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={arOnly}
-                    onChange={(e) => setArOnly(e.target.checked)}
-                  />
-                  <div>
-                    <div className="flex items-center gap-1.5 font-bold text-xs text-white">
-                      <Sparkles size={13} className="text-[#A78BFA]" />
-                      <span>3D AR Only</span>
-                    </div>
-                    <p className="text-[11px] text-gray-400 mt-0.5">Interactive augmented reality 3D</p>
-                  </div>
-                </div>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#252837] text-gray-300">
-                  {arCount}
-                </span>
-              </label>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="pt-2 flex items-center justify-between border-t border-[#2D3142]">
-              <div className="text-xs text-gray-400">
-                Matches: <strong className="text-white">{filteredDishes.length}</strong> dishes
-              </div>
-              <div className="flex items-center gap-2">
-                {activeCheckboxFilterCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPopularOnly(false)
-                      setArOnly(false)
-                    }}
-                    className="text-xs font-semibold text-gray-400 hover:text-white px-3 py-1.5 rounded-full hover:bg-white/5 transition cursor-pointer"
-                  >
-                    Reset
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setIsFilterModalOpen(false)}
-                  className="px-5 py-2 rounded-full bg-gradient-to-r from-[#FF5353] to-[#FF793F] text-white text-xs font-bold shadow-md cursor-pointer hover:opacity-95 transition"
-                >
-                  Apply Filters
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Floating Toast Notification - Positioned at Right Top */}
       {toast && (

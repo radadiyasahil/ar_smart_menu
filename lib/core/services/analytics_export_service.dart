@@ -108,7 +108,7 @@ class AnalyticsExportService {
       sb.writeln('--- COMPLETED BILLS & ORDER AUDIT TRAIL ---');
       sb.writeln('Bill / Order ID,Table Number,Date & Time,Customer Phone,Payment Mode,Items Count,Total Amount (INR)');
       for (final b in bills) {
-        final billTime = DateFormat('yyyy-MM-dd HH:mm').format(b.paidAt ?? b.createdAt);
+        final billTime = DateFormat('yyyy-MM-dd HH:mm').format((b.paidAt ?? b.createdAt).toLocal());
         final phone = b.customerPhone.isNotEmpty ? b.customerPhone : 'Walk-in';
         sb.writeln('"${_escape(b.id)}","${_escape(b.tableNumber)}","$billTime","${_escape(phone)}","${_escape(b.paymentMode)}",${b.items.length},${b.grandTotal}');
       }

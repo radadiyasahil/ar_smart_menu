@@ -127,7 +127,7 @@ class TableBill {
 
   String toWhatsAppReceipt({required String businessName}) {
     final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
-    final timeStr = dateFormat.format(paidAt ?? DateTime.now());
+    final timeStr = dateFormat.format((paidAt ?? createdAt).toLocal());
     var cleanTable = tableNumber.trim();
     while (cleanTable.toLowerCase().startsWith('table table')) {
       cleanTable = cleanTable.substring(5).trim();
@@ -180,9 +180,9 @@ class TableBill {
   factory TableBill.fromJson(Map<String, dynamic> json) => TableBill(
     id: json['id'] as String,
     tableNumber: json['tableNumber'] as String? ?? 'Dine-in',
-    createdAt: DateTime.parse(json['createdAt'] as String),
+    createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
     paidAt: json['paidAt'] != null
-        ? DateTime.parse(json['paidAt'] as String)
+        ? DateTime.parse(json['paidAt'] as String).toLocal()
         : null,
     isPaid: json['isPaid'] as bool? ?? false,
     paymentMode: json['paymentMode'] as String? ?? 'UPI (GPay)',
@@ -253,13 +253,13 @@ class PendingTableOrder {
         totalAmount: json['totalAmount'] as int? ?? 0,
         billRequested: json['billRequested'] as bool? ?? false,
         billRequestedAt: json['billRequestedAt'] != null
-            ? DateTime.tryParse(json['billRequestedAt'].toString())
+            ? DateTime.tryParse(json['billRequestedAt'].toString())?.toLocal()
             : null,
         createdAt: json['createdAt'] != null
-            ? DateTime.parse(json['createdAt'] as String)
+            ? DateTime.parse(json['createdAt'] as String).toLocal()
             : DateTime.now(),
         completedAt: json['completedAt'] != null
-            ? DateTime.tryParse(json['completedAt'].toString())
+            ? DateTime.tryParse(json['completedAt'].toString())?.toLocal()
             : null,
       );
 }
@@ -289,7 +289,7 @@ class WaiterCallItem {
         tableNumber: json['tableNumber'] as String? ?? '',
         note: json['note'] as String? ?? 'Need assistance',
         createdAt: json['createdAt'] != null
-            ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
+            ? DateTime.tryParse(json['createdAt'].toString())?.toLocal() ?? DateTime.now()
             : DateTime.now(),
         isAttended: json['isAttended'] as bool? ?? false,
       );

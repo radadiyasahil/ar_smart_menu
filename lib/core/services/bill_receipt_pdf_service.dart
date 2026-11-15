@@ -24,7 +24,7 @@ class BillReceiptPdfService {
   }) async {
     final pdf = pw.Document();
     final fmt = DateFormat('dd MMM yyyy, hh:mm a');
-    final timeStr = fmt.format(bill.paidAt ?? bill.createdAt);
+    final timeStr = fmt.format((bill.paidAt ?? bill.createdAt).toLocal());
 
     pdf.addPage(
       pw.Page(
@@ -181,7 +181,7 @@ class BillReceiptPdfService {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text('Paid Time:', style: const pw.TextStyle(fontSize: 8)),
-                    pw.Text(fmt.format(bill.paidAt!), style: const pw.TextStyle(fontSize: 8)),
+                    pw.Text(fmt.format(bill.paidAt!.toLocal()), style: const pw.TextStyle(fontSize: 8)),
                   ],
                 ),
               ],
@@ -705,7 +705,7 @@ class BillReceiptPdfService {
     String? fssaiNumber,
   }) {
     final fmt = DateFormat('dd MMM yyyy, hh:mm a');
-    final timeStr = fmt.format(bill.paidAt ?? bill.createdAt);
+    final timeStr = fmt.format((bill.paidAt ?? bill.createdAt).toLocal());
 
     final itemsHtml = bill.items.map((i) {
       final modsHtml = i.modifiers.isNotEmpty
@@ -840,7 +840,7 @@ class BillReceiptPdfService {
     <span>Payment Mode:</span>
     <span class="bold">${bill.paymentMode}</span>
   </div>
-  ${bill.paidAt != null ? '<div class="row" style="font-size: 10px; color: #666;"><span>Paid Time:</span><span>${fmt.format(bill.paidAt!)}</span></div>' : ''}
+  ${bill.paidAt != null ? '<div class="row" style="font-size: 10px; color: #666;"><span>Paid Time:</span><span>${fmt.format(bill.paidAt!.toLocal())}</span></div>' : ''}
   <div class="dashed"></div>
   <div class="text-center" style="margin-top: 10px;">
     <div style="font-style: italic; font-size: 11px;">Thank you for dining with us!</div>

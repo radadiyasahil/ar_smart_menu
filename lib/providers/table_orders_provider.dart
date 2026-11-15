@@ -22,6 +22,7 @@ class TableOrdersProvider extends ChangeNotifier {
   final Set<String> _knownPendingOrderIds = {};
   final Set<String> _knownWaiterCallIds = {};
   final Set<String> _knownBillRequestOrderIds = {};
+  final Set<String> _autoKotPrintedOrderIds = {};
   final Map<String, String> _knownOrderStatuses = {};
   int _previousActiveBillsCount = 0;
   bool _isFirstLoad = true;
@@ -34,8 +35,14 @@ class TableOrdersProvider extends ChangeNotifier {
   bool _autoPrintKot = false;
   bool get autoPrintKot => _autoPrintKot;
 
-  /// Optional callback invoked when a new order arrives and auto-printing is enabled
+  /// Optional callback invoked when an order is accepted into the kitchen and auto-printing is enabled
   void Function(PendingTableOrder order)? onAutoPrintKot;
+
+  void markKotPrinted(String orderId) {
+    _autoKotPrintedOrderIds.add(orderId);
+  }
+
+  bool isKotPrinted(String orderId) => _autoKotPrintedOrderIds.contains(orderId);
 
   Future<void> initAutoPrintKot() async {
     try {
@@ -125,20 +132,13 @@ class TableOrdersProvider extends ChangeNotifier {
       bool hasStatusChange = false;
       String? changedStatus;
 
-      // 1. Detect brand new pending orders
+      // 1. Detect brand new pending orders (Wait for kitchen acceptance before generating KOT)
       for (final ord in newPending) {
         if (!_knownPendingOrderIds.contains(ord.id)) {
           _knownPendingOrderIds.add(ord.id);
           if (!_isFirstLoad) {
             hasNewOrder = true;
             alertMsg = '🔔 New Order for ${ord.tableNumber} (₹${ord.totalAmount})';
-            if (_autoPrintKot) {
-              try {
-                onAutoPrintKot?.call(ord);
-              } catch (err) {
-                debugPrint('Auto-print KOT error: $err');
-              }
-            }
           }
         }
       }
@@ -175,6 +175,15 @@ class TableOrdersProvider extends ChangeNotifier {
             changedStatus = ord.status;
             if (ord.status == 'ACCEPTED') {
               alertMsg = '🍳 Table ${ord.tableNumber} order accepted to kitchen';
+              // When order is accepted by kitchen: Auto-generate KOT if enabled
+              if (_autoPrintKot && !_autoKotPrintedOrderIds.contains(ord.id)) {
+                _autoKotPrintedOrderIds.add(ord.id);
+                try {
+                  onAutoPrintKot?.call(ord);
+                } catch (err) {
+                  debugPrint('Auto-print KOT on accept error: $err');
+                }
+              }
             } else if (ord.status == 'COMPLETED') {
               alertMsg = '✅ Table ${ord.tableNumber} order marked served';
             } else if (ord.status == 'CANCELLED') {

@@ -522,6 +522,17 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     await _billingService.acceptOrder(order.id);
     KitchenSoundAlert.playOrderAcceptedChime();
 
+    // Auto-generate KOT when order is accepted into kitchen (if auto-print is enabled)
+    try {
+      final ordersProv = context.read<TableOrdersProvider>();
+      if (ordersProv.autoPrintKot && !ordersProv.isKotPrinted(order.id)) {
+        ordersProv.markKotPrinted(order.id);
+        _printKot(order);
+      }
+    } catch (e) {
+      debugPrint('Auto-KOT print on accept failed: $e');
+    }
+
     final canonicalOrderTable = _canonicalTableName(order.tableNumber);
 
     final existingIdx = _activeBills.indexWhere(
@@ -2202,6 +2213,9 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     final bName = biz?.businessName ?? 'Our Restaurant';
 
     try {
+      try {
+        context.read<TableOrdersProvider>().markKotPrinted(order.id);
+      } catch (_) {}
       await BillReceiptPdfService.instance.printKot(
         order: order,
         businessName: bName,
@@ -2491,7 +2505,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
                           children: [
                             Text(
-                              fmt.format(bill.paidAt ?? bill.createdAt),
+                              fmt.format((bill.paidAt ?? bill.createdAt).toLocal()),
 
                               style: const TextStyle(
                                 fontSize: 10,
@@ -3866,7 +3880,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     );
 
     final timeStr = bill != null
-        ? DateFormat('hh:mm a').format(bill.createdAt)
+        ? DateFormat('hh:mm a').format(bill.createdAt.toLocal())
         : '';
 
     return InkWell(
@@ -4471,7 +4485,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     bool isDark,
     bool isDeactivated,
   ) {
-    final timeStr = DateFormat('hh:mm a').format(bill.createdAt);
+    final timeStr = DateFormat('hh:mm a').format(bill.createdAt.toLocal());
 
     final hasBillReq = _billRequests.any(
       (r) => _isSameTable(r.tableNumber, bill.tableNumber),
@@ -5294,22 +5308,11 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                               ),
                             ),
                             const SizedBox(width: 8),
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: isDark ? Colors.white : Colors.black87,
-                                side: BorderSide(color: isDark ? Colors.white24 : Colors.black26),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              ),
-                              icon: const Icon(Icons.print_rounded, size: 15),
-                              label: const Text('KOT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                              onPressed: () => _printKot(order),
-                            ),
-                            const SizedBox(width: 8),
                             OutlinedButton(
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.redAccent,
                                 side: const BorderSide(color: Colors.redAccent),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                               ),
                               onPressed: () => _discardPendingOrder(order),
                               child: const Text('Discard', style: TextStyle(fontSize: 12)),
@@ -5445,20 +5448,34 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                           ),
                         )),
                         const Divider(height: 14),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            icon: const Icon(Icons.check_circle_outline, size: 16),
-                            label: const Text(
-                              'Ready to Serve / Mark Served ✅',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: FilledButton.icon(
+                                icon: const Icon(Icons.check_circle_outline, size: 16),
+                                label: const Text(
+                                  'Ready to Serve / Mark Served ✅',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF10B981),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                ),
+                                onPressed: () => _markOrderServed(order),
+                              ),
                             ),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF10B981),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: isDark ? Colors.white : Colors.black87,
+                                side: BorderSide(color: isDark ? Colors.white24 : Colors.black26),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              ),
+                              icon: const Icon(Icons.print_rounded, size: 15),
+                              label: const Text('KOT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                              onPressed: () => _printKot(order),
                             ),
-                            onPressed: () => _markOrderServed(order),
-                          ),
+                          ],
                         ),
                       ],
                     ),
@@ -5870,38 +5887,41 @@ class _TableBillingScreenState extends State<TableBillingScreen>
               builder: (ctx) {
                 final ordersProv = ctx.watch<TableOrdersProvider>();
                 final isAuto = ordersProv.autoPrintKot;
-                return InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: () => ordersProv.setAutoPrintKot(!isAuto),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: isAuto
-                          ? const Color(0xFF10B981).withValues(alpha: 0.15)
-                          : Colors.grey.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isAuto ? const Color(0xFF10B981) : Colors.grey.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.print_rounded,
-                          size: 14,
-                          color: isAuto ? const Color(0xFF10B981) : Colors.grey,
+                return Tooltip(
+                  message: 'Auto-prints KOT when order is accepted to kitchen',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => ordersProv.setAutoPrintKot(!isAuto),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isAuto
+                            ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                            : Colors.grey.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isAuto ? const Color(0xFF10B981) : Colors.grey.withValues(alpha: 0.3),
                         ),
-                        const SizedBox(width: 5),
-                        Text(
-                          isAuto ? 'Auto-KOT: ON' : 'Auto-KOT: OFF',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.print_rounded,
+                            size: 14,
                             color: isAuto ? const Color(0xFF10B981) : Colors.grey,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 5),
+                          Text(
+                            isAuto ? 'Auto-KOT: ON' : 'Auto-KOT: OFF',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isAuto ? const Color(0xFF10B981) : Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -6072,8 +6092,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
             final bill = _findActiveBill(req.tableNumber);
 
             final timeStr = req.billRequestedAt != null
-                ? DateFormat('hh:mm a').format(req.billRequestedAt!)
-                : DateFormat('hh:mm a').format(req.createdAt);
+                ? DateFormat('hh:mm a').format(req.billRequestedAt!.toLocal())
+                : DateFormat('hh:mm a').format(req.createdAt.toLocal());
 
             final amount = (bill != null && bill.grandTotal > 0)
                 ? bill.grandTotal
@@ -6278,7 +6298,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   }
 
   Widget _buildKitchenOrderCard(PendingTableOrder o) {
-    final timeStr = DateFormat('hh:mm a').format(o.createdAt);
+    final timeStr = DateFormat('hh:mm a').format(o.createdAt.toLocal());
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -6505,7 +6525,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   }
 
   Widget _buildPendingOrderCard(PendingTableOrder o) {
-    final timeStr = DateFormat('hh:mm a').format(o.createdAt);
+    final timeStr = DateFormat('hh:mm a').format(o.createdAt.toLocal());
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -6699,27 +6719,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                 ),
               ),
 
-              const SizedBox(width: 6),
-
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: Colors.white24),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                icon: const Icon(Icons.print_rounded, size: 14),
-                label: const Text('KOT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                onPressed: () => _printKot(o),
-              ),
-
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
 
               OutlinedButton(
                 style: OutlinedButton.styleFrom(

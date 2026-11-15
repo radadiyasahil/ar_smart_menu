@@ -185,7 +185,7 @@ class BillingService {
         final bill = TableBill(
           id: 'TBL-${firstOrder.id.length > 6 ? firstOrder.id.substring(0, 6) : firstOrder.id}',
           tableNumber: entry.key,
-          createdAt: firstOrder.createdAt,
+          createdAt: firstOrder.createdAt.toLocal(),
           customerPhone: tableOrders
               .firstWhere((o) => o.customerPhone.isNotEmpty, orElse: () => firstOrder)
               .customerPhone,
@@ -433,8 +433,8 @@ class BillingService {
           final bill = TableBill(
             id: 'ORD-${o.id.length > 6 ? o.id.substring(0, 6) : o.id}',
             tableNumber: o.tableNumber,
-            createdAt: o.createdAt,
-            paidAt: o.completedAt ?? o.createdAt,
+            createdAt: o.createdAt.toLocal(),
+            paidAt: (o.completedAt ?? o.createdAt).toLocal(),
             isPaid: true,
             paymentMode: 'Online / Paid',
             customerPhone: o.customerPhone,

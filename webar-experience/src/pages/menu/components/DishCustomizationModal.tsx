@@ -1,6 +1,6 @@
 import { useState, useId, useMemo } from 'react'
 import { X, Check, ChefHat, Sparkles, Plus, Minus } from 'lucide-react'
-import { isSweetOrBeverageDish, type PublicMenuDish } from '@/services/productService'
+import { isSweetOrBeverageDish, isNonCustomizableDish, type PublicMenuDish } from '@/services/productService'
 import type { DishAddon, DishCustomization } from '@/types/cart'
 
 const DEFAULT_FOOD_ADDONS: DishAddon[] = [
@@ -104,7 +104,7 @@ export function DishCustomizationModal({
     return DEFAULT_FOOD_ADDONS
   }, [dish, isSweetOrDrink])
 
-  if (!isOpen || !dish) return null
+  if (!isOpen || !dish || isNonCustomizableDish(dish)) return null
 
   const isVeg = dish.vegStatus === 0 || dish.vegStatus === 2
   const basePrice = dish.pricePaise ? Math.round(dish.pricePaise / 100) : 0

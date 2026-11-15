@@ -44,6 +44,32 @@ import { TableOrderStatusModal } from './components/TableOrderStatusModal'
 import { tableOrderService, type LiveTableOrder } from '@/services/tableOrderService'
 import { soundAlerts } from '@/utils/soundAlerts'
 
+function normalizeCart(cartMap: Record<string, CartItem>): Record<string, CartItem> {
+  const normalized: Record<string, CartItem> = {}
+  for (const [key, item] of Object.entries(cartMap)) {
+    if (!item?.dish) continue
+    if (isNonCustomizableDish(item.dish)) {
+      const standardKey = item.dish.id
+      if (normalized[standardKey]) {
+        normalized[standardKey] = {
+          ...normalized[standardKey],
+          quantity: normalized[standardKey].quantity + item.quantity,
+          customization: undefined,
+        }
+      } else {
+        normalized[standardKey] = {
+          ...item,
+          id: standardKey,
+          customization: undefined,
+        }
+      }
+    } else {
+      normalized[key] = item
+    }
+  }
+  return normalized
+}
+
 export function MenuPage() {
   const { slug } = useParams<{ slug: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -100,7 +126,7 @@ export function MenuPage() {
   const [cart, setCart] = useState<Record<string, CartItem>>(() => {
     try {
       const saved = sessionStorage.getItem(`ar_cart_${slug || ''}_${table || ''}`)
-      if (saved) return JSON.parse(saved)
+      if (saved) return normalizeCart(JSON.parse(saved))
     } catch {}
     return {}
   })
@@ -213,16 +239,21 @@ export function MenuPage() {
         (item.id && localCartSnapshot[item.id]?.customization) ||
         parseCustomizationFromModifiers(item.modifiers, item.notes)
 
-      const finalKey = item.id || getCartItemKey(dish.id, customization)
+      const isNonCustom = isNonCustomizableDish(dish)
+      const finalKey = isNonCustom ? dish.id : (item.id || getCartItemKey(dish.id, customization))
 
-      remoteCartMap[finalKey] = {
-        id: finalKey,
-        dish,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        addedBy: item.addedBy || 'Companion',
-        clientId: item.clientId,
-        customization,
+      if (isNonCustom && remoteCartMap[finalKey]) {
+        remoteCartMap[finalKey].quantity += item.quantity
+      } else {
+        remoteCartMap[finalKey] = {
+          id: finalKey,
+          dish,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          addedBy: item.addedBy || 'Companion',
+          clientId: item.clientId,
+          customization: isNonCustom ? undefined : customization,
+        }
       }
     }
 
@@ -267,7 +298,7 @@ export function MenuPage() {
           showToast(`👥 Table cart updated by ${sc.lastUpdatedBy || 'Companion'}`)
         }
         isFirstCartSync.current = false
-        return remoteCartMap
+        return normalizeCart(remoteCartMap)
       }
 
       isFirstCartSync.current = false
@@ -656,8 +687,10 @@ export function MenuPage() {
       return
     }
 
-    // Determine target key:
-    let targetKey = cartItemKey
+    const isNonCustom = isNonCustomizableDish(dish)
+
+    // Determine target key: non-customizable dishes strictly use dish.id
+    let targetKey = isNonCustom ? dish.id : cartItemKey
     if (!targetKey) {
       targetKey = getCartItemKey(dish.id, customization)
     }
@@ -665,8 +698,10 @@ export function MenuPage() {
     // Find existing item in cart: check targetKey, fallback to dish.id if not found
     const existing = cartRef.current[targetKey] || (targetKey !== dish.id ? cartRef.current[dish.id] : undefined)
 
-    // Effective customization: explicit customization argument takes precedence, then existing customization
-    const effectiveCustomization = customization !== undefined ? customization : existing?.customization
+    // Effective customization: non-customizable dishes never carry custom variations
+    const effectiveCustomization = isNonCustom
+      ? undefined
+      : (customization !== undefined ? customization : existing?.customization)
 
     const basePrice = dish.pricePaise ? Math.round(dish.pricePaise / 100) : 0
     let addonsTotal = 0
@@ -675,11 +710,19 @@ export function MenuPage() {
     }
     const itemUnitPrice = basePrice + addonsTotal
 
-    const finalKey = cartItemKey || getCartItemKey(dish.id, effectiveCustomization)
+    const finalKey = isNonCustom ? dish.id : (cartItemKey || getCartItemKey(dish.id, effectiveCustomization))
 
     // 1. Optimistic local update
     setCart((prev) => {
       const next = { ...prev }
+      if (isNonCustom) {
+        // Purge any legacy split variations for this dish to guarantee single entry
+        for (const k of Object.keys(next)) {
+          if (k === dish.id || k.startsWith(`${dish.id}__`)) {
+            delete next[k]
+          }
+        }
+      }
       if (qty <= 0) {
         delete next[finalKey]
         if (finalKey !== dish.id && next[dish.id]) {
@@ -696,17 +739,17 @@ export function MenuPage() {
           clientId: myClientId,
         }
       }
-      return next
+      return normalizeCart(next)
     })
 
     // 2. Atomic communal table cart update (preserves companion dishes)
     if (slug && table && !isTableOccupiedByOther) {
       const mods: string[] = []
-      if (effectiveCustomization?.spiceLevel) mods.push(`${effectiveCustomization.spiceLevel} Spicy`)
-      if (effectiveCustomization?.dietary && effectiveCustomization.dietary !== 'Regular') {
+      if (!isNonCustom && effectiveCustomization?.spiceLevel) mods.push(`${effectiveCustomization.spiceLevel} Spicy`)
+      if (!isNonCustom && effectiveCustomization?.dietary && effectiveCustomization.dietary !== 'Regular') {
         mods.push(effectiveCustomization.dietary)
       }
-      if (effectiveCustomization?.selectedAddons) {
+      if (!isNonCustom && effectiveCustomization?.selectedAddons) {
         for (const a of effectiveCustomization.selectedAddons) {
           mods.push(`${a.name} (+₹${a.price})`)
         }
@@ -720,7 +763,7 @@ export function MenuPage() {
         quantity: qty,
         imageUrl: dish.thumbnailUrl || (dish.photoUrls && dish.photoUrls[0]),
         modifiers: mods.length > 0 ? mods : undefined,
-        notes: effectiveCustomization?.notes?.trim() || undefined,
+        notes: !isNonCustom ? (effectiveCustomization?.notes?.trim() || undefined) : undefined,
         clientId: myClientId,
         addedBy: dinerNickname,
       }
@@ -744,6 +787,11 @@ export function MenuPage() {
   }
 
   const handleDishCardQty = (dish: PublicMenuDish, newQty: number) => {
+    if (isNonCustomizableDish(dish)) {
+      handleQty(dish, newQty, undefined, dish.id)
+      return
+    }
+
     const itemsForDish = Object.entries(cart).filter(([_, item]) => item.dish.id === dish.id)
     if (itemsForDish.length === 0) {
       handleQty(dish, newQty)
@@ -759,11 +807,6 @@ export function MenuPage() {
     // Multiple custom variations exist in cart
     const currentTotal = itemsForDish.reduce((sum, [_, item]) => sum + item.quantity, 0)
     if (newQty > currentTotal) {
-      if (isNonCustomizableDish(dish)) {
-        const [firstKey, firstItem] = itemsForDish[0]
-        handleQty(dish, newQty, firstItem.customization, firstKey)
-        return
-      }
       setCustomizingDish(dish)
       showToast(`Customize another ${dish.name} or adjust quantities in cart.`)
     } else {
@@ -781,9 +824,12 @@ export function MenuPage() {
   }, [cart])
 
   const handleOpen3d = useCallback((d: PublicMenuDish) => setActive3dDish(d), [])
-  const handleCustomize = useCallback((d: PublicMenuDish) => setCustomizingDish(d), [])
+  const handleCustomize = useCallback((d: PublicMenuDish) => {
+    if (isNonCustomizableDish(d)) return
+    setCustomizingDish(d)
+  }, [])
 
-  const cartItems = useMemo(() => Object.values(cart), [cart])
+  const cartItems = useMemo(() => Object.values(normalizeCart(cart)), [cart])
   const cartCount = cartItems.reduce((s, i) => s + i.quantity, 0)
   const cartTotal = cartItems.reduce(
     (s, i) => s + (i.unitPrice ?? (i.dish.pricePaise ? Math.round(i.dish.pricePaise / 100) : 0)) * i.quantity,
@@ -1836,10 +1882,16 @@ export function MenuPage() {
         initialCustomization={undefined}
         onClose={() => setCustomizingDish(null)}
         onConfirm={(dish, qty, custom) => {
-          const targetKey = getCartItemKey(dish.id, custom)
-          const existingQty = cart[targetKey]?.quantity || 0
-          handleQty(dish, existingQty + qty, custom, targetKey)
-          showToast(`✨ ${qty > 1 ? `${qty}x ` : ''}${dish.name} customized & added to cart!`)
+          if (isNonCustomizableDish(dish)) {
+            const existingQty = cart[dish.id]?.quantity || 0
+            handleQty(dish, existingQty + qty, undefined, dish.id)
+            showToast(`✨ ${qty > 1 ? `${qty}x ` : ''}${dish.name} added to cart!`)
+          } else {
+            const targetKey = getCartItemKey(dish.id, custom)
+            const existingQty = cart[targetKey]?.quantity || 0
+            handleQty(dish, existingQty + qty, custom, targetKey)
+            showToast(`✨ ${qty > 1 ? `${qty}x ` : ''}${dish.name} customized & added to cart!`)
+          }
         }}
       />
 

@@ -18,7 +18,7 @@ import {
   Lock,
   Users,
 } from 'lucide-react'
-import type { PublicMenuDish } from '@/services/productService'
+import { isNonCustomizableDish, type PublicMenuDish } from '@/services/productService'
 import type { CartItem, DishCustomization } from '@/types/cart'
 import { tableOrderService, type LiveTableOrder } from '@/services/tableOrderService'
 
@@ -996,8 +996,8 @@ export function CartDrawer({
                   </div>
                 </div>
 
-                {/* Modifiers & Add-ons Badges */}
-                {customization && (
+                {/* Modifiers & Add-ons Badges (customizable dishes only) */}
+                {!isNonCustomizableDish(dish) && customization && (
                   <div className="pt-1.5 border-t border-white/5 flex flex-wrap items-center gap-1.5 text-[10px]">
                     {customization.spiceLevel && (
                       <span className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/25 text-amber-300 font-semibold">
@@ -1022,8 +1022,8 @@ export function CartDrawer({
                   </div>
                 )}
 
-                {/* Add different variation option */}
-                {onCustomizeDish && (
+                {/* Add different variation option - ONLY for customizable dishes */}
+                {onCustomizeDish && !isNonCustomizableDish(dish) && (
                   <div className="pt-1 flex items-center justify-between border-t border-white/5">
                     <button
                       type="button"

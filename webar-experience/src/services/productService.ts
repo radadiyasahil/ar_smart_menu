@@ -40,8 +40,32 @@ export function isSweetOrBeverageDish(dish: PublicMenuDish): boolean {
 }
 
 export function isNonCustomizableDish(dish: PublicMenuDish): boolean {
+  // 1. Explicitly disabled by restaurant owner
   if (dish.customization?.isCustomizable === false) return true
-  return NON_CUSTOM_REGEX.test(dish.name)
+
+  // 2. Water / soda / packaged goods regex
+  if (NON_CUSTOM_REGEX.test(dish.name)) return true
+
+  // 3. Customization config exists, but neither spice, dietary, nor add-ons are enabled
+  if (
+    dish.customization &&
+    !dish.customization.allowSpiceLevel &&
+    !dish.customization.allowDietary &&
+    (!dish.customization.addons || dish.customization.addons.length === 0)
+  ) {
+    return true
+  }
+
+  // 4. Sweet / dessert / beverage / ice cream without custom add-ons or spice level
+  if (
+    isSweetOrBeverageDish(dish) &&
+    (!dish.customization?.addons || dish.customization.addons.length === 0) &&
+    dish.customization?.allowSpiceLevel !== true
+  ) {
+    return true
+  }
+
+  return false
 }
 
 export interface PublicMenuCategory {

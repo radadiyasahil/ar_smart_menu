@@ -4812,364 +4812,253 @@ class _TableBillingScreenState extends State<TableBillingScreen>
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
 
               children: [
-                // Date pill
-                Center(
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 12),
+                // Calculate which bill items are currently cooking vs already served/extra
+                ...() {
+                  final remainingCooking = <String, int>{};
+                  for (final o in kitchenDishes) {
+                    for (final it in o.items) {
+                      final key = '${it.id}_${it.name.toLowerCase().trim()}';
+                      remainingCooking[key] = (remainingCooking[key] ?? 0) + it.quantity;
+                    }
+                  }
 
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
+                  final servedOrExtraItems = <BillItem>[];
+                  for (final it in bill.items) {
+                    final key = '${it.id}_${it.name.toLowerCase().trim()}';
+                    final cookingQty = remainingCooking[key] ?? 0;
+                    if (it.quantity > cookingQty) {
+                      servedOrExtraItems.add(BillItem(
+                        id: it.id,
+                        name: it.name,
+                        unitPrice: it.unitPrice,
+                        quantity: it.quantity - cookingQty,
+                        isCustom: it.isCustom,
+                        modifiers: it.modifiers,
+                        notes: it.notes,
+                      ));
+                      remainingCooking[key] = 0;
+                    } else {
+                      remainingCooking[key] = cookingQty - it.quantity;
+                    }
+                  }
 
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF182229)
-                          : const Color(0xFFD1D7DB),
+                  if (servedOrExtraItems.isEmpty) return <Widget>[];
 
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-
-                    child: Text(
-                      'TODAY • ${canonicalTable.toUpperCase()} DINING TIMELINE',
-
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white70 : Colors.black87,
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Table opened system pill
-                Center(
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
-
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF182229) : Colors.white,
-
-                      borderRadius: BorderRadius.circular(8),
-
-                      border: Border.all(
-                        color: Colors.green.withValues(alpha: 0.3),
-                      ),
-                    ),
-
-                    child: Text(
-                      '🍽️ Dining table opened at $timeStr',
-
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Colors.green,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Active orders / Rounds message bubble
-                if (bill.items.isNotEmpty) ...[
-                  Align(
-                    alignment: Alignment.centerLeft,
-
-                    child: Container(
-                      constraints: BoxConstraints(
-                        maxWidth: MediaQuery.of(context).size.width * 0.85,
-                      ),
-
-                      margin: const EdgeInsets.only(bottom: 12),
-
-                      padding: const EdgeInsets.all(12),
-
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1F2C34) : Colors.white,
-
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(16),
-
-                          topRight: Radius.circular(16),
-
-                          bottomRight: Radius.circular(16),
-
-                          bottomLeft: Radius.circular(4),
+                  return <Widget>[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.88,
                         ),
-
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 3,
-                            offset: Offset(0, 1),
-                          ),
-                        ],
-                      ),
-
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-                            children: [
-                              Row(
-                                children: const [
-                                  Icon(
-                                    Icons.restaurant_menu,
-                                    size: 14,
-                                    color: AppColors.primaryOrange,
-                                  ),
-
-                                  SizedBox(width: 5),
-
-                                  Text(
-                                    'Ordered Dishes',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                      color: AppColors.primaryOrange,
-                                    ),
-                                  ),
-                                ],
-                              ),
-
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-
-                                decoration: BoxDecoration(
-                                  color: Colors.green.withValues(alpha: 0.15),
-
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-
-                                child: Text(
-                                  '${bill.items.length} items',
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const Divider(height: 16, thickness: 0.5),
-
-                          ...bill.items.asMap().entries.map((entry) {
-                            final idx = entry.key;
-
-                            final item = entry.value;
-
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    width: 22,
-
-                                    height: 22,
-
-                                    alignment: Alignment.center,
-
-                                    decoration: BoxDecoration(
-                                      color: isDark
-                                          ? const Color(0xFF2A3942)
-                                          : Colors.grey.shade200,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-
-                                    child: Text(
-                                      '${item.quantity}×',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-
-                                  const SizedBox(width: 8),
-
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          item.name,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                        if (item.modifiers.isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 2),
-                                            child: Wrap(
-                                              spacing: 4,
-                                              runSpacing: 2,
-                                              children: item.modifiers.map((mod) {
-                                                return Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                                  decoration: BoxDecoration(
-                                                    color: isDark
-                                                        ? const Color(0xFF1E3A8A).withValues(alpha: 0.4)
-                                                        : const Color(0xFFDBEAFE),
-                                                    borderRadius: BorderRadius.circular(4),
-                                                    border: Border.all(
-                                                      color: isDark
-                                                          ? const Color(0xFF3B82F6).withValues(alpha: 0.5)
-                                                          : const Color(0xFF93C5FD),
-                                                      width: 0.5,
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    mod,
-                                                    style: TextStyle(
-                                                      fontSize: 9.5,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: isDark
-                                                          ? const Color(0xFF93C5FD)
-                                                          : const Color(0xFF1E40AF),
-                                                    ),
-                                                  ),
-                                                );
-                                              }).toList(),
-                                            ),
-                                          ),
-                                        if (item.notes.trim().isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 2),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  Icons.edit_note,
-                                                  size: 12,
-                                                  color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
-                                                ),
-                                                const SizedBox(width: 2),
-                                                Flexible(
-                                                  child: Text(
-                                                    '"${item.notes.trim()}"',
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      fontStyle: FontStyle.italic,
-                                                      fontWeight: isDark ? FontWeight.normal : FontWeight.w600,
-                                                      color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  const SizedBox(width: 8),
-
-                                  Text(
-                                    '₹${item.total}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-
-                                  const SizedBox(width: 4),
-
-                                  InkWell(
-                                    onTap: () {
-                                      setState(() {
-                                        bill.items.removeAt(idx);
-
-                                        _save();
-                                      });
-                                    },
-
-                                    child: const Padding(
-                                      padding: EdgeInsets.all(2),
-
-                                      child: Icon(
-                                        Icons.close,
-                                        size: 14,
-                                        color: Colors.redAccent,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }),
-
-                          const Divider(height: 16, thickness: 0.5),
-
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-                            children: [
-                              const Text(
-                                'Items Total',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey,
-                                ),
-                              ),
-
-                              Text(
-                                '₹${bill.subtotal}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 4),
-
-                          Align(
-                            alignment: Alignment.bottomRight,
-
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1F2C34) : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black12, blurRadius: 3, offset: Offset(0, 1)),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  timeStr,
-                                  style: const TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 10,
-                                  ),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.restaurant,
+                                      size: 14,
+                                      color: isDark ? Colors.white70 : const Color(0xFF10B981),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      kitchenDishes.isNotEmpty ? 'Served on Table' : 'Ordered Dishes',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: isDark ? Colors.white : Colors.black87,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-
-                                const SizedBox(width: 4),
-
-                                const Icon(
-                                  Icons.done_all,
-                                  size: 14,
-                                  color: Color(0xFF53BDEB),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '${servedOrExtraItems.fold<int>(0, (s, i) => s + i.quantity)} items • Served ✅',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Color(0xFF10B981),
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
-                          ),
-                        ],
+                            const Divider(height: 16, thickness: 0.5),
+                            ...servedOrExtraItems.map((item) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: 22,
+                                      height: 22,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0xFF2A3942) : Colors.grey.shade200,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        '${item.quantity}×',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            item.name,
+                                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                                          ),
+                                          if (item.modifiers.isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(top: 2),
+                                              child: Wrap(
+                                                spacing: 4,
+                                                runSpacing: 2,
+                                                children: item.modifiers.map((mod) {
+                                                  return Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                    decoration: BoxDecoration(
+                                                      color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.4) : const Color(0xFFDBEAFE),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      border: Border.all(
+                                                        color: isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.5) : const Color(0xFF93C5FD),
+                                                        width: 0.5,
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      mod,
+                                                      style: TextStyle(
+                                                        fontSize: 9.5,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
+                                                      ),
+                                                    ),
+                                                  );
+                                                }).toList(),
+                                              ),
+                                            ),
+                                          if (item.notes.trim().isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(top: 2),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons.edit_note,
+                                                    size: 12,
+                                                    color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                                  ),
+                                                  const SizedBox(width: 2),
+                                                  Flexible(
+                                                    child: Text(
+                                                      '"${item.notes.trim()}"',
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontStyle: FontStyle.italic,
+                                                        fontWeight: isDark ? FontWeight.normal : FontWeight.w600,
+                                                        color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '₹${item.total}',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    InkWell(
+                                      onTap: () {
+                                        setState(() {
+                                          final originalIdx = bill.items.indexWhere(
+                                            (b) => b.id == item.id && b.name.toLowerCase().trim() == item.name.toLowerCase().trim(),
+                                          );
+                                          if (originalIdx >= 0) {
+                                            if (bill.items[originalIdx].quantity > item.quantity) {
+                                              bill.items[originalIdx].quantity -= item.quantity;
+                                            } else {
+                                              bill.items.removeAt(originalIdx);
+                                            }
+                                            _save();
+                                          }
+                                        });
+                                      },
+                                      child: const Padding(
+                                        padding: EdgeInsets.all(2),
+                                        child: Icon(Icons.close, size: 14, color: Colors.redAccent),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                            const Divider(height: 16, thickness: 0.5),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  kitchenDishes.isNotEmpty ? 'Served Subtotal' : 'Items Total',
+                                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                ),
+                                Text(
+                                  '₹${servedOrExtraItems.fold<int>(0, (s, i) => s + i.total)}',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Align(
+                              alignment: Alignment.bottomRight,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    timeStr,
+                                    style: const TextStyle(color: Colors.grey, fontSize: 10),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(
+                                    Icons.done_all,
+                                    size: 14,
+                                    color: Color(0xFF53BDEB),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ];
+                }(),
 
                 // ==========================================
                 // 1. INCOMING ORDER TICKETS (ACCEPT / DISCARD)
@@ -5377,76 +5266,128 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                             ),
                           ],
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         ...order.items.map((it) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2.5),
-                          child: Column(
+                          padding: const EdgeInsets.symmetric(vertical: 3.5),
+                          child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                '• ${it.quantity}x ${it.name}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark ? Colors.white : Colors.black87,
+                              Container(
+                                width: 22,
+                                height: 22,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: isDark ? const Color(0xFF2A3942) : Colors.orange.shade50,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                                ),
+                                child: Text(
+                                  '${it.quantity}×',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                    color: Colors.orange,
+                                  ),
                                 ),
                               ),
-                              if (it.modifiers.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 12, top: 2),
-                                  child: Wrap(
-                                    spacing: 4,
-                                    runSpacing: 2,
-                                    children: it.modifiers.map((mod) => Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                      decoration: BoxDecoration(
-                                        color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFDBEAFE),
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(
-                                          color: isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.5) : const Color(0xFF93C5FD),
-                                          width: 0.5,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      it.name,
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark ? Colors.white : Colors.black87,
+                                      ),
+                                    ),
+                                    if (it.modifiers.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Wrap(
+                                          spacing: 4,
+                                          runSpacing: 2,
+                                          children: it.modifiers.map((mod) => Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFDBEAFE),
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.5) : const Color(0xFF93C5FD),
+                                                width: 0.5,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              mod,
+                                              style: TextStyle(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
+                                              ),
+                                            ),
+                                          )).toList(),
                                         ),
                                       ),
-                                      child: Text(
-                                        mod,
-                                        style: TextStyle(
-                                          fontSize: 9.5,
-                                          fontWeight: FontWeight.w600,
-                                          color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
+                                    if (it.notes.trim().isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.edit_note,
+                                              size: 12,
+                                              color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                            ),
+                                            const SizedBox(width: 2),
+                                            Flexible(
+                                              child: Text(
+                                                '"${it.notes.trim()}"',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontStyle: FontStyle.italic,
+                                                  fontWeight: isDark ? FontWeight.normal : FontWeight.w600,
+                                                  color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    )).toList(),
-                                  ),
+                                  ],
                                 ),
-                              if (it.notes.trim().isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 12, top: 2),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.edit_note,
-                                        size: 12,
-                                        color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
-                                      ),
-                                      const SizedBox(width: 2),
-                                      Flexible(
-                                        child: Text(
-                                          '"${it.notes.trim()}"',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontStyle: FontStyle.italic,
-                                            fontWeight: isDark ? FontWeight.normal : FontWeight.w600,
-                                            color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '₹${it.total}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
                                 ),
+                              ),
                             ],
                           ),
                         )),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Round ${order.round} Total • $orderTime',
+                              style: const TextStyle(fontSize: 10.5, color: Colors.grey),
+                            ),
+                            Text(
+                              '₹${order.totalAmount}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ],
+                        ),
                         const Divider(height: 14),
                         Row(
                           children: [
@@ -5603,7 +5544,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                           .map(
                         (preset) => Padding(
                           padding: const EdgeInsets.only(right: 6),
-                          child: InputChip(
+                          child: ActionChip(
                             visualDensity: VisualDensity.compact,
                             padding: const EdgeInsets.symmetric(horizontal: 4),
                             avatar: const Icon(
@@ -5620,9 +5561,6 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                               ),
                             ),
                             onPressed: () => _addQuickPreset(preset),
-                            onDeleted: () => _deleteQuickPreset(preset),
-                            deleteIconColor: Colors.redAccent,
-                            deleteIcon: const Icon(Icons.close, size: 12),
                           ),
                         ),
                       ),
@@ -5748,89 +5686,54 @@ class _TableBillingScreenState extends State<TableBillingScreen>
               // Action Buttons Row
               Row(
                 children: [
-                  if (kitchenDishes.isNotEmpty) ...[
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: _markCurrentTableServed,
-
-                        icon: const Icon(Icons.check_circle_outline, size: 16),
-
-                        label: const Text(
-                          'Mark Served ✅',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF059669),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(width: 6),
-                  ],
-
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: () => _showSettleDialog(bill),
-
-                      icon: const Icon(Icons.receipt_long, size: 16),
-
+                      icon: const Icon(Icons.check_circle, size: 18),
                       label: Text(
                         'Close & Settle (₹${bill.grandTotal})',
                         style: const TextStyle(
-                          fontSize: 11,
+                          fontSize: 13,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF10B981),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
                   ),
 
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
 
                   OutlinedButton.icon(
                     onPressed: () => _showDynamicUpiQrDialog(bill),
-                    icon: const Icon(Icons.qr_code_scanner, size: 15),
+                    icon: const Icon(Icons.qr_code_scanner, size: 16),
                     label: const Text('UPI QR', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF60A5FA),
                       side: const BorderSide(color: Color(0xFF60A5FA)),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
 
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
 
-                  InkWell(
-                    onTap: _shareWhatsApp,
-
-                    borderRadius: BorderRadius.circular(10),
-
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF25D366),
-
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-
-                      child: const Icon(
-                        Icons.send,
-                        size: 18,
-                        color: Colors.white,
-                      ),
+                  IconButton.filled(
+                    onPressed: _shareWhatsApp,
+                    style: IconButton.filled(
+                      backgroundColor: const Color(0xFF25D366),
+                      padding: const EdgeInsets.all(10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
+                    icon: const Icon(
+                      Icons.share,
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                    tooltip: 'Share Bill via WhatsApp',
                   ),
                 ],
               ),

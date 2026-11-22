@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/utils/device_location_helper.dart';
@@ -1671,10 +1672,13 @@ class _AccountScreenState extends State<AccountScreen> {
                 title: 'Language',
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Text('English', style: TextStyle(fontSize: 11, color: AppColors.mediumGray)),
-                    SizedBox(width: 4),
-                    Icon(Icons.chevron_right, color: AppColors.mediumGray, size: 18),
+                  children: [
+                    Text(
+                      _getCurrentLanguageName(),
+                      style: const TextStyle(fontSize: 11, color: AppColors.mediumGray, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right, color: AppColors.mediumGray, size: 18),
                   ],
                 ),
                 onTap: () => _showLanguageDialog(),
@@ -2274,25 +2278,67 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
+  String _getCurrentLanguageName() {
+    final code = context.locale.languageCode;
+    switch (code) {
+      case 'hi':
+        return 'हिन्दी (Hindi)';
+      case 'gu':
+        return 'ગુજરાતી (Gujarati)';
+      case 'en':
+      default:
+        return 'English';
+    }
+  }
+
   void _showLanguageDialog() {
+    final currentCode = context.locale.languageCode;
     showDialog(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('Select Language'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Select Language', style: TextStyle(fontWeight: FontWeight.bold)),
         children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('English (Default)'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('हिन्दी (Hindi)'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('ગુજરાતી (Gujarati)'),
-          ),
+          _buildLanguageOption(ctx, 'en', 'English (Default)', isSelected: currentCode == 'en'),
+          _buildLanguageOption(ctx, 'hi', 'हिन्दी (Hindi)', isSelected: currentCode == 'hi'),
+          _buildLanguageOption(ctx, 'gu', 'ગુજરાતી (Gujarati)', isSelected: currentCode == 'gu'),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLanguageOption(BuildContext dialogCtx, String code, String label, {required bool isSelected}) {
+    return SimpleDialogOption(
+      onPressed: () async {
+        Navigator.pop(dialogCtx);
+        if (context.locale.languageCode == code) return;
+
+        await context.setLocale(Locale(code));
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('language_code', code);
+
+        if (mounted) {
+          setState(() {});
+          _showNotification('Language switched to $label');
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected ? AppColors.primaryOrange : null,
+              ),
+            ),
+            if (isSelected)
+              const Icon(Icons.check, color: AppColors.primaryOrange, size: 18),
+          ],
+        ),
       ),
     );
   }

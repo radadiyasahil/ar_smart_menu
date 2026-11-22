@@ -26,6 +26,7 @@ class AppLanguage {
 const List<AppLanguage> supportedLanguages = [
   AppLanguage(code: 'en', name: 'English', nativeName: 'English', flag: '🇬🇧'),
   AppLanguage(code: 'hi', name: 'Hindi', nativeName: 'हिन्दी', flag: '🇮🇳'),
+  AppLanguage(code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી', flag: '🇮🇳'),
 ];
 
 /// Language selection screen — first step after splash.

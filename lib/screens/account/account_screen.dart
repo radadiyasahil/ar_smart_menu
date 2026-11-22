@@ -1696,7 +1696,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
         const SizedBox(height: 10),
 
-        // Group 3: Legal & Help
+        // Group 3: Help, Terms & Policies
         Container(
           decoration: BoxDecoration(
             color: groupBg,
@@ -1707,23 +1707,44 @@ class _AccountScreenState extends State<AccountScreen> {
             children: [
               _buildSettingsRow(
                 icon: Icons.help_outline,
-                title: 'FAQ',
-                trailing: const Icon(Icons.chevron_right, color: AppColors.mediumGray, size: 18),
-                onTap: () => _showInfoModal('Frequently Asked Questions', '• How to use AR menu?\nCustomers point phone camera to scan table QR code. No app needed.\n\n• How to place orders?\nCustomers select dishes and order via WhatsApp.\n\n• How to manage bills?\nGo to Table Billing & POS to view live orders and collect payments.'),
+                title: 'Help & Owner FAQ',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Text('How it works', style: TextStyle(fontSize: 11, color: AppColors.mediumGray)),
+                    SizedBox(width: 4),
+                    Icon(Icons.chevron_right, color: AppColors.mediumGray, size: 18),
+                  ],
+                ),
+                onTap: () => _showOwnerFaqModal(),
               ),
               Divider(height: 1, indent: 48, color: groupBorder),
               _buildSettingsRow(
                 icon: Icons.description_outlined,
-                title: 'Terms of service',
-                trailing: const Icon(Icons.chevron_right, color: AppColors.mediumGray, size: 18),
-                onTap: () => _showInfoModal('Terms of Service', 'AR Smart Menu provides interactive 3D digital menu and ordering technology for restaurants and Horeca businesses.'),
+                title: 'Terms of Service & Licensing',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Text('0% Commission', style: TextStyle(fontSize: 11, color: AppColors.primaryOrange, fontWeight: FontWeight.w600)),
+                    SizedBox(width: 4),
+                    Icon(Icons.chevron_right, color: AppColors.mediumGray, size: 18),
+                  ],
+                ),
+                onTap: () => _showTermsModal(),
               ),
               Divider(height: 1, indent: 48, color: groupBorder),
               _buildSettingsRow(
-                icon: Icons.privacy_tip_outlined,
-                title: 'User policy',
-                trailing: const Icon(Icons.chevron_right, color: AppColors.mediumGray, size: 18),
-                onTap: () => _showInfoModal('User Policy', 'Your data and customer orders are securely protected and encrypted.'),
+                icon: Icons.security_outlined,
+                title: 'Privacy & Business Policy',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Text('Data Security', style: TextStyle(fontSize: 11, color: AppColors.mediumGray)),
+                    SizedBox(width: 4),
+                    Icon(Icons.chevron_right, color: AppColors.mediumGray, size: 18),
+                  ],
+                ),
+                onTap: () => _showPrivacyPolicyModal(),
               ),
             ],
           ),
@@ -2468,19 +2489,253 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
-  void _showInfoModal(String title, String content) {
-    showDialog(
+  void _showOwnerFaqModal() {
+    _showPolicyGuideSheet(
+      icon: Icons.help_outline,
+      iconColor: const Color(0xFF3B82F6),
+      title: 'Help & Owner FAQ',
+      badgeText: 'Restaurant Owner Quick Guide',
+      sections: const [
+        _PolicySectionItem(
+          heading: 'How do customers view our 3D AR menu?',
+          body: 'Customers simply point their smartphone camera to scan the Table QR stand. No app download or account creation is needed. Dishes open instantly in their mobile browser in realistic 3D with Augmented Reality directly on their table before ordering.',
+        ),
+        _PolicySectionItem(
+          heading: 'How do Live Table Orders, Rounds & KOT work?',
+          body: 'When diners place an order, it arrives in real-time in your Orders & Kitchen dashboard. You can review items, send tickets to the kitchen, print KOT slips, or enable Auto-KOT for instant automatic kitchen dispatch. Subsequent rounds from the same table are seamlessly grouped.',
+        ),
+        _PolicySectionItem(
+          heading: 'What is Dine-in Anti-Fraud (Table PIN & Geofence)?',
+          body: '• Table PIN: Once a table has an active order, new guests at that table enter the 3-digit PIN to join the party session, preventing accidental double-ordering.\n• Geofence Protection: Restricts ordering exclusively to guests physically seated inside your restaurant radius (e.g. 30m - 200m), eliminating fake remote orders.',
+        ),
+        _PolicySectionItem(
+          heading: 'How do customer bills and payments work?',
+          body: 'Guests can pay directly via dynamic UPI QR code (Google Pay, PhonePe, Paytm, etc.) or cash at the counter. AR Smart Menu charges 0% commission on your food and beverage sales — 100% of diner payments go directly to you.',
+        ),
+        _PolicySectionItem(
+          heading: 'How to download GST invoices for government audit?',
+          body: 'Go to Settings > General Settings & Billing > Past Subscriptions to download official A4 GST Tax Invoices (including CGST, SGST, IGST, and SAC code 998313) for your tax return and audit filing.',
+        ),
+      ],
+    );
+  }
+
+  void _showTermsModal() {
+    _showPolicyGuideSheet(
+      icon: Icons.description_outlined,
+      iconColor: AppColors.primaryOrange,
+      title: 'Terms of Service & Licensing',
+      badgeText: '0% Commission SaaS Agreement',
+      sections: const [
+        _PolicySectionItem(
+          heading: 'Zero Commission Policy (100% Direct Payouts)',
+          body: 'AR Smart Menu operates as a pure software-as-a-service (SaaS) platform. We charge zero commissions or revenue cuts on your food, beverage, or table turnover. 100% of diner payments belong to your restaurant.',
+        ),
+        _PolicySectionItem(
+          heading: 'Subscription & Feature Licensing',
+          body: 'Access to interactive 3D AR models, unlimited table ordering, kitchen management, POS billing, and real-time analytics is governed by your active subscription plan. You can renew or extend plans anytime without locked contracts or hidden fees.',
+        ),
+        _PolicySectionItem(
+          heading: 'Menu & Intellectual Property Rights',
+          body: 'Your restaurant retains 100% intellectual property ownership of your food menu items, descriptions, recipes, photography, trademarks, and custom pricing.',
+        ),
+        _PolicySectionItem(
+          heading: 'Platform Uptime & Service Reliability',
+          body: 'We provide high-performance cloud infrastructure with 99.9% uptime for diner QR menus and kitchen order synchronization. Real-time updates ensure seamless table turnover during peak hours.',
+        ),
+        _PolicySectionItem(
+          heading: 'Food Safety & Operational Responsibility',
+          body: 'Restaurants remain responsible for maintaining valid FSSAI licenses, adhering to food hygiene standards, and ensuring accurate menu pricing and taxes in compliance with applicable local food regulations.',
+        ),
+      ],
+    );
+  }
+
+  void _showPrivacyPolicyModal() {
+    _showPolicyGuideSheet(
+      icon: Icons.security_outlined,
+      iconColor: const Color(0xFF10B981),
+      title: 'Privacy & Business Policy',
+      badgeText: 'Bank-Grade Data Security',
+      sections: const [
+        _PolicySectionItem(
+          heading: 'Zero Data Selling Commitment',
+          body: 'Your restaurant sales data, customer orders, revenue figures, and guest phone numbers are strictly private. We never sell, share, or monetize your restaurant data to third-party aggregators, advertisers, or competitors.',
+        ),
+        _PolicySectionItem(
+          heading: 'Diner Order & Communication Security',
+          body: 'All communications between diner smartphones, table QR codes, and your restaurant kitchen are encrypted using industry-standard SSL/TLS protocols.',
+        ),
+        _PolicySectionItem(
+          heading: 'Confidentiality of Financial & Tax Details',
+          body: 'Your FSSAI license number, GSTIN, bank account numbers, IFSC codes, and UPI IDs are securely encrypted and used exclusively for payment settlements and official tax invoicing.',
+        ),
+        _PolicySectionItem(
+          heading: 'Full Data Control & Export',
+          body: 'You own your data. You can download and export comprehensive sales reports, billing history, and menu items anytime for auditing, or request complete account archiving if you choose to pause operations.',
+        ),
+      ],
+    );
+  }
+
+  void _showPolicyGuideSheet({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String badgeText,
+    required List<_PolicySectionItem> sections,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(content),
-        actions: [
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.primaryOrange),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF1A1B22) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.82,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (ctx, scrollController) => Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white24 : Colors.black12,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: iconColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: iconColor, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: iconColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            badgeText,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: iconColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, color: isDark ? Colors.white54 : Colors.black54),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 24),
+            Expanded(
+              child: ListView.separated(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                itemCount: sections.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 12),
+                itemBuilder: (ctx, idx) {
+                  final item = sections[idx];
+                  return Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF242632) : const Color(0xFFF8F9FA),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              '${idx + 1}. ',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: iconColor,
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                item.heading,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          item.body,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            height: 1.45,
+                            color: isDark ? Colors.white70 : Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primaryOrange,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Understood', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2917,4 +3172,10 @@ class _AccountScreenState extends State<AccountScreen> {
       ),
     );
   }
+}
+
+class _PolicySectionItem {
+  const _PolicySectionItem({required this.heading, required this.body});
+  final String heading;
+  final String body;
 }

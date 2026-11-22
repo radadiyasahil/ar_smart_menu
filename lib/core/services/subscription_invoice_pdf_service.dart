@@ -305,10 +305,10 @@ class SubscriptionInvoicePdfService {
                           _summaryRow('Taxable Value', 'Rs. ${invoice.baseAmountRupees.toStringAsFixed(2)}'),
                           pw.Divider(thickness: 0.5, color: PdfColor.fromHex('#CBD5E1')),
                           if (invoice.isInterState)
-                            _summaryRow('IGST @ 18.0%', 'Rs. ${invoice.igstRupees.toStringAsFixed(2)}')
+                            _summaryRow('IGST @ ${invoice.igstRate.toStringAsFixed(invoice.igstRate.truncateToDouble() == invoice.igstRate ? 0 : 2)}%', 'Rs. ${invoice.igstRupees.toStringAsFixed(2)}')
                           else ...[
-                            _summaryRow('CGST @ 9.0%', 'Rs. ${invoice.cgstRupees.toStringAsFixed(2)}'),
-                            _summaryRow('SGST @ 9.0%', 'Rs. ${invoice.sgstRupees.toStringAsFixed(2)}'),
+                            _summaryRow('CGST @ ${invoice.cgstRate.toStringAsFixed(invoice.cgstRate.truncateToDouble() == invoice.cgstRate ? 0 : 2)}%', 'Rs. ${invoice.cgstRupees.toStringAsFixed(2)}'),
+                            _summaryRow('SGST @ ${invoice.sgstRate.toStringAsFixed(invoice.sgstRate.truncateToDouble() == invoice.sgstRate ? 0 : 2)}%', 'Rs. ${invoice.sgstRupees.toStringAsFixed(2)}'),
                           ],
                           pw.Divider(thickness: 1, color: PdfColor.fromHex('#0F172A')),
                           pw.Row(

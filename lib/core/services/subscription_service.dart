@@ -18,6 +18,7 @@ class SubscriptionPlanModel {
     required this.facilities,
     required this.maxProducts,
     required this.displayOrder,
+    this.gstRatePercent = 18.0,
   });
 
   final String id;
@@ -34,6 +35,7 @@ class SubscriptionPlanModel {
   final List<String> facilities;
   final int maxProducts;
   final int displayOrder;
+  final double gstRatePercent;
 
   double get basePriceRupees => basePricePaise / 100.0;
   double get gstRupees => gstPaise / 100.0;
@@ -70,6 +72,7 @@ class SubscriptionPlanModel {
       facilities: facilitiesList,
       maxProducts: json['maxProducts'] as int? ?? 50,
       displayOrder: json['displayOrder'] as int? ?? 1,
+      gstRatePercent: (json['gstRatePercent'] as num?)?.toDouble() ?? 18.0,
     );
   }
 
@@ -258,6 +261,7 @@ class SubscriptionHistoryItemModel {
     this.customerGstNumber,
     required this.isTrial,
     this.sacCode = '998313',
+    this.gstRatePercent = 18.0,
   });
 
   final String id;
@@ -279,6 +283,7 @@ class SubscriptionHistoryItemModel {
   final String? customerGstNumber;
   final bool isTrial;
   final String sacCode;
+  final double gstRatePercent;
 
   factory SubscriptionHistoryItemModel.fromJson(Map<String, dynamic> json) {
     return SubscriptionHistoryItemModel(
@@ -304,6 +309,7 @@ class SubscriptionHistoryItemModel {
       customerGstNumber: json['customerGstNumber'] as String?,
       isTrial: json['isTrial'] as bool? ?? false,
       sacCode: json['sacCode'] as String? ?? '998313',
+      gstRatePercent: (json['gstRatePercent'] as num?)?.toDouble() ?? 18.0,
     );
   }
 }
@@ -354,6 +360,7 @@ class SubscriptionInvoiceModel {
     required this.isGstRegistered,
     required this.amountInWords,
     required this.placeOfSupply,
+    this.gstRatePercent = 18.0,
   });
 
   final String id;
@@ -400,6 +407,7 @@ class SubscriptionInvoiceModel {
   final bool isGstRegistered;
   final String amountInWords;
   final String placeOfSupply;
+  final double gstRatePercent;
 
   factory SubscriptionInvoiceModel.fromJson(Map<String, dynamic> json) {
     return SubscriptionInvoiceModel(
@@ -447,6 +455,7 @@ class SubscriptionInvoiceModel {
       isGstRegistered: json['isGstRegistered'] as bool? ?? false,
       amountInWords: json['amountInWords'] as String? ?? 'Zero Rupees',
       placeOfSupply: json['placeOfSupply'] as String? ?? 'Gujarat (24)',
+      gstRatePercent: (json['gstRatePercent'] as num?)?.toDouble() ?? 18.0,
     );
   }
 }

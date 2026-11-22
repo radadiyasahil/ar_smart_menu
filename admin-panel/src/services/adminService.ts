@@ -6,6 +6,7 @@ import type {
   AdminProductReviewItem,
   BusinessStatusFilter,
   CreateSubscriptionPlanPayload,
+  GstRateSetting,
   ProcessingJob,
   SubscriptionHistoryItem,
   SubscriptionInvoice,
@@ -17,7 +18,7 @@ import type { ApiEnvelope, PagedResult } from '@/types/api'
 import { apiClient } from './apiClient'
 import { ensureAdminAuth } from './authService'
 
-export type { AdminNotification, AdminNotificationsResponse, SubscriptionHistoryItem, SubscriptionInvoice }
+export type { AdminNotification, AdminNotificationsResponse, GstRateSetting, SubscriptionHistoryItem, SubscriptionInvoice }
 
 export interface BusinessListParams {
   status?: BusinessStatusFilter
@@ -356,5 +357,25 @@ export const adminService = {
     const baseURL = apiClient.defaults.baseURL || '/api'
     const token = localStorage.getItem('ar_admin_token') || ''
     return `${baseURL}/admin/subscriptions/${subscriptionId}/invoice/html?token=${encodeURIComponent(token)}`
+  },
+
+  async getGstRateSetting(): Promise<GstRateSetting> {
+    await ensureAdminAuth()
+    const res = await apiClient.get<ApiEnvelope<GstRateSetting>>('/admin/settings/gst-rate')
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to load GST rate setting')
+    }
+    return res.data.data
+  },
+
+  async updateGstRateSetting(gstRatePercent: number): Promise<GstRateSetting> {
+    await ensureAdminAuth()
+    const res = await apiClient.put<ApiEnvelope<GstRateSetting>>('/admin/settings/gst-rate', {
+      gstRatePercent,
+    })
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to update GST rate setting')
+    }
+    return res.data.data
   },
 }

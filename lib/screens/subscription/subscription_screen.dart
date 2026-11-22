@@ -137,6 +137,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     final businessProvider = context.read<BusinessProvider>();
     final business = businessProvider.business;
     final halfGst = plan.gstRupees / 2.0;
+    final gstPct = plan.gstRatePercent;
+    final halfPct = (gstPct / 2.0).toStringAsFixed(gstPct % 2 == 0 ? 0 : 1);
+    final totalPct = gstPct.toStringAsFixed(gstPct.truncateToDouble() == gstPct ? 0 : 1);
 
     showModalBottomSheet<void>(
       context: context,
@@ -227,11 +230,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                           const Divider(color: Colors.white10, height: 16),
                           _buildInvoiceRow('Base Price', '₹${plan.basePriceRupees.toStringAsFixed(2)}'),
                           const SizedBox(height: 6),
-                          _buildInvoiceRow('CGST (9%)', '₹${halfGst.toStringAsFixed(2)}', isSubtext: true),
+                          _buildInvoiceRow('CGST ($halfPct%)', '₹${halfGst.toStringAsFixed(2)}', isSubtext: true),
                           const SizedBox(height: 4),
-                          _buildInvoiceRow('SGST (9%)', '₹${halfGst.toStringAsFixed(2)}', isSubtext: true),
+                          _buildInvoiceRow('SGST ($halfPct%)', '₹${halfGst.toStringAsFixed(2)}', isSubtext: true),
                           const SizedBox(height: 6),
-                          _buildInvoiceRow('Total 18% GST', '₹${plan.gstRupees.toStringAsFixed(2)}'),
+                          _buildInvoiceRow('Total $totalPct% GST', '₹${plan.gstRupees.toStringAsFixed(2)}'),
                           const Divider(color: Colors.white24, height: 20),
                           _buildInvoiceRow(
                             'Total Amount Payable',
@@ -821,7 +824,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('18% GST (SAC 998313)', style: TextStyle(fontSize: 10.5, color: Color(0xFF9CA3AF))),
+                  Text('${item.gstRatePercent.toStringAsFixed(item.gstRatePercent.truncateToDouble() == item.gstRatePercent ? 0 : 1)}% GST (SAC 998313)', style: const TextStyle(fontSize: 10.5, color: Color(0xFF9CA3AF))),
                   Text(
                     '₹${item.gstRupees.toStringAsFixed(2)}',
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white70),
@@ -1025,7 +1028,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      const Text('Integrated GST (IGST @ 18%):', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12)),
+                                      Text('Integrated GST (IGST @ ${inv.igstRate.toStringAsFixed(inv.igstRate.truncateToDouble() == inv.igstRate ? 0 : 1)}%):', style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12)),
                                       Text('₹${inv.igstRupees.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                                     ],
                                   )
@@ -1033,7 +1036,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      const Text('Central GST (CGST @ 9%):', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12)),
+                                      Text('Central GST (CGST @ ${inv.cgstRate.toStringAsFixed(inv.cgstRate.truncateToDouble() == inv.cgstRate ? 0 : 1)}%):', style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12)),
                                       Text('₹${inv.cgstRupees.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                                     ],
                                   ),
@@ -1041,7 +1044,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      const Text('State GST (SGST @ 9%):', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12)),
+                                      Text('State GST (SGST @ ${inv.sgstRate.toStringAsFixed(inv.sgstRate.truncateToDouble() == inv.sgstRate ? 0 : 1)}%):', style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12)),
                                       Text('₹${inv.sgstRupees.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                                     ],
                                   ),
@@ -1388,7 +1391,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       ],
                       const SizedBox(width: 8),
                       Text(
-                        '+ 18% GST',
+                        '+ ${plan.gstRatePercent.toStringAsFixed(plan.gstRatePercent.truncateToDouble() == plan.gstRatePercent ? 0 : 1)}% GST',
                         style: TextStyle(fontSize: 12, color: Colors.grey.shade400, fontWeight: FontWeight.w500),
                       ),
                     ],

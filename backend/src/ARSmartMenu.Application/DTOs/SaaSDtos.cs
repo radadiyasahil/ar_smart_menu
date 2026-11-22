@@ -185,7 +185,8 @@ public record SubscriptionPlanDto(
     string? Badge = null,
     IReadOnlyList<string>? Facilities = null,
     bool IsActive = true,
-    int SubscriberCount = 0);
+    int SubscriberCount = 0,
+    decimal GstRatePercent = 18.0m);
 
 public record CreateSubscriptionPlanRequest(
     string Name,
@@ -281,7 +282,8 @@ public record SubscriptionHistoryItemDto(
     string? PaymentRef,
     string? CustomerGstNumber,
     bool IsTrial,
-    string? SacCode = "998313"
+    string? SacCode = "998313",
+    decimal GstRatePercent = 18.0m
 );
 
 public record SubscriptionInvoiceDto(
@@ -333,7 +335,21 @@ public record SubscriptionInvoiceDto(
     string CustomerStateCode,
     bool IsGstRegistered,
     string AmountInWords,
-    string PlaceOfSupply
+    string PlaceOfSupply,
+    double GstRatePercent = 18.0
+);
+
+public record GstRateSettingDto(
+    decimal GstRatePercent,
+    decimal CgstRatePercent,
+    decimal SgstRatePercent,
+    decimal IgstRatePercent,
+    DateTime? LastUpdated,
+    string? Description
+);
+
+public record UpdateGstRateRequest(
+    decimal GstRatePercent
 );
 
 // ── QR Code ─────────────────────────────────────────────────────────────────

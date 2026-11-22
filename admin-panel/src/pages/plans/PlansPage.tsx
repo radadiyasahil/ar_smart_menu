@@ -11,6 +11,7 @@ import {
   Percent,
   Plus,
   Power,
+  RefreshCw,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -30,6 +31,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { adminService } from '@/services/adminService'
 import {
   type CreateSubscriptionPlanPayload,
+  type GstRateSetting,
   type SubscriptionPlan,
   type UpdateSubscriptionPlanPayload,
   formatPaise,
@@ -97,6 +99,43 @@ export function PlansPage() {
   const [planToDelete, setPlanToDelete] = useState<SubscriptionPlan | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
+  // Dynamic GST Tax Configuration State
+  const [gstSetting, setGstSetting] = useState<GstRateSetting | null>(null)
+  const [isEditingGst, setIsEditingGst] = useState(false)
+  const [newGstRate, setNewGstRate] = useState('18')
+  const [gstSaving, setGstSaving] = useState(false)
+
+  const fetchGstSetting = async () => {
+    try {
+      const data = await adminService.getGstRateSetting()
+      setGstSetting(data)
+      setNewGstRate(data.gstRatePercent.toString())
+    } catch (e) {
+      console.error('Failed to load GST setting:', e)
+    }
+  }
+
+  const handleSaveGstRate = async () => {
+    const rate = parseFloat(newGstRate)
+    if (isNaN(rate) || rate < 0 || rate > 100) {
+      setError('Please enter a valid GST percentage between 0 and 100.')
+      return
+    }
+    setGstSaving(true)
+    try {
+      const updated = await adminService.updateGstRateSetting(rate)
+      setGstSetting(updated)
+      setIsEditingGst(false)
+      setSuccessMessage(`GST Rate successfully updated to ${updated.gstRatePercent}%! All subscription prices, checkouts & invoices are now using this rate.`)
+      await fetchPlans()
+      setTimeout(() => setSuccessMessage(null), 5000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update GST rate')
+    } finally {
+      setGstSaving(false)
+    }
+  }
+
   const fetchPlans = async () => {
     try {
       setLoading(true)
@@ -112,6 +151,7 @@ export function PlansPage() {
 
   useEffect(() => {
     fetchPlans()
+    fetchGstSetting()
   }, [])
 
   const filteredPlans = useMemo(() => {
@@ -320,8 +360,9 @@ export function PlansPage() {
   }
 
   // Live GST & Total calculation in Form
+  const currentGstPct = gstSetting?.gstRatePercent ?? 18
   const previewBase = Number(formData.basePriceRupees) || 0
-  const previewGst = Math.round(previewBase * 0.18 * 100) / 100
+  const previewGst = Math.round(previewBase * (currentGstPct / 100) * 100) / 100
   const previewTotal = Math.round((previewBase + previewGst) * 100) / 100
 
   return (
@@ -371,6 +412,99 @@ export function PlansPage() {
           </button>
         </div>
       )}
+
+      {/* Dynamic Customer GST & Tax Configuration Card */}
+      <Card className="border-border bg-card shadow-sm">
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-primary/10 p-2.5 text-primary shrink-0">
+                <Percent className="h-5 w-5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-foreground text-sm sm:text-base">
+                    Customer GST & Tax Configuration
+                  </h3>
+                  <Badge variant="success" className="text-[11px] font-mono">
+                    Live: {gstSetting?.gstRatePercent ?? 18}%
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground max-w-xl">
+                  Dynamic GST rate applied to all subscription tiers, checkout totals, and downloadable tax invoices.
+                  If the government changes GST laws, update it here anytime — all plans & new invoices update automatically.
+                </p>
+                {gstSetting && (
+                  <div className="flex flex-wrap gap-2 pt-1 text-[11px] text-muted-foreground font-mono">
+                    <span className="bg-muted px-1.5 py-0.5 rounded">
+                      Gujarat (Intra-state): CGST {gstSetting.cgstRatePercent}% + SGST {gstSetting.sgstRatePercent}%
+                    </span>
+                    <span className="bg-muted px-1.5 py-0.5 rounded">
+                      Inter-state: IGST {gstSetting.igstRatePercent}%
+                    </span>
+                    <span className="bg-muted px-1.5 py-0.5 rounded">
+                      SAC Code: 998313
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+              {isEditingGst ? (
+                <div className="flex items-center gap-2">
+                  <div className="relative w-24">
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                      value={newGstRate}
+                      onChange={(e) => setNewGstRate(e.target.value)}
+                      className="h-8 pr-6 font-mono text-xs"
+                      placeholder="18"
+                    />
+                    <span className="absolute right-2 top-2 text-xs text-muted-foreground">%</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs gap-1"
+                    disabled={gstSaving}
+                    onClick={handleSaveGstRate}
+                  >
+                    {gstSaving ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                    Save
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      setIsEditingGst(false)
+                      setNewGstRate(gstSetting?.gstRatePercent?.toString() ?? '18')
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs gap-1.5 border-border hover:bg-muted"
+                  onClick={() => {
+                    setNewGstRate(gstSetting?.gstRatePercent?.toString() ?? '18')
+                    setIsEditingGst(true)
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                  Edit GST Rate
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Metric Cards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -567,7 +701,7 @@ export function PlansPage() {
                             {formatPaise(plan.basePricePaise)}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            + 18% GST ({formatPaise(plan.gstPaise)})
+                            + {plan.gstRatePercent ?? currentGstPct}% GST ({formatPaise(plan.gstPaise)})
                           </span>
                         </>
                       )}
@@ -819,7 +953,7 @@ export function PlansPage() {
                       }
                       placeholder="599"
                     />
-                    <span className="text-[10px] text-muted-foreground">Exclusive of 18% GST</span>
+                    <span className="text-[10px] text-muted-foreground">Exclusive of {currentGstPct}% GST</span>
                   </div>
 
                   <div className="space-y-1">
@@ -855,7 +989,7 @@ export function PlansPage() {
                 {/* Real-time Calculation Summary */}
                 <div className="flex items-center justify-between rounded-md bg-card p-2.5 text-xs border border-border">
                   <span className="text-muted-foreground">
-                    Live Calculation: Base ₹{previewBase.toLocaleString()} + 18% GST (₹
+                    Live Calculation: Base ₹{previewBase.toLocaleString()} + {currentGstPct}% GST (₹
                     {previewGst.toLocaleString()})
                   </span>
                   <span className="font-bold text-foreground">

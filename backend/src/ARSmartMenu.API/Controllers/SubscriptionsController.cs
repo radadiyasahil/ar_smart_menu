@@ -143,6 +143,17 @@ public class SubscriptionsController : ControllerBase
     }
 
     /// <summary>
+    /// Get current dynamic customer GST rate for subscriptions.
+    /// </summary>
+    [HttpGet("gst-rate")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<GstRateSettingDto>>> GetGstRate(CancellationToken ct)
+    {
+        var result = await _subscriptions.GetGstRateSettingAsync(ct);
+        return Ok(ApiResponse<GstRateSettingDto>.Ok(result));
+    }
+
+    /// <summary>
     /// Download/View printable Government & Audit compliant A4 GST Tax Invoice HTML for any past subscription transaction.
     /// </summary>
     [HttpGet("{id:guid}/invoice/html")]

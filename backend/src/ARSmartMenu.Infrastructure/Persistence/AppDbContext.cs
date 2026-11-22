@@ -33,12 +33,18 @@ public partial class AppDbContext : DbContext
     public DbSet<ApprovalReview> ApprovalReviews => Set<ApprovalReview>();
     public DbSet<DeliveryIntegration> DeliveryIntegrations => Set<DeliveryIntegration>();
     public DbSet<EmbedLink> EmbedLinks => Set<EmbedLink>();
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         ConfigureSaaS(modelBuilder);
         ConfigurePipeline(modelBuilder);
+
+        modelBuilder.Entity<SystemSetting>(e =>
+        {
+            e.HasIndex(s => s.Key).IsUnique();
+        });
     }
 
     partial void ConfigureSaaS(ModelBuilder modelBuilder);

@@ -73,6 +73,28 @@ public static class DatabaseSeeder
 
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'SacCode')
                     ALTER TABLE [Subscriptions] ADD [SacCode] nvarchar(20) NULL DEFAULT '998313';
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'GstRatePercent')
+                    ALTER TABLE [Subscriptions] ADD [GstRatePercent] decimal(5, 2) NOT NULL DEFAULT 18.0;
+
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SystemSettings')
+                BEGIN
+                    CREATE TABLE [SystemSettings] (
+                        [Id] uniqueidentifier NOT NULL PRIMARY KEY,
+                        [Key] nvarchar(100) NOT NULL UNIQUE,
+                        [Value] nvarchar(max) NOT NULL,
+                        [Description] nvarchar(500) NULL,
+                        [Group] nvarchar(100) NULL,
+                        [CreatedAt] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                        [UpdatedAt] datetime2 NULL
+                    );
+                END
+
+                IF NOT EXISTS (SELECT * FROM [SystemSettings] WHERE [Key] = 'Billing.GstRatePercent')
+                BEGIN
+                    INSERT INTO [SystemSettings] ([Id], [Key], [Value], [Description], [Group], [CreatedAt])
+                    VALUES (NEWID(), 'Billing.GstRatePercent', '18.0', 'GST percentage applied to subscription plans and customer invoices', 'Billing', GETUTCDATE());
+                END
             ");
         }
         catch (Exception ex)

@@ -13,6 +13,7 @@ public class SubscriptionService : ISubscriptionService
 {
     private readonly AppDbContext _db;
     private readonly string _razorpayKeyId;
+    private static decimal? _cachedGstRate;
 
     public SubscriptionService(AppDbContext db, IConfiguration config)
     {
@@ -302,9 +303,100 @@ public class SubscriptionService : ISubscriptionService
         }
     }
 
+    public async Task<decimal> GetGstRatePercentRawAsync(CancellationToken ct = default)
+    {
+        if (_cachedGstRate.HasValue)
+            return _cachedGstRate.Value;
+
+        var setting = await _db.SystemSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Key == "Billing.GstRatePercent", ct);
+
+        if (setting != null && decimal.TryParse(setting.Value, out var parsedRate) && parsedRate >= 0)
+        {
+            _cachedGstRate = parsedRate;
+            return parsedRate;
+        }
+
+        _cachedGstRate = 18.0m;
+        return 18.0m;
+    }
+
+    public async Task<GstRateSettingDto> GetGstRateSettingAsync(CancellationToken ct = default)
+    {
+        var setting = await _db.SystemSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Key == "Billing.GstRatePercent", ct);
+
+        var rate = (setting != null && decimal.TryParse(setting.Value, out var parsedRate) && parsedRate >= 0)
+            ? parsedRate
+            : 18.0m;
+
+        _cachedGstRate = rate;
+        var halfRate = Math.Round(rate / 2m, 2);
+
+        return new GstRateSettingDto(
+            GstRatePercent: rate,
+            CgstRatePercent: halfRate,
+            SgstRatePercent: halfRate,
+            IgstRatePercent: rate,
+            LastUpdated: setting?.UpdatedAt ?? setting?.CreatedAt,
+            Description: setting?.Description ?? "GST percentage applied to subscription plans and customer invoices"
+        );
+    }
+
+    public async Task<GstRateSettingDto> UpdateGstRateSettingAsync(decimal newRatePercent, CancellationToken ct = default)
+    {
+        if (newRatePercent < 0 || newRatePercent > 100)
+            throw new ValidationException("GST rate must be between 0% and 100%.");
+
+        var setting = await _db.SystemSettings
+            .FirstOrDefaultAsync(s => s.Key == "Billing.GstRatePercent", ct);
+
+        if (setting == null)
+        {
+            setting = new SystemSetting
+            {
+                Key = "Billing.GstRatePercent",
+                Value = newRatePercent.ToString("0.##"),
+                Description = "GST percentage applied to subscription plans and customer invoices",
+                Group = "Billing"
+            };
+            _db.SystemSettings.Add(setting);
+        }
+        else
+        {
+            setting.Value = newRatePercent.ToString("0.##");
+            setting.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // Dynamically recalculate GstPaise and TotalPricePaise on all active subscription plans
+        var plans = await _db.SubscriptionPlans.Where(p => !p.IsDeleted).ToListAsync(ct);
+        foreach (var p in plans)
+        {
+            var basePaise = p.BasePricePaise > 0 ? p.BasePricePaise : p.MonthlyPricePaise;
+            p.GstPaise = (int)Math.Round(basePaise * (double)(newRatePercent / 100m));
+            p.TotalPricePaise = basePaise + p.GstPaise;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        _cachedGstRate = newRatePercent;
+
+        var halfRate = Math.Round(newRatePercent / 2m, 2);
+        return new GstRateSettingDto(
+            GstRatePercent: newRatePercent,
+            CgstRatePercent: halfRate,
+            SgstRatePercent: halfRate,
+            IgstRatePercent: newRatePercent,
+            LastUpdated: setting.UpdatedAt ?? DateTime.UtcNow,
+            Description: setting.Description
+        );
+    }
+
     public async Task<IReadOnlyList<SubscriptionPlanDto>> ListPlansAsync(CancellationToken ct = default)
     {
         await EnsurePlansSeededAsync(ct);
+        await GetGstRatePercentRawAsync(ct);
 
         var plans = await _db.SubscriptionPlans
             .AsNoTracking()
@@ -507,8 +599,9 @@ public class SubscriptionService : ISubscriptionService
         var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
         var startsAt = DateTime.UtcNow;
         var endsAt = startsAt.AddDays(durationDays);
+        var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
         var basePaise = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
-        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * 0.18);
+        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * (double)(dynamicGstRate / 100m));
         var totalPaise = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePaise + gstPaise);
         var payMethod = request.PaymentMethod ?? "UPI";
         var payRef = request.TransactionRef ?? $"SIM_{payMethod}_{Guid.NewGuid():N}"[..18];
@@ -533,6 +626,7 @@ public class SubscriptionService : ISubscriptionService
             CustomerAddress = business != null ? $"{business.FullAddress}, {business.City}" : null,
             CustomerState = business?.City,
             SacCode = "998313",
+            GstRatePercent = dynamicGstRate,
         };
         _db.Subscriptions.Add(newSub);
 
@@ -590,8 +684,9 @@ public class SubscriptionService : ISubscriptionService
         var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
         var startsAt = DateTime.UtcNow;
         var endsAt = startsAt.AddDays(durationDays);
+        var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
         var basePaise = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
-        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * 0.18);
+        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * (double)(dynamicGstRate / 100m));
         var totalPaise = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePaise + gstPaise);
         var payRef = $"ADMIN_GRANT_{request.Notes ?? "Manual"}"[..Math.Min(24, 12 + (request.Notes?.Length ?? 6))];
 
@@ -615,6 +710,7 @@ public class SubscriptionService : ISubscriptionService
             CustomerAddress = business != null ? $"{business.FullAddress}, {business.City}" : null,
             CustomerState = business?.City,
             SacCode = "998313",
+            GstRatePercent = dynamicGstRate,
         };
         _db.Subscriptions.Add(sub);
 
@@ -718,8 +814,9 @@ public class SubscriptionService : ISubscriptionService
 
         var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
         var startsAt = DateTime.UtcNow;
+        var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
         var basePaise = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
-        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * 0.18);
+        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * (double)(dynamicGstRate / 100m));
         var totalPaise = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePaise + gstPaise);
 
         var subscription = new Subscription
@@ -742,6 +839,7 @@ public class SubscriptionService : ISubscriptionService
             CustomerAddress = business != null ? $"{business.FullAddress}, {business.City}" : null,
             CustomerState = business?.City,
             SacCode = "998313",
+            GstRatePercent = dynamicGstRate,
         };
 
         _db.Subscriptions.Add(subscription);
@@ -802,7 +900,8 @@ public class SubscriptionService : ISubscriptionService
         if (request.OriginalPricePaise.HasValue && request.OriginalPricePaise.Value < request.BasePricePaise)
             throw new ValidationException("Original price must be greater than or equal to the discounted base price.");
 
-        var gstPaise = (int)Math.Round(request.BasePricePaise * 0.18);
+        var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
+        var gstPaise = (int)Math.Round(request.BasePricePaise * (double)(dynamicGstRate / 100m));
         var totalPaise = request.BasePricePaise + gstPaise;
 
         var plan = new SubscriptionPlan
@@ -871,7 +970,8 @@ public class SubscriptionService : ISubscriptionService
             }
         }
 
-        var gstPaise = (int)Math.Round(request.BasePricePaise * 0.18);
+        var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
+        var gstPaise = (int)Math.Round(request.BasePricePaise * (double)(dynamicGstRate / 100m));
         var totalPaise = request.BasePricePaise + gstPaise;
 
         plan.Name = request.Name.Trim();
@@ -988,8 +1088,9 @@ public class SubscriptionService : ISubscriptionService
             }
         }
 
+        var dynamicRate = _cachedGstRate ?? 18.0m;
         var basePrice = plan.BasePricePaise != 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
-        var gstPrice = plan.GstPaise != 0 ? plan.GstPaise : (int)Math.Round(basePrice * 0.18);
+        var gstPrice = plan.GstPaise != 0 ? plan.GstPaise : (int)Math.Round(basePrice * (double)(dynamicRate / 100m));
         var totalPrice = plan.TotalPricePaise != 0 ? plan.TotalPricePaise : (basePrice + gstPrice);
         var duration = plan.DurationDays > 0 ? plan.DurationDays : (plan.Slug == "plan-1-year" ? 365 : plan.Slug == "trial-7-days" ? 7 : 30);
 
@@ -1029,7 +1130,8 @@ public class SubscriptionService : ISubscriptionService
             Badge: badge,
             Facilities: facilities,
             IsActive: plan.IsActive && !plan.IsDeleted,
-            SubscriberCount: subscriberCount);
+            SubscriberCount: subscriberCount,
+            GstRatePercent: dynamicRate);
     }
 
     internal static SubscriptionDto MapSubscription(Subscription subscription, bool hasUsedTrial)
@@ -1058,6 +1160,7 @@ public class SubscriptionService : ISubscriptionService
 
     public async Task<IReadOnlyList<SubscriptionHistoryItemDto>> GetSubscriptionHistoryAsync(Guid businessId, CancellationToken ct = default)
     {
+        await GetGstRatePercentRawAsync(ct);
         var subs = await _db.Subscriptions
             .AsNoTracking()
             .Include(s => s.Plan)
@@ -1072,6 +1175,7 @@ public class SubscriptionService : ISubscriptionService
 
     public async Task<IReadOnlyList<SubscriptionHistoryItemDto>> AdminGetAllSubscriptionHistoryAsync(CancellationToken ct = default)
     {
+        await GetGstRatePercentRawAsync(ct);
         var subs = await _db.Subscriptions
             .AsNoTracking()
             .Include(s => s.Plan)
@@ -1106,6 +1210,8 @@ public class SubscriptionService : ISubscriptionService
         var owner = business?.Owner;
         var plan = sub.Plan;
         var isTrial = plan?.Slug == "trial-7-days" || (sub.BaseAmountPaise == 0 && sub.TotalAmountPaise == 0 && (plan == null || plan.BasePricePaise == 0));
+        var dynamicRate = await GetGstRatePercentRawAsync(ct);
+        var effectiveGstRate = (double)(sub.GstRatePercent > 0 ? sub.GstRatePercent : dynamicRate);
 
         var invoiceNum = !string.IsNullOrWhiteSpace(sub.InvoiceNumber)
             ? sub.InvoiceNumber
@@ -1116,7 +1222,7 @@ public class SubscriptionService : ISubscriptionService
             : (isTrial ? 0 : (plan?.BasePricePaise ?? plan?.MonthlyPricePaise ?? 0));
         var gstPaise = sub.GstPaise > 0 
             ? sub.GstPaise 
-            : (isTrial ? 0 : (plan?.GstPaise ?? (int)Math.Round(basePaise * 0.18)));
+            : (isTrial ? 0 : (plan?.GstPaise ?? (int)Math.Round(basePaise * (effectiveGstRate / 100.0))));
         var totalPaise = sub.TotalAmountPaise > 0 
             ? sub.TotalAmountPaise 
             : (isTrial ? 0 : (plan?.TotalPricePaise ?? (basePaise + gstPaise)));
@@ -1147,13 +1253,13 @@ public class SubscriptionService : ISubscriptionService
         {
             if (isInterState)
             {
-                igstRate = 18.0;
+                igstRate = effectiveGstRate;
                 igstRupees = gstRupees;
             }
             else
             {
-                cgstRate = 9.0;
-                sgstRate = 9.0;
+                cgstRate = effectiveGstRate / 2.0;
+                sgstRate = effectiveGstRate / 2.0;
                 cgstRupees = Math.Round(gstRupees / 2.0, 2);
                 sgstRupees = gstRupees - cgstRupees;
             }
@@ -1213,7 +1319,8 @@ public class SubscriptionService : ISubscriptionService
             CustomerStateCode: custStateCode,
             IsGstRegistered: !string.IsNullOrWhiteSpace(custGst),
             AmountInWords: amountInWords,
-            PlaceOfSupply: $"{custState} ({custStateCode})"
+            PlaceOfSupply: $"{custState} ({custStateCode})",
+            GstRatePercent: effectiveGstRate
         );
     }
 
@@ -1235,12 +1342,13 @@ public class SubscriptionService : ISubscriptionService
             ? sub.InvoiceNumber
             : $"INV-{sub.CreatedAt:yyyyMM}-{sub.Id.ToString()[..6].ToUpper()}";
 
+        var effectiveGstRate = sub.GstRatePercent > 0 ? sub.GstRatePercent : (_cachedGstRate ?? 18.0m);
         var basePaise = sub.BaseAmountPaise > 0 
             ? sub.BaseAmountPaise 
             : (isTrial ? 0 : (sub.Plan?.BasePricePaise ?? sub.Plan?.MonthlyPricePaise ?? 0));
         var gstPaise = sub.GstPaise > 0 
             ? sub.GstPaise 
-            : (isTrial ? 0 : (sub.Plan?.GstPaise ?? (int)Math.Round(basePaise * 0.18)));
+            : (isTrial ? 0 : (sub.Plan?.GstPaise ?? (int)Math.Round(basePaise * (double)(effectiveGstRate / 100m))));
         var totalPaise = sub.TotalAmountPaise > 0 
             ? sub.TotalAmountPaise 
             : (isTrial ? 0 : (sub.Plan?.TotalPricePaise ?? (basePaise + gstPaise)));
@@ -1270,7 +1378,8 @@ public class SubscriptionService : ISubscriptionService
             PaymentRef: sub.PaymentRef ?? sub.RazorpaySubscriptionId,
             CustomerGstNumber: sub.CustomerGstNumber ?? sub.Business?.GstNumber,
             IsTrial: isTrial,
-            SacCode: sub.SacCode ?? "998313"
+            SacCode: sub.SacCode ?? "998313",
+            GstRatePercent: effectiveGstRate
         );
     }
 
@@ -1660,15 +1769,15 @@ public class SubscriptionService : ISubscriptionService
           </tr>
           {(inv.IsInterState ? $@"
           <tr>
-            <td style=""color: #475569;"">Integrated GST (IGST @ 18%):</td>
+            <td style=""color: #475569;"">Integrated GST (IGST @ {inv.IgstRate:0.##}%):</td>
             <td class=""text-right"" style=""font-weight: 600;"">₹{inv.IgstRupees:N2}</td>
           </tr>" : $@"
           <tr>
-            <td style=""color: #475569;"">Central GST (CGST @ 9%):</td>
+            <td style=""color: #475569;"">Central GST (CGST @ {inv.CgstRate:0.##}%):</td>
             <td class=""text-right"" style=""font-weight: 600;"">₹{inv.CgstRupees:N2}</td>
           </tr>
           <tr>
-            <td style=""color: #475569;"">State GST (SGST @ 9%):</td>
+            <td style=""color: #475569;"">State GST (SGST @ {inv.SgstRate:0.##}%):</td>
             <td class=""text-right"" style=""font-weight: 600;"">₹{inv.SgstRupees:N2}</td>
           </tr>")}
           <tr class=""totals-row-final"">

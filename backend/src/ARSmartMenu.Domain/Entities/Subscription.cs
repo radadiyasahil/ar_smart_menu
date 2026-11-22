@@ -31,4 +31,5 @@ public class Subscription : BaseEntity
     public string? CustomerAddress { get; set; }
     public string? CustomerState { get; set; }
     public string? SacCode { get; set; } = "998313";
+    public decimal GstRatePercent { get; set; } = 18.0m;
 }

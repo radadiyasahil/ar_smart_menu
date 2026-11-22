@@ -237,6 +237,24 @@ public class AdminController : ControllerBase
         return Ok(ApiResponse<SubscriptionPlanDto>.Ok(result, $"Plan status set to {(result.IsActive ? "Active" : "Inactive")}"));
     }
 
+    /// <summary>Get current dynamic customer GST rate setting.</summary>
+    [HttpGet("settings/gst-rate")]
+    public async Task<ActionResult<ApiResponse<GstRateSettingDto>>> GetGstRateSetting(CancellationToken ct)
+    {
+        var result = await _subscriptions.GetGstRateSettingAsync(ct);
+        return Ok(ApiResponse<GstRateSettingDto>.Ok(result));
+    }
+
+    /// <summary>Update customer GST rate % dynamically from admin panel.</summary>
+    [HttpPut("settings/gst-rate")]
+    public async Task<ActionResult<ApiResponse<GstRateSettingDto>>> UpdateGstRateSetting(
+        [FromBody] UpdateGstRateRequest request,
+        CancellationToken ct)
+    {
+        var result = await _subscriptions.UpdateGstRateSettingAsync(request.GstRatePercent, ct);
+        return Ok(ApiResponse<GstRateSettingDto>.Ok(result, $"Customer GST rate successfully updated to {result.GstRatePercent:0.##}%"));
+    }
+
     /// <summary>Get history of all past subscriptions and invoices for a specific business.</summary>
     [HttpGet("businesses/{id:guid}/subscriptions/history")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>>> GetBusinessSubscriptionHistory(

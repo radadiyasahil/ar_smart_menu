@@ -115,6 +115,16 @@ export interface SubscriptionPlan {
   facilities?: string[] | string | null
   isActive: boolean
   subscriberCount?: number
+  gstRatePercent?: number
+}
+
+export interface GstRateSetting {
+  gstRatePercent: number
+  cgstRatePercent: number
+  sgstRatePercent: number
+  igstRatePercent: number
+  lastUpdated?: string | null
+  description?: string | null
 }
 
 export interface CreateSubscriptionPlanPayload {

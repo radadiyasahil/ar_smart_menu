@@ -324,13 +324,14 @@ export function BusinessesPage() {
       )}
 
       {/* Filter Tabs */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-none sm:flex-wrap">
         {STATUS_TABS.map((tab) => (
           <Button
             key={tab.value}
             variant={statusFilter === tab.value ? 'default' : 'outline'}
             size="sm"
             onClick={() => setTab(tab.value)}
+            className="shrink-0 text-xs h-8"
           >
             {tab.label}
           </Button>
@@ -338,10 +339,10 @@ export function BusinessesPage() {
       </div>
 
       {/* Search & Filter Toolbar */}
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card/60 p-3.5 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 sm:p-4 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Search Input */}
-          <div className="relative flex-1 min-w-[240px] max-w-md">
+          <div className="relative w-full sm:flex-1 sm:max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               type="text"
@@ -482,9 +483,9 @@ export function BusinessesPage() {
       )}
 
       {/* Businesses Table */}
-      <Card>
-        <CardHeader className="py-4 flex flex-row items-center justify-between">
-          <CardTitle className="text-base font-semibold">
+      <Card className="shadow-xs overflow-hidden">
+        <CardHeader className="py-3.5 px-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60">
+          <CardTitle className="text-base font-bold text-foreground">
             {filteredAndSortedBusinesses.length}{' '}
             {filteredAndSortedBusinesses.length === 1 ? 'Business' : 'Businesses'} Registered
             {hasActiveFilters && (
@@ -497,7 +498,7 @@ export function BusinessesPage() {
             Click table column headers to sort ↑↓
           </span>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           {loading ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 4 }).map((_, i) => (

@@ -296,23 +296,25 @@ export function BusinessDetailPage() {
   return (
     <div className="space-y-6 pb-16">
       {/* Top Breadcrumb & Page Header */}
-      <div className="flex flex-col gap-4 border-b border-border bg-card/60 p-6 rounded-xl shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-4 border-b border-border bg-card p-4 sm:p-6 rounded-xl shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <Button
               variant="outline"
               size="sm"
               onClick={() => navigate('/businesses')}
-              className="h-9 px-3 gap-1.5"
+              className="h-9 px-3 gap-1.5 w-fit"
             >
               <ArrowLeft className="h-4 w-4" />
               <span>Back to Businesses</span>
             </Button>
             <div className="h-6 w-px bg-border hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <Store className="h-6 w-6 text-primary" />
+            <div className="flex items-start sm:items-center gap-2.5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary shrink-0">
+                <Store className="h-5 w-5" />
+              </div>
               <div>
-                <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex flex-wrap items-center gap-2">
                   {business.businessName}
                   <Badge
                     variant={
@@ -329,9 +331,15 @@ export function BusinessDetailPage() {
                     {BUSINESS_STATUS_LABELS[business.status] ?? 'Unknown'}
                   </Badge>
                 </h1>
-                <p className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
-                  <MapPin className="h-3.5 w-3.5" />
-                  {business.city} • Registered on {business.createdAt.slice(0, 10)} • ID: {business.id}
+                <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-1.5 sm:gap-2 mt-0.5">
+                  <span className="flex items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5 text-primary" />
+                    {business.city}
+                  </span>
+                  <span>•</span>
+                  <span>Registered {business.createdAt.slice(0, 10)}</span>
+                  <span className="hidden sm:inline">•</span>
+                  <span className="font-mono text-[11px] text-muted-foreground/80">ID: {business.id.slice(0, 8)}</span>
                 </p>
               </div>
             </div>

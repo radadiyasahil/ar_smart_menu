@@ -29,13 +29,13 @@ export function AdminLayout() {
         onClose={() => setSidebarOpen(false)}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden">
         <TopNavbar
           title={title}
           onMenuClick={() => setSidebarOpen(true)}
         />
 
-        <main className="flex-1 p-4 lg:p-6">
+        <main className="flex-1 p-3 sm:p-5 lg:p-6 w-full max-w-7xl mx-auto">
           <Outlet />
         </main>
       </div>

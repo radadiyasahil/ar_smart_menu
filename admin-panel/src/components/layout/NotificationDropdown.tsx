@@ -100,7 +100,7 @@ export function NotificationDropdown() {
 
       {/* Floating Popover / Dropdown Drawer */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-[340px] sm:w-[420px] rounded-2xl border border-border bg-card/95 backdrop-blur-md shadow-2xl z-50 overflow-hidden animate-in fade-in-0 zoom-in-95">
+        <div className="fixed inset-x-2 top-16 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 w-auto sm:w-[420px] max-w-[calc(100vw-1rem)] rounded-2xl border border-border bg-card/95 backdrop-blur-md shadow-2xl z-50 overflow-hidden animate-in fade-in-0 zoom-in-95">
           {/* Header */}
           <div className="p-3.5 border-b border-border bg-muted/40 flex items-center justify-between">
             <div className="flex items-center gap-2">

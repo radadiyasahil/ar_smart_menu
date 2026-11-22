@@ -312,27 +312,20 @@ public class SubscriptionService : ISubscriptionService
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Key == "Billing.GstRatePercent", ct);
 
-        if (setting != null && decimal.TryParse(setting.Value, out var parsedRate) && parsedRate >= 0)
-        {
-            _cachedGstRate = parsedRate;
-            return parsedRate;
-        }
+        _cachedGstRate = (setting != null && decimal.TryParse(setting.Value, out var parsedRate) && parsedRate >= 0)
+            ? parsedRate
+            : 18.0m;
 
-        _cachedGstRate = 18.0m;
-        return 18.0m;
+        return _cachedGstRate.Value;
     }
 
     public async Task<GstRateSettingDto> GetGstRateSettingAsync(CancellationToken ct = default)
     {
+        var rate = await GetGstRatePercentRawAsync(ct);
         var setting = await _db.SystemSettings
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Key == "Billing.GstRatePercent", ct);
 
-        var rate = (setting != null && decimal.TryParse(setting.Value, out var parsedRate) && parsedRate >= 0)
-            ? parsedRate
-            : 18.0m;
-
-        _cachedGstRate = rate;
         var halfRate = Math.Round(rate / 2m, 2);
 
         return new GstRateSettingDto(
@@ -350,25 +343,13 @@ public class SubscriptionService : ISubscriptionService
         if (newRatePercent < 0 || newRatePercent > 100)
             throw new ValidationException("GST rate must be between 0% and 100%.");
 
-        var setting = await _db.SystemSettings
-            .FirstOrDefaultAsync(s => s.Key == "Billing.GstRatePercent", ct);
+        var now = DateTime.UtcNow;
+        var existingSettings = await _db.SystemSettings
+            .Where(s => s.Key == "Billing.GstRatePercent")
+            .ToListAsync(ct);
 
-        if (setting == null)
-        {
-            setting = new SystemSetting
-            {
-                Key = "Billing.GstRatePercent",
-                Value = newRatePercent.ToString("0.##"),
-                Description = "GST percentage applied to subscription plans and customer invoices",
-                Group = "Billing"
-            };
-            _db.SystemSettings.Add(setting);
-        }
-        else
-        {
-            setting.Value = newRatePercent.ToString("0.##");
-            setting.UpdatedAt = DateTime.UtcNow;
-        }
+        const string desc = "GST percentage applied to subscription plans and customer invoices";
+        UpsertSystemSetting(existingSettings, "Billing.GstRatePercent", newRatePercent.ToString("0.##"), desc, "Billing", now);
 
         // Dynamically recalculate GstPaise and TotalPricePaise on all active subscription plans
         var plans = await _db.SubscriptionPlans.Where(p => !p.IsDeleted).ToListAsync(ct);
@@ -388,8 +369,8 @@ public class SubscriptionService : ISubscriptionService
             CgstRatePercent: halfRate,
             SgstRatePercent: halfRate,
             IgstRatePercent: newRatePercent,
-            LastUpdated: setting.UpdatedAt ?? DateTime.UtcNow,
-            Description: setting.Description
+            LastUpdated: now,
+            Description: desc
         );
     }
 
@@ -441,25 +422,7 @@ public class SubscriptionService : ISubscriptionService
         var now = DateTime.UtcNow;
         foreach (var (key, (val, desc)) in keysToUpdate)
         {
-            var s = existingSettings.FirstOrDefault(x => x.Key == key);
-            if (s == null)
-            {
-                _db.SystemSettings.Add(new SystemSetting
-                {
-                    Key = key,
-                    Value = val,
-                    Description = desc,
-                    Group = "Support",
-                    CreatedAt = now,
-                    UpdatedAt = now
-                });
-            }
-            else
-            {
-                s.Value = val;
-                s.Description = desc;
-                s.UpdatedAt = now;
-            }
+            UpsertSystemSetting(existingSettings, key, val, desc, "Support", now);
         }
 
         await _db.SaveChangesAsync(ct);
@@ -471,6 +434,29 @@ public class SubscriptionService : ISubscriptionService
             HelpMessage: keysToUpdate["Platform.SupportHelpMessage"].Value,
             LastUpdated: now
         );
+    }
+
+    private void UpsertSystemSetting(List<SystemSetting> list, string key, string value, string description, string group, DateTime now)
+    {
+        var item = list.FirstOrDefault(x => x.Key == key);
+        if (item == null)
+        {
+            _db.SystemSettings.Add(new SystemSetting
+            {
+                Key = key,
+                Value = value,
+                Description = description,
+                Group = group,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+        }
+        else
+        {
+            item.Value = value;
+            item.Description = description;
+            item.UpdatedAt = now;
+        }
     }
 
     public async Task<IReadOnlyList<SubscriptionPlanDto>> ListPlansAsync(CancellationToken ct = default)

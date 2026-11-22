@@ -10,8 +10,8 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
-import { BusinessDetailModal } from '@/components/businesses/BusinessDetailModal'
 import { StatusBadge } from '@/components/tables/DataTable'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,10 +39,10 @@ type SortOrder = 'asc' | 'desc'
 
 /** KYC review — businesses whose owners submitted KYC (status ≥ submitted). */
 export function KycReviewPage() {
+  const navigate = useNavigate()
   const [rows, setRows] = useState<AdminBusiness[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedBusiness, setSelectedBusiness] = useState<AdminBusiness | null>(null)
 
   // Filters & Sorting state
   const [searchQuery, setSearchQuery] = useState('')
@@ -57,16 +57,12 @@ export function KycReviewPage() {
       const result = await adminService.listBusinesses({ status: 'all', limit: 100 })
       const kycRows = result.items.filter((b) => b.ownerKycStatus >= 1)
       setRows(kycRows)
-      if (selectedBusiness) {
-        const refreshed = kycRows.find((b) => b.id === selectedBusiness.id)
-        if (refreshed) setSelectedBusiness(refreshed)
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
     } finally {
       setLoading(false)
     }
-  }, [selectedBusiness])
+  }, [])
 
   useEffect(() => {
     void load()
@@ -385,9 +381,9 @@ export function KycReviewPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-8 px-2 text-xs cursor-pointer"
-                          onClick={() => setSelectedBusiness(b)}
-                          title="Inspect KYC details, Aadhaar, PAN and Bank"
+                          className="h-8 px-2 text-xs cursor-pointer hover:bg-muted"
+                          onClick={() => navigate(`/businesses/${b.id}`, { state: { business: b } })}
+                          title="Inspect KYC details, Aadhaar, PAN and Bank on full page"
                         >
                           <Eye className="mr-1 h-3.5 w-3.5" />
                           Inspect KYC
@@ -401,24 +397,6 @@ export function KycReviewPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Detail Modal */}
-      {selectedBusiness && (
-        <BusinessDetailModal
-          business={selectedBusiness}
-          onClose={() => setSelectedBusiness(null)}
-          onApprove={async (id, notes) => {
-            await adminService.approveBusiness(id, notes)
-            await load()
-            setSelectedBusiness(null)
-          }}
-          onReject={async (id, reason, notes) => {
-            await adminService.rejectBusiness(id, reason, notes)
-            await load()
-            setSelectedBusiness(null)
-          }}
-        />
-      )}
     </div>
   )
 }

@@ -15,7 +15,6 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
-import { BusinessDetailModal } from '@/components/businesses/BusinessDetailModal'
 import { StatusBadge } from '@/components/tables/DataTable'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -66,7 +65,6 @@ export function BusinessesPage() {
   const [actionId, setActionId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState('')
-  const [selectedBusiness, setSelectedBusiness] = useState<AdminBusiness | null>(null)
 
   // Rich Filter & Sorting state
   const [businessTypeFilter, setBusinessTypeFilter] = useState<string>('all')
@@ -86,40 +84,30 @@ export function BusinessesPage() {
       })
       setBusinesses(result.items)
       setTotal(result.total)
-
-      // Refresh selectedBusiness if open
-      if (selectedBusiness) {
-        const refreshed = result.items.find((b) => b.id === selectedBusiness.id)
-        if (refreshed) setSelectedBusiness(refreshed)
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load businesses')
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, search, selectedBusiness])
+  }, [statusFilter, search])
 
   useEffect(() => {
     void load()
   }, [statusFilter])
 
-  // Auto-open business review modal if businessId is specified in URL query (e.g. from notification click)
+  // Auto-navigate to business details if businessId is specified in URL query
   useEffect(() => {
     const targetBusinessId = searchParams.get('businessId')
-    if (targetBusinessId && businesses.length > 0) {
-      const match = businesses.find((b) => b.id.toLowerCase() === targetBusinessId.toLowerCase())
-      if (match) {
-        setSelectedBusiness(match)
-      }
+    if (targetBusinessId) {
+      navigate(`/businesses/${targetBusinessId}`)
     }
-  }, [businesses, searchParams])
+  }, [searchParams, navigate])
 
   const handleApprove = async (id: string, notes?: string) => {
     setActionId(id)
     try {
       await adminService.approveBusiness(id, notes)
       await load()
-      setSelectedBusiness(null)
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Approve failed')
     } finally {
@@ -133,57 +121,9 @@ export function BusinessesPage() {
       await adminService.rejectBusiness(id, reason, notes)
       setRejectId(null)
       setRejectReason('')
-      setSelectedBusiness(null)
       await load()
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Reject failed')
-    } finally {
-      setActionId(null)
-    }
-  }
-
-  const handleSetStatus = async (
-    id: string,
-    status: number,
-    reason?: string,
-    notes?: string,
-  ) => {
-    setActionId(id)
-    try {
-      await adminService.setBusinessStatus(id, status, reason, notes)
-      await load()
-      if (selectedBusiness?.id === id) {
-        setSelectedBusiness((prev) => (prev ? { ...prev, status } : null))
-      }
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Status update failed')
-    } finally {
-      setActionId(null)
-    }
-  }
-
-  const handleGrantSubscription = async (
-    id: string,
-    payload: { planSlug: string; customDays?: number; notes?: string },
-  ) => {
-    setActionId(id)
-    try {
-      await adminService.grantSubscription(id, payload)
-      await load()
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to grant subscription')
-    } finally {
-      setActionId(null)
-    }
-  }
-
-  const handleCancelSubscription = async (id: string) => {
-    setActionId(id)
-    try {
-      await adminService.cancelSubscription(id)
-      await load()
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to cancel subscription')
     } finally {
       setActionId(null)
     }
@@ -740,20 +680,6 @@ export function BusinessesPage() {
             </CardContent>
           </Card>
         </div>
-      )}
-
-      {/* Detailed Business Modal */}
-      {selectedBusiness && (
-        <BusinessDetailModal
-          business={selectedBusiness}
-          isSubmitting={Boolean(actionId)}
-          onClose={() => setSelectedBusiness(null)}
-          onApprove={handleApprove}
-          onReject={handleReject}
-          onSetStatus={handleSetStatus}
-          onGrantSubscription={handleGrantSubscription}
-          onCancelSubscription={handleCancelSubscription}
-        />
       )}
     </div>
   )

@@ -41,6 +41,73 @@ import {
   type AdminUpdateBusinessPayload,
   type SubscriptionHistoryItem,
 } from '@/types/admin'
+import { cn } from '@/utils/cn'
+
+interface BusinessFormData {
+  businessName: string
+  businessType: number
+  city: string
+  fullAddress: string
+  ownerFullName: string
+  ownerWhatsApp: string
+  ownerKycStatus: number
+  fssaiNumber: string
+  gstNumber: string
+  upiId: string
+  bankAccountNumber: string
+  bankIfsc: string
+  adminNotes: string
+}
+
+const initialForm: BusinessFormData = {
+  businessName: '',
+  businessType: 0,
+  city: '',
+  fullAddress: '',
+  ownerFullName: '',
+  ownerWhatsApp: '',
+  ownerKycStatus: 0,
+  fssaiNumber: '',
+  gstNumber: '',
+  upiId: '',
+  bankAccountNumber: '',
+  bankIfsc: '',
+  adminNotes: '',
+}
+
+function DetailField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  className,
+  disabled,
+  rightElement,
+}: {
+  label: string
+  value: string
+  onChange?: (val: string) => void
+  placeholder?: string
+  className?: string
+  disabled?: boolean
+  rightElement?: React.ReactNode
+}) {
+  return (
+    <div className={cn('space-y-1.5', className)}>
+      <label className="text-xs font-semibold text-muted-foreground">{label}</label>
+      <div className="flex items-center gap-2">
+        <Input
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className={cn(disabled && 'bg-muted/50 cursor-not-allowed')}
+        />
+        {rightElement}
+      </div>
+    </div>
+  )
+}
 
 export function BusinessDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -55,21 +122,7 @@ export function BusinessDetailPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-
-  // Form Fields
-  const [businessName, setBusinessName] = useState('')
-  const [businessType, setBusinessType] = useState<number>(0)
-  const [city, setCity] = useState('')
-  const [fullAddress, setFullAddress] = useState('')
-  const [ownerFullName, setOwnerFullName] = useState('')
-  const [ownerWhatsApp, setOwnerWhatsApp] = useState('')
-  const [ownerKycStatus, setOwnerKycStatus] = useState<number>(0)
-  const [fssaiNumber, setFssaiNumber] = useState('')
-  const [gstNumber, setGstNumber] = useState('')
-  const [upiId, setUpiId] = useState('')
-  const [bankAccountNumber, setBankAccountNumber] = useState('')
-  const [bankIfsc, setBankIfsc] = useState('')
-  const [adminNotes, setAdminNotes] = useState('')
+  const [form, setForm] = useState<BusinessFormData>(initialForm)
 
   // Subscription Provisioning & History
   const [planActionLoading, setPlanActionLoading] = useState(false)
@@ -82,20 +135,26 @@ export function BusinessDetailPage() {
   const [actionPrompt, setActionPrompt] = useState<'deactivate' | 'suspend' | null>(null)
   const [statusReason, setStatusReason] = useState('')
 
+  const updateField = <K extends keyof BusinessFormData>(key: K, val: BusinessFormData[K]) => {
+    setForm((prev) => ({ ...prev, [key]: val }))
+  }
+
   const populateForm = useCallback((b: AdminBusiness) => {
-    setBusinessName(b.businessName || '')
-    setBusinessType(b.businessType ?? 0)
-    setCity(b.city || '')
-    setFullAddress(b.fullAddress || '')
-    setOwnerFullName(b.ownerName || '')
-    setOwnerWhatsApp(b.ownerWhatsApp || b.ownerMobile || '')
-    setOwnerKycStatus(b.ownerKycStatus ?? 0)
-    setFssaiNumber(b.fssaiNumber || '')
-    setGstNumber(b.gstNumber || '')
-    setUpiId(b.upiId || '')
-    setBankAccountNumber(b.bankAccountNumber || '')
-    setBankIfsc(b.bankIfsc || '')
-    setAdminNotes(b.adminNotes || '')
+    setForm({
+      businessName: b.businessName || '',
+      businessType: b.businessType ?? 0,
+      city: b.city || '',
+      fullAddress: b.fullAddress || '',
+      ownerFullName: b.ownerName || '',
+      ownerWhatsApp: b.ownerWhatsApp || b.ownerMobile || '',
+      ownerKycStatus: b.ownerKycStatus ?? 0,
+      fssaiNumber: b.fssaiNumber || '',
+      gstNumber: b.gstNumber || '',
+      upiId: b.upiId || '',
+      bankAccountNumber: b.bankAccountNumber || '',
+      bankIfsc: b.bankIfsc || '',
+      adminNotes: b.adminNotes || '',
+    })
   }, [])
 
   const loadBusiness = useCallback(async () => {
@@ -140,19 +199,19 @@ export function BusinessDetailPage() {
     setErrorMessage(null)
 
     const payload: AdminUpdateBusinessPayload = customPayload ?? {
-      businessName: businessName.trim(),
-      businessType,
-      city: city.trim(),
-      fullAddress: fullAddress.trim(),
-      ownerFullName: ownerFullName.trim(),
-      ownerWhatsApp: ownerWhatsApp.trim(),
-      ownerKycStatus,
-      fssaiNumber: fssaiNumber.trim(),
-      gstNumber: gstNumber.trim(),
-      upiId: upiId.trim(),
-      bankAccountNumber: bankAccountNumber.trim(),
-      bankIfsc: bankIfsc.trim(),
-      adminNotes: adminNotes.trim(),
+      businessName: form.businessName.trim(),
+      businessType: form.businessType,
+      city: form.city.trim(),
+      fullAddress: form.fullAddress.trim(),
+      ownerFullName: form.ownerFullName.trim(),
+      ownerWhatsApp: form.ownerWhatsApp.trim(),
+      ownerKycStatus: form.ownerKycStatus,
+      fssaiNumber: form.fssaiNumber.trim(),
+      gstNumber: form.gstNumber.trim(),
+      upiId: form.upiId.trim(),
+      bankAccountNumber: form.bankAccountNumber.trim(),
+      bankIfsc: form.bankIfsc.trim(),
+      adminNotes: form.adminNotes.trim(),
     }
 
     try {
@@ -173,7 +232,7 @@ export function BusinessDetailPage() {
     if (!id) return
     setIsSaving(true)
     try {
-      await adminService.approveBusiness(id, adminNotes.trim() || undefined)
+      await adminService.approveBusiness(id, form.adminNotes.trim() || undefined)
       await loadBusiness()
       setSaveSuccessMsg('Business approved and activated successfully!')
     } catch (err) {
@@ -187,7 +246,7 @@ export function BusinessDetailPage() {
     if (!id || !rejectReason.trim()) return
     setIsSaving(true)
     try {
-      await adminService.rejectBusiness(id, rejectReason.trim(), adminNotes.trim() || undefined)
+      await adminService.rejectBusiness(id, rejectReason.trim(), form.adminNotes.trim() || undefined)
       setIsRejecting(false)
       setRejectReason('')
       await loadBusiness()
@@ -203,7 +262,7 @@ export function BusinessDetailPage() {
     if (!id) return
     setIsSaving(true)
     try {
-      await adminService.setBusinessStatus(id, targetStatus, reason, adminNotes.trim() || undefined)
+      await adminService.setBusinessStatus(id, targetStatus, reason, form.adminNotes.trim() || undefined)
       setActionPrompt(null)
       setStatusReason('')
       await loadBusiness()
@@ -558,24 +617,20 @@ export function BusinessDetailPage() {
             </CardHeader>
             <CardContent className="p-6 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    Business / Restaurant Name *
-                  </label>
-                  <Input
-                    value={businessName}
-                    onChange={(e) => setBusinessName(e.target.value)}
-                    placeholder="Enter business name"
-                  />
-                </div>
+                <DetailField
+                  label="Business / Restaurant Name *"
+                  value={form.businessName}
+                  onChange={(val) => updateField('businessName', val)}
+                  placeholder="Enter business name"
+                />
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground">
                     Business Category *
                   </label>
                   <select
-                    value={businessType}
-                    onChange={(e) => setBusinessType(Number(e.target.value))}
+                    value={form.businessType}
+                    onChange={(e) => updateField('businessType', Number(e.target.value))}
                     aria-label="Business Category"
                     className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                   >
@@ -587,23 +642,20 @@ export function BusinessDetailPage() {
                   </select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">City *</label>
-                  <Input
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    placeholder="e.g. Mumbai, Bangalore"
-                  />
-                </div>
+                <DetailField
+                  label="City *"
+                  value={form.city}
+                  onChange={(val) => updateField('city', val)}
+                  placeholder="e.g. Mumbai, Bangalore"
+                />
 
-                <div className="space-y-1.5 sm:col-span-2">
-                  <label className="text-xs font-semibold text-muted-foreground">Full Address</label>
-                  <Input
-                    value={fullAddress}
-                    onChange={(e) => setFullAddress(e.target.value)}
-                    placeholder="e.g. Shop 4, Marine Plaza, MG Road"
-                  />
-                </div>
+                <DetailField
+                  label="Full Address"
+                  value={form.fullAddress}
+                  onChange={(val) => updateField('fullAddress', val)}
+                  placeholder="e.g. Shop 4, Marine Plaza, MG Road"
+                  className="sm:col-span-2"
+                />
               </div>
 
               <div className="flex justify-end pt-2">
@@ -612,10 +664,10 @@ export function BusinessDetailPage() {
                   variant="outline"
                   onClick={() =>
                     void handleSaveChanges({
-                      businessName: businessName.trim(),
-                      businessType,
-                      city: city.trim(),
-                      fullAddress: fullAddress.trim(),
+                      businessName: form.businessName.trim(),
+                      businessType: form.businessType,
+                      city: form.city.trim(),
+                      fullAddress: form.fullAddress.trim(),
                     })
                   }
                   disabled={isSaving}
@@ -652,27 +704,18 @@ export function BusinessDetailPage() {
             </CardHeader>
             <CardContent className="p-6 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    Owner Full Name
-                  </label>
-                  <Input
-                    value={ownerFullName}
-                    onChange={(e) => setOwnerFullName(e.target.value)}
-                    placeholder="e.g. Ramesh Patel"
-                  />
-                </div>
+                <DetailField
+                  label="Owner Full Name"
+                  value={form.ownerFullName}
+                  onChange={(val) => updateField('ownerFullName', val)}
+                  placeholder="e.g. Ramesh Patel"
+                />
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    Mobile Number (Login Identifier)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={business.ownerMobile}
-                      disabled
-                      className="bg-muted/50 cursor-not-allowed"
-                    />
+                <DetailField
+                  label="Mobile Number (Login Identifier)"
+                  value={business.ownerMobile}
+                  disabled
+                  rightElement={
                     <Button
                       size="sm"
                       variant="outline"
@@ -682,27 +725,23 @@ export function BusinessDetailPage() {
                     >
                       <Phone className="h-4 w-4" />
                     </Button>
-                  </div>
-                </div>
+                  }
+                />
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    WhatsApp Number
-                  </label>
-                  <Input
-                    value={ownerWhatsApp}
-                    onChange={(e) => setOwnerWhatsApp(e.target.value)}
-                    placeholder="e.g. 9876543210"
-                  />
-                </div>
+                <DetailField
+                  label="WhatsApp Number"
+                  value={form.ownerWhatsApp}
+                  onChange={(val) => updateField('ownerWhatsApp', val)}
+                  placeholder="e.g. 9876543210"
+                />
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground">
                     KYC Verification Status
                   </label>
                   <select
-                    value={ownerKycStatus}
-                    onChange={(e) => setOwnerKycStatus(Number(e.target.value))}
+                    value={form.ownerKycStatus}
+                    onChange={(e) => updateField('ownerKycStatus', Number(e.target.value))}
                     aria-label="KYC Verification Status"
                     className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                   >
@@ -714,33 +753,21 @@ export function BusinessDetailPage() {
                 </div>
 
                 {business.ownerPanNumber && (
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground">PAN Number</label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={business.ownerPanNumber}
-                        disabled
-                        className="bg-muted/50 font-mono text-xs cursor-not-allowed"
-                      />
-                      <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
-                    </div>
-                  </div>
+                  <DetailField
+                    label="PAN Number"
+                    value={business.ownerPanNumber}
+                    disabled
+                    rightElement={<Lock className="h-4 w-4 text-muted-foreground shrink-0" />}
+                  />
                 )}
 
                 {business.ownerAadhaarLast4 && (
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground">
-                      Aadhaar (Last 4 Digits)
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={`•••• •••• ${business.ownerAadhaarLast4}`}
-                        disabled
-                        className="bg-muted/50 font-mono text-xs cursor-not-allowed"
-                      />
-                      <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
-                    </div>
-                  </div>
+                  <DetailField
+                    label="Aadhaar (Last 4 Digits)"
+                    value={`•••• •••• ${business.ownerAadhaarLast4}`}
+                    disabled
+                    rightElement={<Lock className="h-4 w-4 text-muted-foreground shrink-0" />}
+                  />
                 )}
               </div>
 
@@ -750,9 +777,9 @@ export function BusinessDetailPage() {
                   variant="outline"
                   onClick={() =>
                     void handleSaveChanges({
-                      ownerFullName: ownerFullName.trim(),
-                      ownerWhatsApp: ownerWhatsApp.trim(),
-                      ownerKycStatus,
+                      ownerFullName: form.ownerFullName.trim(),
+                      ownerWhatsApp: form.ownerWhatsApp.trim(),
+                      ownerKycStatus: form.ownerKycStatus,
                     })
                   }
                   disabled={isSaving}
@@ -781,65 +808,41 @@ export function BusinessDetailPage() {
             </CardHeader>
             <CardContent className="p-6 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    FSSAI License Number
-                  </label>
-                  <Input
-                    value={fssaiNumber}
-                    onChange={(e) => setFssaiNumber(e.target.value)}
-                    placeholder="14-digit FSSAI Number"
-                    className="font-mono text-xs"
-                  />
-                </div>
+                <DetailField
+                  label="FSSAI License Number"
+                  value={form.fssaiNumber}
+                  onChange={(val) => updateField('fssaiNumber', val)}
+                  placeholder="14-digit FSSAI Number"
+                />
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    GSTIN Number (Optional)
-                  </label>
-                  <Input
-                    value={gstNumber}
-                    onChange={(e) => setGstNumber(e.target.value)}
-                    placeholder="15-character GSTIN"
-                    className="font-mono text-xs"
-                  />
-                </div>
+                <DetailField
+                  label="GSTIN Number (Optional)"
+                  value={form.gstNumber}
+                  onChange={(val) => updateField('gstNumber', val)}
+                  placeholder="15-character GSTIN"
+                />
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    UPI Payment ID (for Direct Diner Payouts)
-                  </label>
-                  <Input
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                    placeholder="e.g. restaurant@okaxis"
-                    className="font-mono text-xs"
-                  />
-                </div>
+                <DetailField
+                  label="UPI Payment ID (for Direct Diner Payouts)"
+                  value={form.upiId}
+                  onChange={(val) => updateField('upiId', val)}
+                  placeholder="e.g. restaurant@okaxis"
+                />
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    Bank Account Number
-                  </label>
-                  <Input
-                    value={bankAccountNumber}
-                    onChange={(e) => setBankAccountNumber(e.target.value)}
-                    placeholder="Account Number"
-                    className="font-mono text-xs"
-                  />
-                </div>
+                <DetailField
+                  label="Bank Account Number"
+                  value={form.bankAccountNumber}
+                  onChange={(val) => updateField('bankAccountNumber', val)}
+                  placeholder="Account Number"
+                />
 
-                <div className="space-y-1.5 sm:col-span-2">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    Bank IFSC Code
-                  </label>
-                  <Input
-                    value={bankIfsc}
-                    onChange={(e) => setBankIfsc(e.target.value)}
-                    placeholder="11-character IFSC Code (e.g. SBIN0001234)"
-                    className="font-mono text-xs uppercase"
-                  />
-                </div>
+                <DetailField
+                  label="Bank IFSC Code"
+                  value={form.bankIfsc}
+                  onChange={(val) => updateField('bankIfsc', val.toUpperCase())}
+                  placeholder="11-character IFSC Code (e.g. SBIN0001234)"
+                  className="sm:col-span-2"
+                />
               </div>
 
               <div className="flex justify-end pt-2">
@@ -848,11 +851,11 @@ export function BusinessDetailPage() {
                   variant="outline"
                   onClick={() =>
                     void handleSaveChanges({
-                      fssaiNumber: fssaiNumber.trim(),
-                      gstNumber: gstNumber.trim(),
-                      upiId: upiId.trim(),
-                      bankAccountNumber: bankAccountNumber.trim(),
-                      bankIfsc: bankIfsc.trim(),
+                      fssaiNumber: form.fssaiNumber.trim(),
+                      gstNumber: form.gstNumber.trim(),
+                      upiId: form.upiId.trim(),
+                      bankAccountNumber: form.bankAccountNumber.trim(),
+                      bankIfsc: form.bankIfsc.trim(),
                     })
                   }
                   disabled={isSaving}
@@ -878,8 +881,8 @@ export function BusinessDetailPage() {
                 Private notes visible only to super admins and staff. Use this to track verification audits, manual calls, or special arrangements.
               </p>
               <textarea
-                value={adminNotes}
-                onChange={(e) => setAdminNotes(e.target.value)}
+                value={form.adminNotes}
+                onChange={(e) => updateField('adminNotes', e.target.value)}
                 placeholder="e.g. Called owner on 20th Nov, confirmed physical store address, approved for 15 tables with high-res photo shoot."
                 rows={4}
                 className="w-full rounded-lg border border-border bg-card p-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
@@ -889,7 +892,7 @@ export function BusinessDetailPage() {
                   size="sm"
                   onClick={() =>
                     void handleSaveChanges({
-                      adminNotes: adminNotes.trim(),
+                      adminNotes: form.adminNotes.trim(),
                     })
                   }
                   disabled={isSaving}

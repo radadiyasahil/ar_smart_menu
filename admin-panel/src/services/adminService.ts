@@ -12,7 +12,9 @@ import type {
   SubscriptionHistoryItem,
   SubscriptionInvoice,
   SubscriptionPlan,
+  SupportContactSetting,
   UpdateSubscriptionPlanPayload,
+  UpdateSupportContactPayload,
 } from '@/types/admin'
 import type { ApiEnvelope, PagedResult } from '@/types/api'
 
@@ -26,6 +28,8 @@ export type {
   GstRateSetting,
   SubscriptionHistoryItem,
   SubscriptionInvoice,
+  SupportContactSetting,
+  UpdateSupportContactPayload,
 }
 
 export interface BusinessListParams {
@@ -407,6 +411,24 @@ export const adminService = {
     })
     if (!res.data.success || !res.data.data) {
       throw new Error(res.data.error ?? 'Failed to update GST rate setting')
+    }
+    return res.data.data
+  },
+
+  async getSupportContactSetting(): Promise<SupportContactSetting> {
+    await ensureAdminAuth()
+    const res = await apiClient.get<ApiEnvelope<SupportContactSetting>>('/admin/settings/support-contact')
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to load support contact settings')
+    }
+    return res.data.data
+  },
+
+  async updateSupportContactSetting(payload: UpdateSupportContactPayload): Promise<SupportContactSetting> {
+    await ensureAdminAuth()
+    const res = await apiClient.put<ApiEnvelope<SupportContactSetting>>('/admin/settings/support-contact', payload)
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to update support contact settings')
     }
     return res.data.data
   },

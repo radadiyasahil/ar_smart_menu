@@ -393,6 +393,86 @@ public class SubscriptionService : ISubscriptionService
         );
     }
 
+    public async Task<SupportContactSettingDto> GetSupportContactSettingAsync(CancellationToken ct = default)
+    {
+        var settings = await _db.SystemSettings
+            .AsNoTracking()
+            .Where(s => s.Key.StartsWith("Platform.Support"))
+            .ToListAsync(ct);
+
+        var whatsapp = settings.FirstOrDefault(s => s.Key == "Platform.SupportWhatsApp")?.Value ?? "+91 98765 43210";
+        var email = settings.FirstOrDefault(s => s.Key == "Platform.SupportEmail")?.Value ?? "support@arsmartmenu.com";
+        var phone = settings.FirstOrDefault(s => s.Key == "Platform.SupportPhone")?.Value ?? "+91 98765 43210";
+        var helpMsg = settings.FirstOrDefault(s => s.Key == "Platform.SupportHelpMessage")?.Value ?? "For assistance, queries, or account updates, reach out via:";
+
+        var latestUpdate = settings
+            .Select(s => s.UpdatedAt ?? s.CreatedAt)
+            .DefaultIfEmpty(DateTime.UtcNow)
+            .Max();
+
+        return new SupportContactSettingDto(
+            WhatsAppNumber: whatsapp,
+            Email: email,
+            PhoneNumber: phone,
+            HelpMessage: helpMsg,
+            LastUpdated: latestUpdate
+        );
+    }
+
+    public async Task<SupportContactSettingDto> UpdateSupportContactSettingAsync(UpdateSupportContactSettingRequest request, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.WhatsAppNumber))
+            throw new ValidationException("WhatsApp support number is required.");
+        if (string.IsNullOrWhiteSpace(request.Email))
+            throw new ValidationException("Support email address is required.");
+
+        var keysToUpdate = new Dictionary<string, (string Value, string Description)>
+        {
+            ["Platform.SupportWhatsApp"] = (request.WhatsAppNumber.Trim(), "Platform official WhatsApp support number"),
+            ["Platform.SupportEmail"] = (request.Email.Trim(), "Platform official support email address"),
+            ["Platform.SupportPhone"] = (string.IsNullOrWhiteSpace(request.PhoneNumber) ? request.WhatsAppNumber.Trim() : request.PhoneNumber.Trim(), "Platform official customer care phone number"),
+            ["Platform.SupportHelpMessage"] = (string.IsNullOrWhiteSpace(request.HelpMessage) ? "For assistance, queries, or account updates, reach out via:" : request.HelpMessage.Trim(), "Instructional header message shown in app support dialog")
+        };
+
+        var existingSettings = await _db.SystemSettings
+            .Where(s => s.Key.StartsWith("Platform.Support"))
+            .ToListAsync(ct);
+
+        var now = DateTime.UtcNow;
+        foreach (var (key, (val, desc)) in keysToUpdate)
+        {
+            var s = existingSettings.FirstOrDefault(x => x.Key == key);
+            if (s == null)
+            {
+                _db.SystemSettings.Add(new SystemSetting
+                {
+                    Key = key,
+                    Value = val,
+                    Description = desc,
+                    Group = "Support",
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            }
+            else
+            {
+                s.Value = val;
+                s.Description = desc;
+                s.UpdatedAt = now;
+            }
+        }
+
+        await _db.SaveChangesAsync(ct);
+
+        return new SupportContactSettingDto(
+            WhatsAppNumber: keysToUpdate["Platform.SupportWhatsApp"].Value,
+            Email: keysToUpdate["Platform.SupportEmail"].Value,
+            PhoneNumber: keysToUpdate["Platform.SupportPhone"].Value,
+            HelpMessage: keysToUpdate["Platform.SupportHelpMessage"].Value,
+            LastUpdated: now
+        );
+    }
+
     public async Task<IReadOnlyList<SubscriptionPlanDto>> ListPlansAsync(CancellationToken ct = default)
     {
         await EnsurePlansSeededAsync(ct);

@@ -238,6 +238,47 @@ class SubscriptionService {
     }
     return SubscriptionInvoiceModel.fromJson(envelope['data'] as Map<String, dynamic>);
   }
+
+  Future<SupportContactModel> getSupportContact() async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/subscriptions/support-contact');
+      final envelope = response.data;
+      if (envelope != null && envelope['data'] != null) {
+        return SupportContactModel.fromJson(envelope['data'] as Map<String, dynamic>);
+      }
+    } catch (_) {}
+    return SupportContactModel.defaultContact;
+  }
+}
+
+class SupportContactModel {
+  const SupportContactModel({
+    required this.whatsAppNumber,
+    required this.email,
+    required this.phoneNumber,
+    required this.helpMessage,
+  });
+
+  final String whatsAppNumber;
+  final String email;
+  final String phoneNumber;
+  final String helpMessage;
+
+  factory SupportContactModel.fromJson(Map<String, dynamic> json) {
+    return SupportContactModel(
+      whatsAppNumber: json['whatsAppNumber']?.toString() ?? '+91 98765 43210',
+      email: json['email']?.toString() ?? 'support@arsmartmenu.com',
+      phoneNumber: json['phoneNumber']?.toString() ?? '+91 98765 43210',
+      helpMessage: json['helpMessage']?.toString() ?? 'For assistance, queries, or account updates, reach out via:',
+    );
+  }
+
+  static const defaultContact = SupportContactModel(
+    whatsAppNumber: '+91 98765 43210',
+    email: 'support@arsmartmenu.com',
+    phoneNumber: '+91 98765 43210',
+    helpMessage: 'For assistance, queries, or account updates, reach out via:',
+  );
 }
 
 class SubscriptionHistoryItemModel {

@@ -368,6 +368,21 @@ public record UpdateGstRateRequest(
     decimal GstRatePercent
 );
 
+public record SupportContactSettingDto(
+    string WhatsAppNumber,
+    string Email,
+    string? PhoneNumber = null,
+    string? HelpMessage = null,
+    DateTime? LastUpdated = null
+);
+
+public record UpdateSupportContactSettingRequest(
+    string WhatsAppNumber,
+    string Email,
+    string? PhoneNumber = null,
+    string? HelpMessage = null
+);
+
 // ── QR Code ─────────────────────────────────────────────────────────────────
 
 public record QrCodeDto(

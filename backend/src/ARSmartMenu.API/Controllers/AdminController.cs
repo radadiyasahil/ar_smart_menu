@@ -278,6 +278,24 @@ public class AdminController : ControllerBase
         return Ok(ApiResponse<GstRateSettingDto>.Ok(result, $"Customer GST rate successfully updated to {result.GstRatePercent:0.##}%"));
     }
 
+    /// <summary>Get dynamic platform support & contact details (WhatsApp, Email, Phone, Help Message).</summary>
+    [HttpGet("settings/support-contact")]
+    public async Task<ActionResult<ApiResponse<SupportContactSettingDto>>> GetSupportContactSetting(CancellationToken ct)
+    {
+        var result = await _subscriptions.GetSupportContactSettingAsync(ct);
+        return Ok(ApiResponse<SupportContactSettingDto>.Ok(result));
+    }
+
+    /// <summary>Update dynamic platform support & contact details from admin panel.</summary>
+    [HttpPut("settings/support-contact")]
+    public async Task<ActionResult<ApiResponse<SupportContactSettingDto>>> UpdateSupportContactSetting(
+        [FromBody] UpdateSupportContactSettingRequest request,
+        CancellationToken ct)
+    {
+        var result = await _subscriptions.UpdateSupportContactSettingAsync(request, ct);
+        return Ok(ApiResponse<SupportContactSettingDto>.Ok(result, "Platform support contact details updated successfully"));
+    }
+
     /// <summary>Get history of all past subscriptions and invoices for a specific business.</summary>
     [HttpGet("businesses/{id:guid}/subscriptions/history")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>>> GetBusinessSubscriptionHistory(

@@ -154,6 +154,17 @@ public class SubscriptionsController : ControllerBase
     }
 
     /// <summary>
+    /// Get dynamic platform support contact details (WhatsApp, Email, Phone, Help Message) for app settings.
+    /// </summary>
+    [HttpGet("support-contact")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<SupportContactSettingDto>>> GetSupportContact(CancellationToken ct)
+    {
+        var result = await _subscriptions.GetSupportContactSettingAsync(ct);
+        return Ok(ApiResponse<SupportContactSettingDto>.Ok(result));
+    }
+
+    /// <summary>
     /// Download/View printable Government & Audit compliant A4 GST Tax Invoice HTML for any past subscription transaction.
     /// </summary>
     [HttpGet("{id:guid}/invoice/html")]

@@ -5,10 +5,14 @@ import {
   CheckCircle2,
   CreditCard,
   Flame,
+  Headphones,
   Info,
   Layers,
+  Mail,
+  MessageSquare,
   Pencil,
   Percent,
+  Phone,
   Plus,
   Power,
   RefreshCw,
@@ -33,6 +37,7 @@ import {
   type CreateSubscriptionPlanPayload,
   type GstRateSetting,
   type SubscriptionPlan,
+  type SupportContactSetting,
   type UpdateSubscriptionPlanPayload,
   formatPaise,
 } from '@/types/admin'
@@ -136,6 +141,52 @@ export function PlansPage() {
     }
   }
 
+  // Dynamic Platform Support & Contact Configuration State
+  const [supportContact, setSupportContact] = useState<SupportContactSetting | null>(null)
+  const [isEditingSupport, setIsEditingSupport] = useState(false)
+  const [supportWhatsApp, setSupportWhatsApp] = useState('+91 98765 43210')
+  const [supportEmail, setSupportEmail] = useState('support@arsmartmenu.com')
+  const [supportPhone, setSupportPhone] = useState('+91 98765 43210')
+  const [supportHelpMsg, setSupportHelpMsg] = useState('For assistance, queries, or account updates, reach out via:')
+  const [supportSaving, setSupportSaving] = useState(false)
+
+  const fetchSupportContact = async () => {
+    try {
+      const data = await adminService.getSupportContactSetting()
+      setSupportContact(data)
+      setSupportWhatsApp(data.whatsAppNumber)
+      setSupportEmail(data.email)
+      setSupportPhone(data.phoneNumber || data.whatsAppNumber)
+      setSupportHelpMsg(data.helpMessage || 'For assistance, queries, or account updates, reach out via:')
+    } catch (e) {
+      console.error('Failed to load support contact:', e)
+    }
+  }
+
+  const handleSaveSupportContact = async () => {
+    if (!supportWhatsApp.trim() || !supportEmail.trim()) {
+      setError('WhatsApp number and Email address are required.')
+      return
+    }
+    setSupportSaving(true)
+    try {
+      const updated = await adminService.updateSupportContactSetting({
+        whatsAppNumber: supportWhatsApp.trim(),
+        email: supportEmail.trim(),
+        phoneNumber: supportPhone.trim() || supportWhatsApp.trim(),
+        helpMessage: supportHelpMsg.trim(),
+      })
+      setSupportContact(updated)
+      setIsEditingSupport(false)
+      setSuccessMessage('Platform Support & Contact details updated successfully! Restaurant app settings now reflect this immediately.')
+      setTimeout(() => setSuccessMessage(null), 5000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update support contact')
+    } finally {
+      setSupportSaving(false)
+    }
+  }
+
   const fetchPlans = async () => {
     try {
       setLoading(true)
@@ -152,6 +203,7 @@ export function PlansPage() {
   useEffect(() => {
     fetchPlans()
     fetchGstSetting()
+    fetchSupportContact()
   }, [])
 
   const filteredPlans = useMemo(() => {
@@ -502,6 +554,163 @@ export function PlansPage() {
                 </Button>
               )}
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Platform Support & Contact Details Configuration Card */}
+      <Card className="border-border bg-card shadow-xs">
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-emerald-500/10 p-2.5 text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <Headphones className="h-5 w-5" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-foreground text-sm sm:text-base">
+                      App Support & Contact Details
+                    </h3>
+                    <Badge variant="success" className="text-[11px]">
+                      Live in App
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground max-w-xl">
+                    Dynamic contact details displayed in restaurant owner and customer account settings.
+                    Changes made here reflect immediately in the mobile application's "Support & Contact" dialog.
+                  </p>
+                </div>
+              </div>
+
+              {!isEditingSupport && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs gap-1.5 border-border hover:bg-muted self-start sm:self-center shrink-0"
+                  onClick={() => {
+                    if (supportContact) {
+                      setSupportWhatsApp(supportContact.whatsAppNumber)
+                      setSupportEmail(supportContact.email)
+                      setSupportPhone(supportContact.phoneNumber || supportContact.whatsAppNumber)
+                      setSupportHelpMsg(supportContact.helpMessage || 'For assistance, queries, or account updates, reach out via:')
+                    }
+                    setIsEditingSupport(true)
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                  Edit Support Details
+                </Button>
+              )}
+            </div>
+
+            {/* Display / Edit View */}
+            {isEditingSupport ? (
+              <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-4 animate-in fade-in-50">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                      <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
+                      Official WhatsApp Number *
+                    </label>
+                    <Input
+                      value={supportWhatsApp}
+                      onChange={(e) => setSupportWhatsApp(e.target.value)}
+                      placeholder="+91 98765 43210"
+                      className="h-9 text-xs font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                      <Mail className="h-3.5 w-3.5 text-primary" />
+                      Official Support Email *
+                    </label>
+                    <Input
+                      value={supportEmail}
+                      onChange={(e) => setSupportEmail(e.target.value)}
+                      placeholder="support@arsmartmenu.com"
+                      className="h-9 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                      <Phone className="h-3.5 w-3.5 text-blue-500" />
+                      Customer Care Phone
+                    </label>
+                    <Input
+                      value={supportPhone}
+                      onChange={(e) => setSupportPhone(e.target.value)}
+                      placeholder="+91 98765 43210"
+                      className="h-9 text-xs font-mono"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-3 space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground">
+                      Header Instruction Message (Shown above contact numbers in app)
+                    </label>
+                    <Input
+                      value={supportHelpMsg}
+                      onChange={(e) => setSupportHelpMsg(e.target.value)}
+                      placeholder="For assistance, queries, or account updates, reach out via:"
+                      className="h-9 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 text-xs"
+                    disabled={supportSaving}
+                    onClick={() => setIsEditingSupport(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
+                    disabled={supportSaving}
+                    onClick={handleSaveSupportContact}
+                  >
+                    {supportSaving ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                    Save Support Details
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div className="rounded-lg border border-border/70 bg-card p-3 space-y-1 shadow-2xs">
+                  <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                    <MessageSquare className="h-3.5 w-3.5 text-emerald-600" /> WhatsApp
+                  </span>
+                  <p className="font-mono text-xs font-bold text-foreground">
+                    {supportContact?.whatsAppNumber || '+91 98765 43210'}
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-border/70 bg-card p-3 space-y-1 shadow-2xs">
+                  <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                    <Mail className="h-3.5 w-3.5 text-primary" /> Support Email
+                  </span>
+                  <p className="font-medium text-xs font-bold text-foreground truncate">
+                    {supportContact?.email || 'support@arsmartmenu.com'}
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-border/70 bg-card p-3 space-y-1 shadow-2xs">
+                  <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                    <Phone className="h-3.5 w-3.5 text-blue-500" /> Phone Call
+                  </span>
+                  <p className="font-mono text-xs font-bold text-foreground">
+                    {supportContact?.phoneNumber || supportContact?.whatsAppNumber || '+91 98765 43210'}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

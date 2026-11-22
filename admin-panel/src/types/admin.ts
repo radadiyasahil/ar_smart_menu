@@ -349,4 +349,19 @@ export interface SubscriptionInvoice {
   status: string
 }
 
+export interface SupportContactSetting {
+  whatsAppNumber: string
+  email: string
+  phoneNumber?: string
+  helpMessage?: string
+  lastUpdated?: string
+}
+
+export interface UpdateSupportContactPayload {
+  whatsAppNumber: string
+  email: string
+  phoneNumber?: string
+  helpMessage?: string
+}
+
 

@@ -6,9 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_routes.dart';
+import '../../core/services/subscription_service.dart';
 import '../../models/business_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/business_provider.dart';
@@ -70,6 +72,7 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _kycLoading = false;
   bool _bankLoading = false;
   bool _notificationsPaused = false;
+  SupportContactModel? _cachedSupportContact;
 
   @override
   void initState() {
@@ -77,6 +80,9 @@ class _AccountScreenState extends State<AccountScreen> {
     if (widget.initialTab?.toLowerCase() == 'kyc' || widget.initialTab == '2') {
       _selectedTab = _ProfileTab.kyc;
     }
+    SubscriptionService().getSupportContact().then((v) {
+      if (mounted) setState(() => _cachedSupportContact = v);
+    }).catchError((_) {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadProfileData();
     });
@@ -2291,19 +2297,127 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
-  void _showSupportDialog() {
-    showDialog(
+  void _showSupportDialog() async {
+    SupportContactModel contact = _cachedSupportContact ?? SupportContactModel.defaultContact;
+
+    // Fetch latest dynamic support contact from backend
+    SubscriptionService().getSupportContact().then((fetched) {
+      if (mounted) {
+        setState(() {
+          _cachedSupportContact = fetched;
+        });
+      }
+    }).catchError((_) {});
+
+    await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Support & Contact'),
-        content: const Text('For assistance, queries, or account updates, reach out via:\n\nWhatsApp: +91 98765 43210\nEmail: support@arsmartmenu.com'),
-        actions: [
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.primaryOrange),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final current = _cachedSupportContact ?? contact;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('Support & Contact', style: TextStyle(fontWeight: FontWeight.bold)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  current.helpMessage,
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: current.whatsAppNumber));
+                    _showNotification('WhatsApp number copied to clipboard');
+                    final cleanNum = current.whatsAppNumber.replaceAll(RegExp(r'[^0-9]'), '');
+                    final uri = Uri.parse('https://wa.me/$cleanNum');
+                    launchUrl(uri, mode: LaunchMode.externalApplication).catchError((_) => false);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.chat_bubble_outline, size: 18, color: Colors.green),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'WhatsApp: ${current.whatsAppNumber}',
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: current.email));
+                    _showNotification('Email address copied to clipboard');
+                    final uri = Uri.parse('mailto:${current.email}');
+                    launchUrl(uri).catchError((_) => false);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.email_outlined, size: 18, color: AppColors.primaryOrange),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Email: ${current.email}',
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (current.phoneNumber.isNotEmpty && current.phoneNumber != current.whatsAppNumber) ...[
+                  const SizedBox(height: 8),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: current.phoneNumber));
+                      _showNotification('Phone number copied to clipboard');
+                      final uri = Uri.parse('tel:${current.phoneNumber}');
+                      launchUrl(uri).catchError((_) => false);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.phone_outlined, size: 18, color: Colors.blue),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Phone: ${current.phoneNumber}',
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primaryOrange,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                ),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -76,6 +76,8 @@ public interface ISubscriptionService
     Task<string> GenerateInvoiceHtmlAsync(Guid subscriptionId, Guid? requestingBusinessId = null, bool isAdmin = false, CancellationToken ct = default);
     Task<GstRateSettingDto> GetGstRateSettingAsync(CancellationToken ct = default);
     Task<GstRateSettingDto> UpdateGstRateSettingAsync(decimal newRatePercent, CancellationToken ct = default);
+    Task<SupportContactSettingDto> GetSupportContactSettingAsync(CancellationToken ct = default);
+    Task<SupportContactSettingDto> UpdateSupportContactSettingAsync(UpdateSupportContactSettingRequest request, CancellationToken ct = default);
 }
 
 public interface IQrCodeService

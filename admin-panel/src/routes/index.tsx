@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router-dom'
 
 import { AdminAuthGate } from '@/components/auth/AdminAuthGate'
 import { AdminLayout } from '@/components/layout/AdminLayout'
+import { BusinessDetailPage } from '@/pages/businesses/BusinessDetailPage'
 import { BusinessesPage } from '@/pages/businesses/BusinessesPage'
 import { DashboardPage } from '@/pages/dashboard/DashboardPage'
 import { KycReviewPage } from '@/pages/kyc/KycReviewPage'
@@ -24,6 +25,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           { path: 'businesses', element: <BusinessesPage /> },
+          { path: 'businesses/:id', element: <BusinessDetailPage /> },
           { path: 'kyc', element: <KycReviewPage /> },
           { path: 'plans', element: <PlansPage /> },
           { path: 'products', element: <ProductsPage /> },

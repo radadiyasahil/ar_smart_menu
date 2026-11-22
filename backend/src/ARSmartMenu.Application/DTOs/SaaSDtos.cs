@@ -71,6 +71,22 @@ public record SubmitKycRequest(
 public record UpdateBusinessStatusRequest(BusinessStatus Status, string? Reason = null);
 public record AdminSetBusinessStatusRequest(BusinessStatus Status, string? Reason = null, string? AdminNotes = null);
 
+public record AdminUpdateBusinessRequest(
+    string? BusinessName = null,
+    BusinessType? BusinessType = null,
+    string? City = null,
+    string? FullAddress = null,
+    string? FssaiNumber = null,
+    string? GstNumber = null,
+    string? UpiId = null,
+    string? BankAccountNumber = null,
+    string? BankIfsc = null,
+    string? AdminNotes = null,
+    string? OwnerFullName = null,
+    string? OwnerWhatsApp = null,
+    int? OwnerKycStatus = null
+);
+
 // ── Product ─────────────────────────────────────────────────────────────────
 
 public record CreateProductRequest(

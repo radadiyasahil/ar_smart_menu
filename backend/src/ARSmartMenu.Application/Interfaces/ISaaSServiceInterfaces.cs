@@ -105,6 +105,8 @@ public interface IAdminService
         AdminBusinessFilter? filter,
         PaginationQuery pagination,
         CancellationToken ct = default);
+    Task<AdminBusinessListItemDto?> GetBusinessByIdAsync(Guid businessId, CancellationToken ct = default);
+    Task<AdminBusinessListItemDto> UpdateBusinessAsync(Guid adminUserId, Guid businessId, AdminUpdateBusinessRequest request, CancellationToken ct = default);
     Task<BusinessDto> ApproveBusinessAsync(Guid adminUserId, Guid businessId, ApproveBusinessRequest request, CancellationToken ct = default);
     Task<BusinessDto> RejectBusinessAsync(Guid adminUserId, Guid businessId, RejectBusinessRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<AdminProductReviewItemDto>> GetProductReviewQueueAsync(

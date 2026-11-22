@@ -80,53 +80,7 @@ public class AdminService : IAdminService
             .Take(Math.Clamp(pagination.Limit, 1, 100))
             .ToListAsync(ct);
 
-        var now = DateTime.UtcNow;
-        var items = businesses.Select(b =>
-        {
-            var latestSub = b.Subscriptions
-                .OrderByDescending(s => s.EndsAt)
-                .FirstOrDefault();
-
-            var isSubActive = latestSub != null && latestSub.Status == SubscriptionStatus.Active && latestSub.EndsAt > now;
-            var daysRem = isSubActive ? Math.Max(0, (int)Math.Ceiling((latestSub!.EndsAt - now).TotalDays)) : 0;
-            var subStatus = latestSub == null
-                ? "None"
-                : (isSubActive
-                    ? (latestSub.Plan?.Slug == "trial-7-days" ? "Trial" : "Active")
-                    : "Expired");
-
-            var hasUsedTrial = b.Subscriptions.Any(s => s.Plan?.Slug == "trial-7-days");
-
-            return new AdminBusinessListItemDto(
-                b.Id,
-                b.BusinessName,
-                b.BusinessType,
-                b.City,
-                b.Status,
-                b.Owner.MobileNumber,
-                b.Owner.FullName,
-                b.Owner.KycStatus,
-                b.Products.Count,
-                b.CreatedAt,
-                b.FullAddress,
-                b.FssaiNumber,
-                b.GstNumber,
-                b.UpiId,
-                b.BankAccountNumber,
-                b.BankIfsc,
-                b.BankPennyVerified,
-                b.Owner.WhatsAppNumber,
-                b.Owner.AadhaarLast4,
-                b.Owner.PanNumber,
-                b.RejectionReason,
-                b.AdminNotes,
-                latestSub?.Plan?.Name,
-                subStatus,
-                latestSub?.StartsAt,
-                latestSub?.EndsAt,
-                daysRem,
-                hasUsedTrial);
-        }).ToList();
+        var items = businesses.Select(MapAdminBusiness).ToList();
 
         return new PagedResult<AdminBusinessListItemDto>
         {
@@ -135,6 +89,130 @@ public class AdminService : IAdminService
             Page = pagination.Page,
             Limit = pagination.Limit,
         };
+    }
+
+    public async Task<AdminBusinessListItemDto?> GetBusinessByIdAsync(Guid businessId, CancellationToken ct = default)
+    {
+        var b = await _db.Businesses
+            .AsNoTracking()
+            .Include(b => b.Owner)
+            .Include(b => b.Products)
+            .Include(b => b.Subscriptions)
+                .ThenInclude(s => s.Plan)
+            .FirstOrDefaultAsync(b => b.Id == businessId, ct);
+
+        if (b == null) return null;
+        return MapAdminBusiness(b);
+    }
+
+    public async Task<AdminBusinessListItemDto> UpdateBusinessAsync(
+        Guid adminUserId,
+        Guid businessId,
+        AdminUpdateBusinessRequest request,
+        CancellationToken ct = default)
+    {
+        var b = await _db.Businesses
+            .Include(b => b.Owner)
+            .Include(b => b.Products)
+            .Include(b => b.Subscriptions)
+                .ThenInclude(s => s.Plan)
+            .FirstOrDefaultAsync(b => b.Id == businessId, ct)
+            ?? throw new NotFoundException("Business not found.");
+
+        if (!string.IsNullOrWhiteSpace(request.BusinessName))
+            b.BusinessName = request.BusinessName.Trim();
+
+        if (request.BusinessType.HasValue)
+            b.BusinessType = request.BusinessType.Value;
+
+        if (!string.IsNullOrWhiteSpace(request.City))
+            b.City = request.City.Trim();
+
+        if (request.FullAddress != null)
+            b.FullAddress = request.FullAddress.Trim();
+
+        if (request.FssaiNumber != null)
+            b.FssaiNumber = string.IsNullOrWhiteSpace(request.FssaiNumber) ? null : request.FssaiNumber.Trim();
+
+        if (request.GstNumber != null)
+            b.GstNumber = string.IsNullOrWhiteSpace(request.GstNumber) ? null : request.GstNumber.Trim();
+
+        if (request.UpiId != null)
+            b.UpiId = string.IsNullOrWhiteSpace(request.UpiId) ? null : request.UpiId.Trim();
+
+        if (request.BankAccountNumber != null)
+            b.BankAccountNumber = string.IsNullOrWhiteSpace(request.BankAccountNumber) ? null : request.BankAccountNumber.Trim();
+
+        if (request.BankIfsc != null)
+            b.BankIfsc = string.IsNullOrWhiteSpace(request.BankIfsc) ? null : request.BankIfsc.Trim();
+
+        if (request.AdminNotes != null)
+            b.AdminNotes = request.AdminNotes.Trim();
+
+        if (b.Owner != null)
+        {
+            if (!string.IsNullOrWhiteSpace(request.OwnerFullName))
+                b.Owner.FullName = request.OwnerFullName.Trim();
+
+            if (request.OwnerWhatsApp != null)
+                b.Owner.WhatsAppNumber = string.IsNullOrWhiteSpace(request.OwnerWhatsApp) ? null : request.OwnerWhatsApp.Trim();
+
+            if (request.OwnerKycStatus.HasValue)
+                b.Owner.KycStatus = (KycStatus)request.OwnerKycStatus.Value;
+        }
+
+        b.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return MapAdminBusiness(b);
+    }
+
+    private static AdminBusinessListItemDto MapAdminBusiness(Business b)
+    {
+        var now = DateTime.UtcNow;
+        var latestSub = b.Subscriptions
+            .OrderByDescending(s => s.EndsAt)
+            .FirstOrDefault();
+
+        var isSubActive = latestSub != null && latestSub.Status == SubscriptionStatus.Active && latestSub.EndsAt > now;
+        var daysRem = isSubActive ? Math.Max(0, (int)Math.Ceiling((latestSub!.EndsAt - now).TotalDays)) : 0;
+        var subStatus = latestSub == null
+            ? "None"
+            : (isSubActive
+                ? (latestSub.Plan?.Slug == "trial-7-days" ? "Trial" : "Active")
+                : "Expired");
+
+        var hasUsedTrial = b.Subscriptions.Any(s => s.Plan?.Slug == "trial-7-days");
+
+        return new AdminBusinessListItemDto(
+            b.Id,
+            b.BusinessName,
+            b.BusinessType,
+            b.City,
+            b.Status,
+            b.Owner?.MobileNumber ?? "",
+            b.Owner?.FullName,
+            b.Owner?.KycStatus ?? KycStatus.Pending,
+            b.Products.Count,
+            b.CreatedAt,
+            b.FullAddress,
+            b.FssaiNumber,
+            b.GstNumber,
+            b.UpiId,
+            b.BankAccountNumber,
+            b.BankIfsc,
+            b.BankPennyVerified,
+            b.Owner?.WhatsAppNumber,
+            b.Owner?.AadhaarLast4,
+            b.Owner?.PanNumber,
+            b.RejectionReason,
+            b.AdminNotes,
+            latestSub?.Plan?.Name,
+            subStatus,
+            latestSub?.StartsAt,
+            latestSub?.EndsAt,
+            daysRem,
+            hasUsedTrial);
     }
 
     public async Task<BusinessDto> ApproveBusinessAsync(

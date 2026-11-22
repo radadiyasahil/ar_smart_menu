@@ -33,6 +33,22 @@ export interface AdminBusiness {
   hasUsedTrial?: boolean
 }
 
+export interface AdminUpdateBusinessPayload {
+  businessName?: string
+  businessType?: number
+  city?: string
+  fullAddress?: string
+  fssaiNumber?: string
+  gstNumber?: string
+  upiId?: string
+  bankAccountNumber?: string
+  bankIfsc?: string
+  adminNotes?: string
+  ownerFullName?: string
+  ownerWhatsApp?: string
+  ownerKycStatus?: number
+}
+
 export interface AdminDashboardStats {
   totalBusinesses: number
   activeBusinesses: number

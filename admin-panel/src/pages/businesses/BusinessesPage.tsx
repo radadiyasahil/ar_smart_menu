@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { BusinessDetailModal } from '@/components/businesses/BusinessDetailModal'
 import { StatusBadge } from '@/components/tables/DataTable'
@@ -53,6 +53,7 @@ const STATUS_TABS: { label: string; value: BusinessStatusFilter }[] = [
 ]
 
 export function BusinessesPage() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialStatus = (searchParams.get('status') as BusinessStatusFilter) ?? 'pending'
 
@@ -516,7 +517,7 @@ export function BusinessesPage() {
                   <TableHead>Subscription</TableHead>
                   <TableHead>{renderSortHeader('Dishes', 'products')}</TableHead>
                   <TableHead>{renderSortHeader('Registered', 'date')}</TableHead>
-                  <TableHead className="text-right">Review / Actions</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -549,8 +550,12 @@ export function BusinessesPage() {
                       <TableRow key={b.id} className="hover:bg-muted/30">
                         {/* Restaurant Name */}
                         <TableCell>
-                          <div className="space-y-0.5">
-                            <span className="font-semibold text-foreground block">
+                          <div
+                            className="space-y-0.5 cursor-pointer group"
+                            onClick={() => navigate(`/businesses/${b.id}`, { state: { business: b } })}
+                            title="View business details"
+                          >
+                            <span className="font-semibold text-foreground block group-hover:text-primary transition-colors">
                               {b.businessName}
                             </span>
                             <span className="text-[11px] text-muted-foreground">
@@ -644,12 +649,12 @@ export function BusinessesPage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-8 px-2 text-xs"
-                              onClick={() => setSelectedBusiness(b)}
-                              title="Inspect full details, KYC & Settings"
+                              className="h-8 px-2.5 text-xs font-medium hover:bg-muted"
+                              onClick={() => navigate(`/businesses/${b.id}`, { state: { business: b } })}
+                              title="View full details and manage business"
                             >
                               <Eye className="mr-1 h-3.5 w-3.5" />
-                              Review
+                              View
                             </Button>
 
                             {isPending && (

@@ -49,6 +49,29 @@ public class AdminController : ControllerBase
         return Ok(ApiResponse<PagedResult<AdminBusinessListItemDto>>.Ok(result));
     }
 
+    /// <summary>Get detailed business profile by ID for the admin full-page view.</summary>
+    [HttpGet("businesses/{id:guid}")]
+    public async Task<ActionResult<ApiResponse<AdminBusinessListItemDto>>> GetBusinessById(
+        Guid id,
+        CancellationToken ct)
+    {
+        var result = await _admin.GetBusinessByIdAsync(id, ct);
+        if (result == null)
+            return NotFound(ApiResponse<AdminBusinessListItemDto>.Fail("Business not found"));
+        return Ok(ApiResponse<AdminBusinessListItemDto>.Ok(result));
+    }
+
+    /// <summary>Update business details and notes directly from the admin full-page view.</summary>
+    [HttpPut("businesses/{id:guid}")]
+    public async Task<ActionResult<ApiResponse<AdminBusinessListItemDto>>> UpdateBusiness(
+        Guid id,
+        [FromBody] AdminUpdateBusinessRequest request,
+        CancellationToken ct)
+    {
+        var result = await _admin.UpdateBusinessAsync(_currentUser.GetUserId(), id, request, ct);
+        return Ok(ApiResponse<AdminBusinessListItemDto>.Ok(result, "Business details updated successfully"));
+    }
+
     [HttpPost("businesses/{id:guid}/approve")]
     public async Task<ActionResult<ApiResponse<BusinessDto>>> Approve(
         Guid id,

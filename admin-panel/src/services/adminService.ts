@@ -4,6 +4,7 @@ import type {
   AdminNotification,
   AdminNotificationsResponse,
   AdminProductReviewItem,
+  AdminUpdateBusinessPayload,
   BusinessStatusFilter,
   CreateSubscriptionPlanPayload,
   GstRateSetting,
@@ -18,7 +19,14 @@ import type { ApiEnvelope, PagedResult } from '@/types/api'
 import { apiClient } from './apiClient'
 import { ensureAdminAuth } from './authService'
 
-export type { AdminNotification, AdminNotificationsResponse, GstRateSetting, SubscriptionHistoryItem, SubscriptionInvoice }
+export type {
+  AdminNotification,
+  AdminNotificationsResponse,
+  AdminUpdateBusinessPayload,
+  GstRateSetting,
+  SubscriptionHistoryItem,
+  SubscriptionInvoice,
+}
 
 export interface BusinessListParams {
   status?: BusinessStatusFilter
@@ -66,6 +74,30 @@ export const adminService = {
     )
     if (!res.data.success || !res.data.data) {
       throw new Error(res.data.error ?? 'Failed to load businesses')
+    }
+    return res.data.data
+  },
+
+  async getBusinessById(id: string): Promise<AdminBusiness> {
+    await ensureAdminAuth()
+    const res = await apiClient.get<ApiEnvelope<AdminBusiness>>(`/admin/businesses/${id}`)
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to load business details')
+    }
+    return res.data.data
+  },
+
+  async updateBusiness(
+    id: string,
+    payload: AdminUpdateBusinessPayload,
+  ): Promise<AdminBusiness> {
+    await ensureAdminAuth()
+    const res = await apiClient.put<ApiEnvelope<AdminBusiness>>(
+      `/admin/businesses/${id}`,
+      payload,
+    )
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to update business')
     }
     return res.data.data
   },

@@ -21,7 +21,7 @@ public class MockOtpSender : IOtpSender
         if (_config.GetValue("Otp:MockMode", true))
         {
             _logger.LogWarning(
-                "[DEV OTP] Mobile: {Mobile} | OTP: {Otp} | Dev bypass also accepts: {Bypass}",
+                "[WHATSAPP & SMS OTP DISPATCH] Mobile: {Mobile} | Security OTP: {Otp} | Dev bypass accepted: {Bypass}",
                 mobileNumber,
                 otp,
                 _config["Otp:DevBypassCode"] ?? "123456");

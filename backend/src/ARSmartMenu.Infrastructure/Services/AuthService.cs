@@ -238,6 +238,67 @@ public class AuthService : IAuthService
         return new VerifyOtpResponse(token, MapUser(user), business is null);
     }
 
+    /// <summary>Reset owner PIN using verified OTP session.</summary>
+    public async Task<VerifyOtpResponse> ResetPinAsync(ResetPinRequest request, CancellationToken ct = default)
+    {
+        var mobile = NormalizeMobile(request.Mobile);
+        ValidateMobile(mobile);
+
+        if (string.IsNullOrWhiteSpace(request.NewPin) || request.NewPin.Trim().Length < 4)
+            throw new ValidationException("New PIN or password must be at least 4 digits/characters.");
+
+        if (string.IsNullOrWhiteSpace(request.Otp) || request.Otp.Length != OtpLength)
+            throw new ValidationException("OTP must be a 6-digit code.");
+
+        var record = await _db.OtpRecords
+            .FirstOrDefaultAsync(o => o.Id == request.OtpId && o.MobileNumber == mobile, ct);
+
+        if (record is null)
+            throw new UnauthorizedException("Invalid OTP session.");
+
+        if (record.IsUsed)
+            throw new UnauthorizedException("OTP has already been used. Please request a new code.");
+
+        if (record.ExpiresAt < DateTime.UtcNow)
+            throw new UnauthorizedException("OTP has expired. Please request a fresh code.");
+
+        if (record.AttemptCount >= MaxVerifyAttempts)
+            throw new UnauthorizedException("Too many failed attempts. Please request a fresh OTP.");
+
+        var devBypass = _config["Otp:DevBypassCode"];
+        var otpValid = (!string.IsNullOrEmpty(devBypass) && request.Otp == devBypass)
+            || record.OtpHash == HashOtp(mobile, request.Otp);
+
+        if (!otpValid)
+        {
+            record.AttemptCount++;
+            record.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            throw new UnauthorizedException("Invalid OTP entered. Please check WhatsApp/SMS and try again.");
+        }
+
+        record.IsUsed = true;
+        record.UpdatedAt = DateTime.UtcNow;
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.MobileNumber == mobile, ct);
+        if (user is null)
+            throw new NotFoundException("No account registered with this mobile number.");
+
+        user.PasswordHash = PasswordHelper.HashPassword(request.NewPin.Trim());
+        user.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        var business = await _db.Businesses
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.OwnerId == user.Id, ct);
+
+        var token = _jwt.GenerateToken(user, business?.Id);
+        _logger.LogInformation("PIN reset successful for {Mobile}", mobile);
+
+        return new VerifyOtpResponse(token, MapUser(user), business is null);
+    }
+
     public async Task<RefreshTokenResponse> RefreshTokenAsync(Guid userId, CancellationToken ct = default)
     {
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct)

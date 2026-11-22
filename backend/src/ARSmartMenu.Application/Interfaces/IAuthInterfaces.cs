@@ -10,6 +10,7 @@ public interface IAuthService
     Task<VerifyOtpResponse> DevLoginAsync(SendOtpRequest request, CancellationToken ct = default);
     Task<VerifyOtpResponse> PasswordLoginAsync(PasswordLoginRequest request, CancellationToken ct = default);
     Task<VerifyOtpResponse> PasswordRegisterAsync(PasswordRegisterRequest request, CancellationToken ct = default);
+    Task<VerifyOtpResponse> ResetPinAsync(ResetPinRequest request, CancellationToken ct = default);
     Task<RefreshTokenResponse> RefreshTokenAsync(Guid userId, CancellationToken ct = default);
     Task LogoutAsync(string tokenId, DateTime tokenExpiresAt, CancellationToken ct = default);
     Task<AuthMeResponse> GetMeAsync(Guid userId, CancellationToken ct = default);

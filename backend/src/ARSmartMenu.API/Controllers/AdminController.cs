@@ -192,6 +192,17 @@ public class AdminController : ControllerBase
         return Ok(ApiResponse<SubscriptionDto>.Ok(result, "Subscription plan granted successfully"));
     }
 
+    /// <summary>Emergency reset of restaurant owner PIN by Super Admin.</summary>
+    [HttpPost("businesses/{id:guid}/reset-pin")]
+    public async Task<ActionResult<ApiResponse<object>>> ResetOwnerPin(
+        Guid id,
+        [FromBody] AdminResetPinRequest request,
+        CancellationToken ct)
+    {
+        await _admin.ResetOwnerPinAsync(id, request.NewPin, ct);
+        return Ok(ApiResponse<object>.Ok(null, "Owner PIN successfully reset"));
+    }
+
     [HttpPost("businesses/{id:guid}/cancel-subscription")]
     public async Task<ActionResult<ApiResponse<SubscriptionDto>>> CancelSubscription(
         Guid id,

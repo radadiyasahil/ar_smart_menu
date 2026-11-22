@@ -120,6 +120,7 @@ public interface IAdminService
     Task<BusinessDto> SetBusinessStatusAsync(Guid adminUserId, Guid businessId, BusinessStatus status, string? reason = null, string? adminNotes = null, CancellationToken ct = default);
     Task<ProductDto> SetProductStatusAsync(Guid adminUserId, Guid productId, ProductStatus status, CancellationToken ct = default);
     Task<AdminNotificationsResponse> GetNotificationsAsync(CancellationToken ct = default);
+    Task ResetOwnerPinAsync(Guid businessId, string newPin, CancellationToken ct = default);
 }
 
 public interface IPublicArService

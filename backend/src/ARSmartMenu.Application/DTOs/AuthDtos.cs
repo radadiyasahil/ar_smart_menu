@@ -39,3 +39,5 @@ public record BusinessSummaryDto(
 public record PasswordLoginRequest(string Mobile, string Password);
 
 public record PasswordRegisterRequest(string Mobile, string Password, string? FullName = null);
+
+public record ResetPinRequest(string Mobile, string Otp, Guid OtpId, string NewPin);

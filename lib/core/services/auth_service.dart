@@ -97,6 +97,34 @@ class AuthService {
     );
   }
 
+  /// Reset owner PIN using verified OTP session.
+  Future<({String token, UserModel user, bool isNewUser})> resetPin({
+    required String mobile,
+    required String otp,
+    required String otpId,
+    required String newPin,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/auth/reset-pin',
+      data: {
+        'mobile': mobile,
+        'otp': otp,
+        'otpId': otpId,
+        'newPin': newPin,
+      },
+    );
+    final envelope = response.data!;
+    if (envelope['success'] != true) {
+      throw Exception(envelope['error'] ?? 'Failed to reset PIN');
+    }
+    final data = envelope['data'] as Map<String, dynamic>;
+    return (
+      token: data['token'] as String,
+      user: UserModel.fromJson(data['user'] as Map<String, dynamic>),
+      isNewUser: data['isNewUser'] as bool? ?? false,
+    );
+  }
+
   /// Development login — single call, no OTP (backend Development only).
   Future<({String token, UserModel user, bool isNewUser})> devLogin(String mobile) async {
     final response = await _dio.post<Map<String, dynamic>>(

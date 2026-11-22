@@ -64,6 +64,17 @@ public class AuthController : ControllerBase
         return Ok(ApiResponse<VerifyOtpResponse>.Ok(result, "Registration successful"));
     }
 
+    /// <summary>Reset owner PIN using verified OTP session.</summary>
+    [HttpPost("reset-pin")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<VerifyOtpResponse>>> ResetPin(
+        [FromBody] ResetPinRequest request,
+        CancellationToken ct)
+    {
+        var result = await _auth.ResetPinAsync(request, ct);
+        return Ok(ApiResponse<VerifyOtpResponse>.Ok(result, "PIN reset successfully"));
+    }
+
     /// <summary>Development-only: login with mobile only (no OTP). Disabled in production.</summary>
     [HttpPost("dev-login")]
     [AllowAnonymous]

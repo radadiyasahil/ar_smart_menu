@@ -258,6 +258,30 @@ export function BusinessDetailPage() {
     }
   }
 
+  const handleAdminResetPin = async () => {
+    if (!id) return
+    const newPin = window.prompt(
+      `Enter new 4 to 6-digit PIN for ${business?.ownerName || 'owner'} (Mobile: ${business?.ownerMobile}):`,
+      '1234',
+    )
+    if (!newPin || !newPin.trim()) return
+    if (newPin.trim().length < 4) {
+      alert('PIN must be at least 4 digits')
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      await adminService.resetOwnerPin(id, newPin.trim())
+      setSaveSuccessMsg(`Owner PIN has been successfully reset to: ${newPin.trim()}. Please inform the owner.`)
+      setTimeout(() => setSaveSuccessMsg(null), 6000)
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : 'Failed to reset owner PIN')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const handleStatusChangeConfirm = async (targetStatus: number, reason?: string) => {
     if (!id) return
     setIsSaving(true)
@@ -716,15 +740,27 @@ export function BusinessDetailPage() {
                   value={business.ownerMobile}
                   disabled
                   rightElement={
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-10 px-3 shrink-0"
-                      onClick={() => window.open(`tel:${business.ownerMobile}`, '_blank')}
-                      title="Call Owner"
-                    >
-                      <Phone className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-10 px-3"
+                        onClick={() => window.open(`tel:${business.ownerMobile}`, '_blank')}
+                        title="Call Owner"
+                      >
+                        <Phone className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-10 px-2.5 text-xs text-amber-600 hover:bg-amber-500/10 border-amber-500/30 font-semibold"
+                        onClick={handleAdminResetPin}
+                        disabled={isSaving}
+                        title="Emergency Admin Reset Owner PIN"
+                      >
+                        <Lock className="h-3.5 w-3.5 mr-1" /> Reset PIN
+                      </Button>
+                    </div>
                   }
                 />
 

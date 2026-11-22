@@ -125,6 +125,29 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Reset owner PIN using verified OTP session.
+  Future<void> resetPin({
+    required String mobile,
+    required String otp,
+    required String otpId,
+    required String newPin,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final result = await _authService.resetPin(
+        mobile: mobile,
+        otp: otp,
+        otpId: otpId,
+        newPin: newPin,
+      );
+      await _saveSession(result.token, result.user);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> loginWithMobile(String mobile) async {
     _isLoading = true;
     notifyListeners();

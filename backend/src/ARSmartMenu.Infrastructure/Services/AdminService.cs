@@ -607,4 +607,20 @@ public class AdminService : IAdminService
             reviewProducts.Count
         );
     }
+
+    public async Task ResetOwnerPinAsync(Guid businessId, string newPin, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(newPin) || newPin.Trim().Length < 4)
+            throw new ValidationException("New PIN or password must be at least 4 digits/characters.");
+
+        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct)
+            ?? throw new NotFoundException("Business not found.");
+
+        var owner = await _db.Users.FirstOrDefaultAsync(u => u.Id == business.OwnerId, ct)
+            ?? throw new NotFoundException("Owner account not found for this business.");
+
+        owner.PasswordHash = PasswordHelper.HashPassword(newPin.Trim());
+        owner.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+    }
 }

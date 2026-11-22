@@ -432,4 +432,15 @@ export const adminService = {
     }
     return res.data.data
   },
+
+  async resetOwnerPin(businessId: string, newPin: string): Promise<void> {
+    await ensureAdminAuth()
+    const res = await apiClient.post<ApiEnvelope<unknown>>(
+      `/admin/businesses/${businessId}/reset-pin`,
+      { newPin },
+    )
+    if (!res.data.success) {
+      throw new Error(res.data.error ?? 'Failed to reset owner PIN')
+    }
+  },
 }

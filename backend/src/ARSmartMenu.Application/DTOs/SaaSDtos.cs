@@ -502,6 +502,7 @@ public record ApproveBusinessRequest(string? AdminNotes = null);
 
 public record RejectBusinessRequest(string Reason, string? AdminNotes = null);
 public record RejectProductRequest(string Reason);
+public record AdminResetPinRequest(string NewPin);
 
 // ── Public AR ─────────────────────────────────────────────────────────────────
 

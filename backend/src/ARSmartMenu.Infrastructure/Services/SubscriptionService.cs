@@ -424,6 +424,7 @@ public class SubscriptionService : ISubscriptionService
             sub.UpdatedAt = DateTime.UtcNow;
         }
 
+        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
         var startsAt = DateTime.UtcNow;
         var endsAt = startsAt.AddDays(7);
         var newSub = new Subscription
@@ -435,10 +436,20 @@ public class SubscriptionService : ISubscriptionService
             StartsAt = startsAt,
             EndsAt = endsAt,
             RazorpaySubscriptionId = "TRIAL_7_DAYS_ACTIVATED",
+            InvoiceNumber = GenerateInvoiceNumber(startsAt),
+            BaseAmountPaise = 0,
+            GstPaise = 0,
+            TotalAmountPaise = 0,
+            PaymentMethod = "Free Trial",
+            PaymentRef = "TRIAL_7_DAYS_ACTIVATED",
+            CustomerGstNumber = business?.GstNumber,
+            CustomerBusinessName = business?.BusinessName,
+            CustomerAddress = business != null ? $"{business.FullAddress}, {business.City}" : null,
+            CustomerState = business?.City,
+            SacCode = "998313",
         };
         _db.Subscriptions.Add(newSub);
 
-        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
         if (business != null && (business.Status == BusinessStatus.PendingApproval || business.Status == BusinessStatus.Deactivated))
         {
             business.Status = BusinessStatus.Active;
@@ -493,8 +504,15 @@ public class SubscriptionService : ISubscriptionService
             oldSub.UpdatedAt = DateTime.UtcNow;
         }
 
+        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
         var startsAt = DateTime.UtcNow;
         var endsAt = startsAt.AddDays(durationDays);
+        var basePaise = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
+        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * 0.18);
+        var totalPaise = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePaise + gstPaise);
+        var payMethod = request.PaymentMethod ?? "UPI";
+        var payRef = request.TransactionRef ?? $"SIM_{payMethod}_{Guid.NewGuid():N}"[..18];
+
         var newSub = new Subscription
         {
             BusinessId = businessId,
@@ -503,11 +521,21 @@ public class SubscriptionService : ISubscriptionService
             Status = SubscriptionStatus.Active,
             StartsAt = startsAt,
             EndsAt = endsAt,
-            RazorpaySubscriptionId = request.TransactionRef ?? $"SIM_{request.PaymentMethod ?? "UPI"}_{Guid.NewGuid():N}"[..18],
+            RazorpaySubscriptionId = payRef,
+            InvoiceNumber = GenerateInvoiceNumber(startsAt),
+            BaseAmountPaise = basePaise,
+            GstPaise = gstPaise,
+            TotalAmountPaise = totalPaise,
+            PaymentMethod = payMethod,
+            PaymentRef = payRef,
+            CustomerGstNumber = business?.GstNumber,
+            CustomerBusinessName = business?.BusinessName,
+            CustomerAddress = business != null ? $"{business.FullAddress}, {business.City}" : null,
+            CustomerState = business?.City,
+            SacCode = "998313",
         };
         _db.Subscriptions.Add(newSub);
 
-        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
         if (business != null && (business.Status == BusinessStatus.PendingApproval || business.Status == BusinessStatus.Deactivated))
         {
             business.Status = BusinessStatus.Active;
@@ -559,8 +587,14 @@ public class SubscriptionService : ISubscriptionService
             oldSub.UpdatedAt = DateTime.UtcNow;
         }
 
+        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
         var startsAt = DateTime.UtcNow;
         var endsAt = startsAt.AddDays(durationDays);
+        var basePaise = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
+        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * 0.18);
+        var totalPaise = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePaise + gstPaise);
+        var payRef = $"ADMIN_GRANT_{request.Notes ?? "Manual"}"[..Math.Min(24, 12 + (request.Notes?.Length ?? 6))];
+
         var sub = new Subscription
         {
             BusinessId = businessId,
@@ -569,11 +603,21 @@ public class SubscriptionService : ISubscriptionService
             Status = SubscriptionStatus.Active,
             StartsAt = startsAt,
             EndsAt = endsAt,
-            RazorpaySubscriptionId = $"ADMIN_GRANT_{request.Notes ?? "Manual"}"[..Math.Min(24, 12 + (request.Notes?.Length ?? 6))],
+            RazorpaySubscriptionId = payRef,
+            InvoiceNumber = GenerateInvoiceNumber(startsAt),
+            BaseAmountPaise = basePaise,
+            GstPaise = gstPaise,
+            TotalAmountPaise = totalPaise,
+            PaymentMethod = "Admin Grant",
+            PaymentRef = payRef,
+            CustomerGstNumber = business?.GstNumber,
+            CustomerBusinessName = business?.BusinessName,
+            CustomerAddress = business != null ? $"{business.FullAddress}, {business.City}" : null,
+            CustomerState = business?.City,
+            SacCode = "998313",
         };
         _db.Subscriptions.Add(sub);
 
-        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
         if (business != null)
         {
             business.Status = BusinessStatus.Active;
@@ -672,7 +716,12 @@ public class SubscriptionService : ISubscriptionService
             sub.UpdatedAt = DateTime.UtcNow;
         }
 
+        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
         var startsAt = DateTime.UtcNow;
+        var basePaise = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
+        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * 0.18);
+        var totalPaise = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePaise + gstPaise);
+
         var subscription = new Subscription
         {
             BusinessId = businessId,
@@ -682,6 +731,17 @@ public class SubscriptionService : ISubscriptionService
             StartsAt = startsAt,
             EndsAt = startsAt.AddMonths(1),
             RazorpaySubscriptionId = request.RazorpayPaymentId,
+            InvoiceNumber = GenerateInvoiceNumber(startsAt),
+            BaseAmountPaise = basePaise,
+            GstPaise = gstPaise,
+            TotalAmountPaise = totalPaise,
+            PaymentMethod = "Razorpay",
+            PaymentRef = request.RazorpayPaymentId,
+            CustomerGstNumber = business?.GstNumber,
+            CustomerBusinessName = business?.BusinessName,
+            CustomerAddress = business != null ? $"{business.FullAddress}, {business.City}" : null,
+            CustomerState = business?.City,
+            SacCode = "998313",
         };
 
         _db.Subscriptions.Add(subscription);
@@ -994,5 +1054,647 @@ public class SubscriptionService : ISubscriptionService
             IsActive: isActive,
             IsTrial: isTrial,
             HasUsedTrial: hasUsedTrial);
+    }
+
+    public async Task<IReadOnlyList<SubscriptionHistoryItemDto>> GetSubscriptionHistoryAsync(Guid businessId, CancellationToken ct = default)
+    {
+        var subs = await _db.Subscriptions
+            .AsNoTracking()
+            .Include(s => s.Plan)
+            .Include(s => s.Business)
+            .Where(s => s.BusinessId == businessId)
+            .OrderByDescending(s => s.StartsAt)
+            .ThenByDescending(s => s.CreatedAt)
+            .ToListAsync(ct);
+
+        return subs.Select(MapHistoryItem).ToList();
+    }
+
+    public async Task<IReadOnlyList<SubscriptionHistoryItemDto>> AdminGetAllSubscriptionHistoryAsync(CancellationToken ct = default)
+    {
+        var subs = await _db.Subscriptions
+            .AsNoTracking()
+            .Include(s => s.Plan)
+            .Include(s => s.Business)
+            .OrderByDescending(s => s.StartsAt)
+            .ThenByDescending(s => s.CreatedAt)
+            .ToListAsync(ct);
+
+        return subs.Select(MapHistoryItem).ToList();
+    }
+
+    public async Task<SubscriptionInvoiceDto> GetInvoiceAsync(
+        Guid subscriptionId,
+        Guid? requestingBusinessId = null,
+        bool isAdmin = false,
+        CancellationToken ct = default)
+    {
+        var sub = await _db.Subscriptions
+            .AsNoTracking()
+            .Include(s => s.Plan)
+            .Include(s => s.Business)
+                .ThenInclude(b => b.Owner)
+            .FirstOrDefaultAsync(s => s.Id == subscriptionId, ct)
+            ?? throw new NotFoundException("Subscription record not found.");
+
+        if (!isAdmin && requestingBusinessId.HasValue && sub.BusinessId != requestingBusinessId.Value)
+        {
+            throw new UnauthorizedAccessException("You are not authorized to view this subscription invoice.");
+        }
+
+        var business = sub.Business;
+        var owner = business?.Owner;
+        var plan = sub.Plan;
+        var isTrial = plan?.Slug == "trial-7-days" || (sub.BaseAmountPaise == 0 && sub.TotalAmountPaise == 0 && (plan == null || plan.BasePricePaise == 0));
+
+        var invoiceNum = !string.IsNullOrWhiteSpace(sub.InvoiceNumber)
+            ? sub.InvoiceNumber
+            : $"INV-{sub.CreatedAt:yyyyMM}-{sub.Id.ToString()[..6].ToUpper()}";
+
+        var basePaise = sub.BaseAmountPaise > 0 
+            ? sub.BaseAmountPaise 
+            : (isTrial ? 0 : (plan?.BasePricePaise ?? plan?.MonthlyPricePaise ?? 0));
+        var gstPaise = sub.GstPaise > 0 
+            ? sub.GstPaise 
+            : (isTrial ? 0 : (plan?.GstPaise ?? (int)Math.Round(basePaise * 0.18)));
+        var totalPaise = sub.TotalAmountPaise > 0 
+            ? sub.TotalAmountPaise 
+            : (isTrial ? 0 : (plan?.TotalPricePaise ?? (basePaise + gstPaise)));
+
+        var baseRupees = basePaise / 100.0;
+        var gstRupees = gstPaise / 100.0;
+        var totalRupees = totalPaise / 100.0;
+
+        const string supplierStateCode = "24";
+        const string supplierState = "Gujarat";
+
+        var custGst = (sub.CustomerGstNumber ?? business?.GstNumber ?? string.Empty).Trim().ToUpper();
+        var custStateCode = custGst.Length >= 2 && char.IsDigit(custGst[0]) && char.IsDigit(custGst[1])
+            ? custGst[..2]
+            : "24";
+
+        var custState = GetStateNameFromCode(custStateCode, business?.City ?? "Gujarat");
+        var isInterState = custStateCode != supplierStateCode;
+
+        double cgstRupees = 0;
+        double sgstRupees = 0;
+        double igstRupees = 0;
+        double cgstRate = 0;
+        double sgstRate = 0;
+        double igstRate = 0;
+
+        if (!isTrial && totalRupees > 0)
+        {
+            if (isInterState)
+            {
+                igstRate = 18.0;
+                igstRupees = gstRupees;
+            }
+            else
+            {
+                cgstRate = 9.0;
+                sgstRate = 9.0;
+                cgstRupees = Math.Round(gstRupees / 2.0, 2);
+                sgstRupees = gstRupees - cgstRupees;
+            }
+        }
+
+        var durationDays = (sub.EndsAt - sub.StartsAt).Days;
+        if (durationDays <= 0) durationDays = plan?.DurationDays ?? 30;
+
+        var amountInWords = isTrial || totalRupees <= 0 
+            ? "Zero Rupees Only (Complimentary Free Trial)" 
+            : ConvertAmountToWords(totalRupees);
+
+        return new SubscriptionInvoiceDto(
+            Id: sub.Id,
+            BusinessId: sub.BusinessId,
+            InvoiceNumber: invoiceNum,
+            InvoiceDate: sub.CreatedAt != DateTime.MinValue ? sub.CreatedAt : sub.StartsAt,
+            PlanName: plan?.Name ?? (isTrial ? "7-Day Free Trial" : "Custom Plan"),
+            PlanSlug: plan?.Slug ?? "custom",
+            BillingCycle: sub.BillingCycle.ToString(),
+            Status: sub.Status.ToString(),
+            StartsAt: sub.StartsAt,
+            EndsAt: sub.EndsAt,
+            DurationDays: durationDays,
+            BaseAmountPaise: basePaise,
+            GstPaise: gstPaise,
+            TotalAmountPaise: totalPaise,
+            BaseAmountRupees: baseRupees,
+            GstRupees: gstRupees,
+            TotalAmountRupees: totalRupees,
+            CgstRupees: cgstRupees,
+            SgstRupees: sgstRupees,
+            IgstRupees: igstRupees,
+            CgstRate: cgstRate,
+            SgstRate: sgstRate,
+            IgstRate: igstRate,
+            IsInterState: isInterState,
+            SacCode: sub.SacCode ?? "998313",
+            PaymentMethod: sub.PaymentMethod ?? (isTrial ? "Free Trial" : "Online UPI / Card"),
+            PaymentRef: sub.PaymentRef ?? sub.RazorpaySubscriptionId ?? "N/A",
+            SupplierName: "AR Smart Menu Technologies Pvt. Ltd.",
+            SupplierAddress: "Floor 4, Tech Park, S.G. Highway, Ahmedabad, Gujarat - 380054",
+            SupplierGstNumber: "24AABCA1234F1Z9",
+            SupplierPan: "AABCA1234F",
+            SupplierState: supplierState,
+            SupplierStateCode: supplierStateCode,
+            SupplierEmail: "billing@arsmartmenu.com",
+            SupplierPhone: "+91 98765 43210",
+            CustomerBusinessName: sub.CustomerBusinessName ?? business?.BusinessName ?? "Valued Restaurant Client",
+            CustomerOwnerName: owner?.FullName,
+            CustomerEmail: null,
+            CustomerPhone: owner?.MobileNumber ?? owner?.WhatsAppNumber,
+            CustomerGstNumber: !string.IsNullOrWhiteSpace(custGst) ? custGst : null,
+            CustomerAddress: sub.CustomerAddress ?? (business != null ? $"{business.FullAddress}, {business.City}" : "India"),
+            CustomerCity: business?.City ?? "Ahmedabad",
+            CustomerState: custState,
+            CustomerStateCode: custStateCode,
+            IsGstRegistered: !string.IsNullOrWhiteSpace(custGst),
+            AmountInWords: amountInWords,
+            PlaceOfSupply: $"{custState} ({custStateCode})"
+        );
+    }
+
+    public async Task<string> GenerateInvoiceHtmlAsync(
+        Guid subscriptionId,
+        Guid? requestingBusinessId = null,
+        bool isAdmin = false,
+        CancellationToken ct = default)
+    {
+        var inv = await GetInvoiceAsync(subscriptionId, requestingBusinessId, isAdmin, ct);
+        return RenderInvoiceHtml(inv);
+    }
+
+    private static SubscriptionHistoryItemDto MapHistoryItem(Subscription sub)
+    {
+        var planName = sub.Plan?.Name ?? (sub.Plan?.Slug == "trial-7-days" ? "7-Day Free Trial" : "Custom Plan");
+        var isTrial = sub.Plan?.Slug == "trial-7-days" || (sub.BaseAmountPaise == 0 && sub.TotalAmountPaise == 0 && (sub.Plan == null || sub.Plan.BasePricePaise == 0));
+        var invoiceNum = !string.IsNullOrWhiteSpace(sub.InvoiceNumber)
+            ? sub.InvoiceNumber
+            : $"INV-{sub.CreatedAt:yyyyMM}-{sub.Id.ToString()[..6].ToUpper()}";
+
+        var basePaise = sub.BaseAmountPaise > 0 
+            ? sub.BaseAmountPaise 
+            : (isTrial ? 0 : (sub.Plan?.BasePricePaise ?? sub.Plan?.MonthlyPricePaise ?? 0));
+        var gstPaise = sub.GstPaise > 0 
+            ? sub.GstPaise 
+            : (isTrial ? 0 : (sub.Plan?.GstPaise ?? (int)Math.Round(basePaise * 0.18)));
+        var totalPaise = sub.TotalAmountPaise > 0 
+            ? sub.TotalAmountPaise 
+            : (isTrial ? 0 : (sub.Plan?.TotalPricePaise ?? (basePaise + gstPaise)));
+
+        var durationDays = (sub.EndsAt - sub.StartsAt).Days;
+        if (durationDays <= 0) durationDays = sub.Plan?.DurationDays ?? 30;
+
+        return new SubscriptionHistoryItemDto(
+            Id: sub.Id,
+            BusinessId: sub.BusinessId,
+            InvoiceNumber: invoiceNum,
+            InvoiceDate: sub.CreatedAt != DateTime.MinValue ? sub.CreatedAt : sub.StartsAt,
+            PlanName: planName,
+            PlanSlug: sub.Plan?.Slug ?? "custom-plan",
+            BillingCycle: sub.BillingCycle.ToString(),
+            Status: sub.Status.ToString(),
+            StartsAt: sub.StartsAt,
+            EndsAt: sub.EndsAt,
+            DurationDays: durationDays,
+            BaseAmountPaise: basePaise,
+            GstPaise: gstPaise,
+            TotalAmountPaise: totalPaise,
+            BaseAmountRupees: basePaise / 100.0,
+            GstRupees: gstPaise / 100.0,
+            TotalAmountRupees: totalPaise / 100.0,
+            PaymentMethod: sub.PaymentMethod ?? (isTrial ? "Free Trial" : "Online UPI / Card"),
+            PaymentRef: sub.PaymentRef ?? sub.RazorpaySubscriptionId,
+            CustomerGstNumber: sub.CustomerGstNumber ?? sub.Business?.GstNumber,
+            IsTrial: isTrial,
+            SacCode: sub.SacCode ?? "998313"
+        );
+    }
+
+    private static string GenerateInvoiceNumber(DateTime date)
+    {
+        return $"INV-{date:yyyyMM}-{Random.Shared.Next(1000, 9999)}";
+    }
+
+    private static string GetStateNameFromCode(string code, string defaultCityOrState)
+    {
+        return code switch
+        {
+            "01" => "Jammu and Kashmir",
+            "02" => "Himachal Pradesh",
+            "03" => "Punjab",
+            "04" => "Chandigarh",
+            "05" => "Uttarakhand",
+            "06" => "Haryana",
+            "07" => "Delhi",
+            "08" => "Rajasthan",
+            "09" => "Uttar Pradesh",
+            "10" => "Bihar",
+            "11" => "Sikkim",
+            "12" => "Arunachal Pradesh",
+            "13" => "Nagaland",
+            "14" => "Manipur",
+            "15" => "Mizoram",
+            "16" => "Tripura",
+            "17" => "Meghalaya",
+            "18" => "Assam",
+            "19" => "West Bengal",
+            "20" => "Jharkhand",
+            "21" => "Odisha",
+            "22" => "Chhattisgarh",
+            "23" => "Madhya Pradesh",
+            "24" => "Gujarat",
+            "26" => "Dadra and Nagar Haveli and Daman and Diu",
+            "27" => "Maharashtra",
+            "29" => "Karnataka",
+            "30" => "Goa",
+            "32" => "Kerala",
+            "33" => "Tamil Nadu",
+            "36" => "Telangana",
+            "37" => "Andhra Pradesh",
+            _ => !string.IsNullOrWhiteSpace(defaultCityOrState) ? defaultCityOrState : "Gujarat"
+        };
+    }
+
+    private static string ConvertAmountToWords(double amount)
+    {
+        long wholePart = (long)Math.Floor(amount);
+        int decimalPart = (int)Math.Round((amount - wholePart) * 100);
+
+        string words = NumberToWords(wholePart) + " Rupees";
+        if (decimalPart > 0)
+        {
+            words += " and " + NumberToWords(decimalPart) + " Paise";
+        }
+        words += " Only";
+        return words;
+    }
+
+    private static string NumberToWords(long number)
+    {
+        if (number == 0) return "Zero";
+        if (number < 0) return "Minus " + NumberToWords(Math.Abs(number));
+
+        string words = "";
+
+        if (number / 10000000 > 0)
+        {
+            words += NumberToWords(number / 10000000) + " Crore ";
+            number %= 10000000;
+        }
+
+        if (number / 100000 > 0)
+        {
+            words += NumberToWords(number / 100000) + " Lakh ";
+            number %= 100000;
+        }
+
+        if (number / 1000 > 0)
+        {
+            words += NumberToWords(number / 1000) + " Thousand ";
+            number %= 1000;
+        }
+
+        if (number / 100 > 0)
+        {
+            words += NumberToWords(number / 100) + " Hundred ";
+            number %= 100;
+        }
+
+        if (number > 0)
+        {
+            var unitsMap = new[] { "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen" };
+            var tensMap = new[] { "Zero", "Ten", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety" };
+
+            if (number < 20)
+                words += unitsMap[number];
+            else
+            {
+                words += tensMap[number / 10];
+                if (number % 10 > 0)
+                    words += " " + unitsMap[number % 10];
+            }
+        }
+
+        return words.Trim();
+    }
+
+    private static string RenderInvoiceHtml(SubscriptionInvoiceDto inv)
+    {
+        var isGst = !string.IsNullOrWhiteSpace(inv.CustomerGstNumber);
+        var custGstDisplay = isGst ? inv.CustomerGstNumber! : "URP (Unregistered Consumer)";
+        var formattedDate = inv.InvoiceDate.ToString("dd MMM yyyy");
+        var formattedStarts = inv.StartsAt.ToString("dd MMM yyyy");
+        var formattedEnds = inv.EndsAt.ToString("dd MMM yyyy");
+
+        return $@"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+  <meta charset=""UTF-8"">
+  <title>GST Tax Invoice - {inv.InvoiceNumber}</title>
+  <style>
+    @page {{
+      size: A4 portrait;
+      margin: 12mm 15mm;
+    }}
+    * {{
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      color: #1a1a1a;
+      background: #f8fafc;
+      margin: 0;
+      padding: 20px;
+      font-size: 12px;
+      line-height: 1.4;
+    }}
+    .invoice-wrapper {{
+      max-width: 800px;
+      margin: 0 auto;
+      background: #ffffff;
+      border: 1.5px solid #0f172a;
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    }}
+    .actions-bar {{
+      max-width: 800px;
+      margin: 0 auto 16px auto;
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }}
+    .btn {{
+      padding: 8px 16px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      font-size: 13px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }}
+    .btn-primary {{
+      background: #0f172a;
+      color: #ffffff;
+    }}
+    .btn-secondary {{
+      background: #f1f5f9;
+      color: #0f172a;
+      border-color: #cbd5e1;
+    }}
+    .header-table {{
+      width: 100%;
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }}
+    .badge-gov {{
+      display: inline-block;
+      background: #10b981;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }}
+    .section-title {{
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #475569;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 2px;
+    }}
+    .info-grid {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-bottom: 16px;
+    }}
+    .info-box {{
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px;
+    }}
+    table.data-table {{
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+    }}
+    table.data-table th {{
+      background: #0f172a;
+      color: #ffffff;
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 8px 10px;
+      text-align: left;
+    }}
+    table.data-table td {{
+      padding: 9px 10px;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 11.5px;
+    }}
+    .text-right {{ text-align: right; }}
+    .text-center {{ text-align: center; }}
+    .totals-table {{
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+    }}
+    .totals-table td {{
+      padding: 4px 10px;
+    }}
+    .totals-row-final {{
+      border-top: 2px solid #0f172a;
+      border-bottom: 2px solid #0f172a;
+      font-weight: 800;
+      font-size: 13px;
+      background: #f1f5f9;
+    }}
+    .words-box {{
+      margin-top: 10px;
+      padding: 8px 12px;
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      border-radius: 6px;
+      font-size: 11px;
+    }}
+    .footer-declaration {{
+      margin-top: 20px;
+      padding-top: 12px;
+      border-top: 1.5px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }}
+    .stamp-box {{
+      text-align: center;
+      border: 1.5px dashed #0f172a;
+      border-radius: 8px;
+      padding: 10px 20px;
+      background: #fbfcfe;
+    }}
+    @media print {{
+      body {{
+        background: #ffffff;
+        padding: 0;
+      }}
+      .invoice-wrapper {{
+        box-shadow: none;
+        border: 1px solid #333;
+        border-radius: 0;
+        padding: 0;
+      }}
+      .no-print {{
+        display: none !important;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <div class=""actions-bar no-print"">
+    <button class=""btn btn-primary"" onclick=""window.print()"">🖨️ Print / Save as PDF</button>
+  </div>
+
+  <div class=""invoice-wrapper"">
+    <div style=""display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 14px;"">
+      <div>
+        <div class=""badge-gov"">Original for Recipient • Tax Invoice</div>
+        <h1 style=""margin: 0; font-size: 22px; font-weight: 900; color: #0f172a; letter-spacing: -0.5px;"">TAX INVOICE</h1>
+        <div style=""font-size: 10px; color: #64748b; font-weight: 600;"">Issued under Section 31 of CGST Act, 2017 & Rule 46 of CGST Rules, 2017</div>
+      </div>
+      <div style=""text-align: right;"">
+        <div style=""font-size: 15px; font-weight: 800; color: #0f172a;"">Invoice No: {inv.InvoiceNumber}</div>
+        <div style=""font-size: 11px; color: #475569;"">Invoice Date: <strong>{formattedDate}</strong></div>
+        <div style=""font-size: 11px; color: #475569;"">Place of Supply: <strong>{inv.PlaceOfSupply}</strong></div>
+        <div style=""font-size: 10px; color: #10b981; font-weight: 700;"">Reverse Charge: NO</div>
+      </div>
+    </div>
+
+    <div class=""info-grid"">
+      <div class=""info-box"">
+        <div class=""section-title"">Service Provider / Supplier Details</div>
+        <div style=""font-weight: 800; font-size: 13px; color: #0f172a;"">{inv.SupplierName}</div>
+        <div style=""color: #334155;"">{inv.SupplierAddress}</div>
+        <div style=""margin-top: 4px;""><strong>GSTIN:</strong> <span style=""font-family: monospace; font-size: 12px; color: #0f172a;"">{inv.SupplierGstNumber}</span></div>
+        <div><strong>PAN:</strong> {inv.SupplierPan} • <strong>State:</strong> {inv.SupplierState} (Code: {inv.SupplierStateCode})</div>
+        <div style=""font-size: 10.5px; color: #64748b; margin-top: 2px;"">Email: {inv.SupplierEmail} • Helpdesk: {inv.SupplierPhone}</div>
+      </div>
+
+      <div class=""info-box"">
+        <div class=""section-title"">Billed To / Buyer (Customer Details)</div>
+        <div style=""font-weight: 800; font-size: 13px; color: #0f172a;"">{inv.CustomerBusinessName}</div>
+        {(!string.IsNullOrWhiteSpace(inv.CustomerOwnerName) ? $"<div style=\"color: #475569;\">Attn: <strong>{inv.CustomerOwnerName}</strong></div>" : "")}
+        <div style=""color: #334155;"">{inv.CustomerAddress}</div>
+        <div style=""margin-top: 4px;""><strong>Buyer GSTIN:</strong> <span style=""font-family: monospace; font-size: 12px; color: {(isGst ? "#0f172a" : "#64748b")};"">{custGstDisplay}</span></div>
+        <div><strong>State:</strong> {inv.CustomerState} (Code: {inv.CustomerStateCode}) • <strong>Country:</strong> India</div>
+        {(!string.IsNullOrWhiteSpace(inv.CustomerPhone) ? $"<div style=\"font-size: 10.5px; color: #64748b;\">Phone: {inv.CustomerPhone}</div>" : "")}
+      </div>
+    </div>
+
+    <table class=""data-table"">
+      <thead>
+        <tr>
+          <th style=""width: 5%;"" class=""text-center"">#</th>
+          <th style=""width: 45%;"">Description of SaaS Cloud Services</th>
+          <th style=""width: 12%;"" class=""text-center"">HSN / SAC</th>
+          <th style=""width: 18%;"" class=""text-right"">Taxable Value</th>
+          <th style=""width: 20%;"" class=""text-right"">Total (INR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class=""text-center"" style=""font-weight: 700;"">1</td>
+          <td>
+            <div style=""font-weight: 700; color: #0f172a; font-size: 12.5px;"">{inv.PlanName} Subscription ({inv.DurationDays} Days)</div>
+            <div style=""color: #64748b; font-size: 10.5px; margin-top: 2px;"">
+              3D AR Interactive Smart Menu, Diner Digital Ordering, Kitchen Ticketing (KOT) & Table Billing POS Platform Access.
+            </div>
+            <div style=""color: #0f172a; font-size: 10.5px; margin-top: 2px;"">
+              <strong>Service Period:</strong> {formattedStarts} to {formattedEnds}
+            </div>
+          </td>
+          <td class=""text-center"" style=""font-family: monospace; font-weight: 700;"">{inv.SacCode}</td>
+          <td class=""text-right"" style=""font-weight: 600;"">₹{inv.BaseAmountRupees:N2}</td>
+          <td class=""text-right"" style=""font-weight: 700;"">₹{inv.TotalAmountRupees:N2}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style=""display: flex; justify-content: space-between; align-items: flex-start; gap: 20px;"">
+      <div style=""flex: 1;"">
+        <div class=""words-box"">
+          <div style=""font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;"">Total Amount in Words</div>
+          <div style=""font-weight: 700; color: #0f172a; font-size: 12px; margin-top: 2px;"">{inv.AmountInWords}</div>
+        </div>
+
+        <div style=""margin-top: 12px; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 11px;"">
+          <div style=""font-weight: 700; color: #0f172a; margin-bottom: 4px;"">Payment & Transaction Reference</div>
+          <div>Payment Method: <strong>{inv.PaymentMethod}</strong></div>
+          <div>Transaction Ref / ID: <code style=""background: #e2e8f0; padding: 1px 4px; border-radius: 3px;"">{inv.PaymentRef}</code></div>
+          <div>Status: <span style=""color: #10b981; font-weight: 700;"">PAID / SUCCESSFUL</span></div>
+        </div>
+      </div>
+
+      <div style=""width: 320px;"">
+        <table class=""totals-table"">
+          <tr>
+            <td style=""color: #475569;"">Total Taxable Value:</td>
+            <td class=""text-right"" style=""font-weight: 600;"">₹{inv.BaseAmountRupees:N2}</td>
+          </tr>
+          {(inv.IsInterState ? $@"
+          <tr>
+            <td style=""color: #475569;"">Integrated GST (IGST @ 18%):</td>
+            <td class=""text-right"" style=""font-weight: 600;"">₹{inv.IgstRupees:N2}</td>
+          </tr>" : $@"
+          <tr>
+            <td style=""color: #475569;"">Central GST (CGST @ 9%):</td>
+            <td class=""text-right"" style=""font-weight: 600;"">₹{inv.CgstRupees:N2}</td>
+          </tr>
+          <tr>
+            <td style=""color: #475569;"">State GST (SGST @ 9%):</td>
+            <td class=""text-right"" style=""font-weight: 600;"">₹{inv.SgstRupees:N2}</td>
+          </tr>")}
+          <tr class=""totals-row-final"">
+            <td style=""padding: 8px 10px;"">Total Invoice Value (INR):</td>
+            <td class=""text-right"" style=""padding: 8px 10px; color: #0f172a; font-size: 14px;"">₹{inv.TotalAmountRupees:N2}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <div class=""footer-declaration"">
+      <div style=""max-width: 480px; font-size: 10px; color: #64748b;"">
+        <div style=""font-weight: 700; color: #334155; text-transform: uppercase; margin-bottom: 2px;"">Terms & Statutory Declaration</div>
+        <div>1. Input Tax Credit (ITC) can be claimed by registered businesses under Section 16 & 17 of the CGST Act, 2017.</div>
+        <div>2. This electronic document is valid for Income Tax audit, GST annual return filing (GSTR-9/3B/2B), and government compliance.</div>
+        <div>3. Computer generated tax invoice issued electronically under the Information Technology Act, 2000. No physical signature required.</div>
+      </div>
+
+      <div class=""stamp-box"">
+        <div style=""font-size: 11px; font-weight: 800; color: #0f172a;"">AR Smart Menu Technologies Pvt. Ltd.</div>
+        <div style=""margin: 6px 0; color: #10b981; font-weight: 900; font-size: 16px;"">✔ VERIFIED</div>
+        <div style=""font-size: 9.5px; color: #475569;"">Authorised Signatory</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>";
     }
 }

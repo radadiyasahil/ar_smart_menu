@@ -213,4 +213,240 @@ class SubscriptionService {
     }
     return SubscriptionInfoModel.fromJson(envelope['data'] as Map<String, dynamic>);
   }
+
+  Future<List<SubscriptionHistoryItemModel>> getHistory() async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/subscriptions/history');
+      final envelope = response.data!;
+      final list = envelope['data'] as List<dynamic>? ?? [];
+      return list
+          .map((e) => SubscriptionHistoryItemModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<SubscriptionInvoiceModel> getInvoice(String subscriptionId) async {
+    final response = await _dio.get<Map<String, dynamic>>('/subscriptions/$subscriptionId/invoice');
+    final envelope = response.data!;
+    if (envelope['success'] != true || envelope['data'] == null) {
+      throw Exception(envelope['message'] ?? envelope['error'] ?? 'Failed to load invoice.');
+    }
+    return SubscriptionInvoiceModel.fromJson(envelope['data'] as Map<String, dynamic>);
+  }
+}
+
+class SubscriptionHistoryItemModel {
+  const SubscriptionHistoryItemModel({
+    required this.id,
+    required this.businessId,
+    required this.invoiceNumber,
+    required this.invoiceDate,
+    required this.planName,
+    required this.planSlug,
+    required this.billingCycle,
+    required this.status,
+    required this.startsAt,
+    required this.endsAt,
+    required this.durationDays,
+    required this.baseAmountRupees,
+    required this.gstRupees,
+    required this.totalAmountRupees,
+    this.paymentMethod,
+    this.paymentRef,
+    this.customerGstNumber,
+    required this.isTrial,
+    this.sacCode = '998313',
+  });
+
+  final String id;
+  final String businessId;
+  final String invoiceNumber;
+  final DateTime invoiceDate;
+  final String planName;
+  final String planSlug;
+  final String billingCycle;
+  final String status;
+  final DateTime startsAt;
+  final DateTime endsAt;
+  final int durationDays;
+  final double baseAmountRupees;
+  final double gstRupees;
+  final double totalAmountRupees;
+  final String? paymentMethod;
+  final String? paymentRef;
+  final String? customerGstNumber;
+  final bool isTrial;
+  final String sacCode;
+
+  factory SubscriptionHistoryItemModel.fromJson(Map<String, dynamic> json) {
+    return SubscriptionHistoryItemModel(
+      id: json['id'] as String? ?? '',
+      businessId: json['businessId'] as String? ?? '',
+      invoiceNumber: json['invoiceNumber'] as String? ?? 'N/A',
+      invoiceDate: DateTime.tryParse(json['invoiceDate']?.toString() ?? '') ?? DateTime.now(),
+      planName: json['planName'] as String? ?? 'Subscription Plan',
+      planSlug: json['planSlug'] as String? ?? '',
+      billingCycle: json['billingCycle']?.toString() ?? 'Monthly',
+      status: json['status']?.toString() ?? 'Active',
+      startsAt: DateTime.tryParse(json['startsAt']?.toString() ?? '') ?? DateTime.now(),
+      endsAt: DateTime.tryParse(json['endsAt']?.toString() ?? '') ?? DateTime.now(),
+      durationDays: json['durationDays'] as int? ?? 30,
+      baseAmountRupees: (json['baseAmountRupees'] as num?)?.toDouble() ??
+          ((json['baseAmountPaise'] as num?)?.toDouble() ?? 0.0) / 100.0,
+      gstRupees: (json['gstRupees'] as num?)?.toDouble() ??
+          ((json['gstPaise'] as num?)?.toDouble() ?? 0.0) / 100.0,
+      totalAmountRupees: (json['totalAmountRupees'] as num?)?.toDouble() ??
+          ((json['totalAmountPaise'] as num?)?.toDouble() ?? 0.0) / 100.0,
+      paymentMethod: json['paymentMethod'] as String?,
+      paymentRef: json['paymentRef'] as String?,
+      customerGstNumber: json['customerGstNumber'] as String?,
+      isTrial: json['isTrial'] as bool? ?? false,
+      sacCode: json['sacCode'] as String? ?? '998313',
+    );
+  }
+}
+
+class SubscriptionInvoiceModel {
+  const SubscriptionInvoiceModel({
+    required this.id,
+    required this.businessId,
+    required this.invoiceNumber,
+    required this.invoiceDate,
+    required this.planName,
+    required this.planSlug,
+    required this.billingCycle,
+    required this.status,
+    required this.startsAt,
+    required this.endsAt,
+    required this.durationDays,
+    required this.baseAmountRupees,
+    required this.gstRupees,
+    required this.totalAmountRupees,
+    required this.cgstRupees,
+    required this.sgstRupees,
+    required this.igstRupees,
+    required this.cgstRate,
+    required this.sgstRate,
+    required this.igstRate,
+    required this.isInterState,
+    required this.sacCode,
+    this.paymentMethod,
+    this.paymentRef,
+    required this.supplierName,
+    required this.supplierAddress,
+    required this.supplierGstNumber,
+    required this.supplierPan,
+    required this.supplierState,
+    required this.supplierStateCode,
+    required this.supplierEmail,
+    required this.supplierPhone,
+    required this.customerBusinessName,
+    this.customerOwnerName,
+    this.customerEmail,
+    this.customerPhone,
+    this.customerGstNumber,
+    required this.customerAddress,
+    required this.customerCity,
+    required this.customerState,
+    required this.customerStateCode,
+    required this.isGstRegistered,
+    required this.amountInWords,
+    required this.placeOfSupply,
+  });
+
+  final String id;
+  final String businessId;
+  final String invoiceNumber;
+  final DateTime invoiceDate;
+  final String planName;
+  final String planSlug;
+  final String billingCycle;
+  final String status;
+  final DateTime startsAt;
+  final DateTime endsAt;
+  final int durationDays;
+  final double baseAmountRupees;
+  final double gstRupees;
+  final double totalAmountRupees;
+  final double cgstRupees;
+  final double sgstRupees;
+  final double igstRupees;
+  final double cgstRate;
+  final double sgstRate;
+  final double igstRate;
+  final bool isInterState;
+  final String sacCode;
+  final String? paymentMethod;
+  final String? paymentRef;
+  final String supplierName;
+  final String supplierAddress;
+  final String supplierGstNumber;
+  final String supplierPan;
+  final String supplierState;
+  final String supplierStateCode;
+  final String supplierEmail;
+  final String supplierPhone;
+  final String customerBusinessName;
+  final String? customerOwnerName;
+  final String? customerEmail;
+  final String? customerPhone;
+  final String? customerGstNumber;
+  final String customerAddress;
+  final String customerCity;
+  final String customerState;
+  final String customerStateCode;
+  final bool isGstRegistered;
+  final String amountInWords;
+  final String placeOfSupply;
+
+  factory SubscriptionInvoiceModel.fromJson(Map<String, dynamic> json) {
+    return SubscriptionInvoiceModel(
+      id: json['id'] as String? ?? '',
+      businessId: json['businessId'] as String? ?? '',
+      invoiceNumber: json['invoiceNumber'] as String? ?? 'N/A',
+      invoiceDate: DateTime.tryParse(json['invoiceDate']?.toString() ?? '') ?? DateTime.now(),
+      planName: json['planName'] as String? ?? '',
+      planSlug: json['planSlug'] as String? ?? '',
+      billingCycle: json['billingCycle']?.toString() ?? 'Monthly',
+      status: json['status']?.toString() ?? 'Active',
+      startsAt: DateTime.tryParse(json['startsAt']?.toString() ?? '') ?? DateTime.now(),
+      endsAt: DateTime.tryParse(json['endsAt']?.toString() ?? '') ?? DateTime.now(),
+      durationDays: json['durationDays'] as int? ?? 30,
+      baseAmountRupees: (json['baseAmountRupees'] as num?)?.toDouble() ?? 0.0,
+      gstRupees: (json['gstRupees'] as num?)?.toDouble() ?? 0.0,
+      totalAmountRupees: (json['totalAmountRupees'] as num?)?.toDouble() ?? 0.0,
+      cgstRupees: (json['cgstRupees'] as num?)?.toDouble() ?? 0.0,
+      sgstRupees: (json['sgstRupees'] as num?)?.toDouble() ?? 0.0,
+      igstRupees: (json['igstRupees'] as num?)?.toDouble() ?? 0.0,
+      cgstRate: (json['cgstRate'] as num?)?.toDouble() ?? 9.0,
+      sgstRate: (json['sgstRate'] as num?)?.toDouble() ?? 9.0,
+      igstRate: (json['igstRate'] as num?)?.toDouble() ?? 18.0,
+      isInterState: json['isInterState'] as bool? ?? false,
+      sacCode: json['sacCode'] as String? ?? '998313',
+      paymentMethod: json['paymentMethod'] as String?,
+      paymentRef: json['paymentRef'] as String?,
+      supplierName: json['supplierName'] as String? ?? 'AR Smart Menu Technologies Pvt. Ltd.',
+      supplierAddress: json['supplierAddress'] as String? ?? 'Floor 4, Tech Park, S.G. Highway, Ahmedabad - 380054',
+      supplierGstNumber: json['supplierGstNumber'] as String? ?? '24AABCA1234F1Z9',
+      supplierPan: json['supplierPan'] as String? ?? 'AABCA1234F',
+      supplierState: json['supplierState'] as String? ?? 'Gujarat',
+      supplierStateCode: json['supplierStateCode'] as String? ?? '24',
+      supplierEmail: json['supplierEmail'] as String? ?? 'billing@arsmartmenu.com',
+      supplierPhone: json['supplierPhone'] as String? ?? '+91 98765 43210',
+      customerBusinessName: json['customerBusinessName'] as String? ?? 'Restaurant Client',
+      customerOwnerName: json['customerOwnerName'] as String?,
+      customerEmail: json['customerEmail'] as String?,
+      customerPhone: json['customerPhone'] as String?,
+      customerGstNumber: json['customerGstNumber'] as String?,
+      customerAddress: json['customerAddress'] as String? ?? 'India',
+      customerCity: json['customerCity'] as String? ?? '',
+      customerState: json['customerState'] as String? ?? 'Gujarat',
+      customerStateCode: json['customerStateCode'] as String? ?? '24',
+      isGstRegistered: json['isGstRegistered'] as bool? ?? false,
+      amountInWords: json['amountInWords'] as String? ?? 'Zero Rupees',
+      placeOfSupply: json['placeOfSupply'] as String? ?? 'Gujarat (24)',
+    );
+  }
 }

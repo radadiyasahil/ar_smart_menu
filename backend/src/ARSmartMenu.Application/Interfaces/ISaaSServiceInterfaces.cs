@@ -70,6 +70,10 @@ public interface ISubscriptionService
     Task<SubscriptionPlanDto> AdminUpdatePlanAsync(Guid id, UpdateSubscriptionPlanRequest request, CancellationToken ct = default);
     Task<bool> AdminDeletePlanAsync(Guid id, CancellationToken ct = default);
     Task<SubscriptionPlanDto> AdminTogglePlanStatusAsync(Guid id, CancellationToken ct = default);
+    Task<IReadOnlyList<SubscriptionHistoryItemDto>> GetSubscriptionHistoryAsync(Guid businessId, CancellationToken ct = default);
+    Task<IReadOnlyList<SubscriptionHistoryItemDto>> AdminGetAllSubscriptionHistoryAsync(CancellationToken ct = default);
+    Task<SubscriptionInvoiceDto> GetInvoiceAsync(Guid subscriptionId, Guid? requestingBusinessId = null, bool isAdmin = false, CancellationToken ct = default);
+    Task<string> GenerateInvoiceHtmlAsync(Guid subscriptionId, Guid? requestingBusinessId = null, bool isAdmin = false, CancellationToken ct = default);
 }
 
 public interface IQrCodeService

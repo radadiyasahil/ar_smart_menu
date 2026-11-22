@@ -1092,6 +1092,30 @@ class _AccountScreenState extends State<AccountScreen> {
               onTap: () => context.push(AppRoutes.qr),
             ),
           ),
+
+          const SizedBox(height: 8),
+
+          // Subscription Invoices & GST Bills Quick Card
+          Container(
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: borderColor),
+            ),
+            child: ListTile(
+              visualDensity: VisualDensity.compact,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+              leading: CircleAvatar(
+                backgroundColor: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                radius: 18,
+                child: const Icon(Icons.receipt_long_rounded, color: Color(0xFF6366F1), size: 20),
+              ),
+              title: const Text('Subscription & GST Invoices', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              subtitle: const Text('View history & download tax invoices for IT returns / audits', style: TextStyle(fontSize: 11, color: AppColors.mediumGray)),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => context.push('${AppRoutes.subscription}?tab=history', extra: 1),
+            ),
+          ),
         ] else if (_selectedTab == _ProfileTab.business) ...[
           // Business Details Tab
           Container(

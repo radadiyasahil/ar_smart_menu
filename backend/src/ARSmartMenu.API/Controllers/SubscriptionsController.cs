@@ -118,6 +118,42 @@ public class SubscriptionsController : ControllerBase
         return Ok(ApiResponse<VerifyPaymentResponse>.Ok(result, result.Message));
     }
 
+    /// <summary>
+    /// Get history of all past and active subscriptions with invoice numbers for this owner/business.
+    /// </summary>
+    [HttpGet("history")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>>> GetHistory(CancellationToken ct)
+    {
+        var businessId = await ResolveBusinessIdAsync();
+        var result = await _subscriptions.GetSubscriptionHistoryAsync(businessId, ct);
+        return Ok(ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>.Ok(result));
+    }
+
+    /// <summary>
+    /// Get full GST Tax Invoice JSON for any past subscription transaction.
+    /// </summary>
+    [HttpGet("{id:guid}/invoice")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<SubscriptionInvoiceDto>>> GetInvoice(Guid id, CancellationToken ct)
+    {
+        var businessId = await ResolveBusinessIdAsync();
+        var result = await _subscriptions.GetInvoiceAsync(id, requestingBusinessId: businessId, isAdmin: false, ct);
+        return Ok(ApiResponse<SubscriptionInvoiceDto>.Ok(result));
+    }
+
+    /// <summary>
+    /// Download/View printable Government & Audit compliant A4 GST Tax Invoice HTML for any past subscription transaction.
+    /// </summary>
+    [HttpGet("{id:guid}/invoice/html")]
+    [Authorize]
+    public async Task<IActionResult> GetInvoiceHtml(Guid id, CancellationToken ct)
+    {
+        var businessId = await ResolveBusinessIdAsync();
+        var html = await _subscriptions.GenerateInvoiceHtmlAsync(id, requestingBusinessId: businessId, isAdmin: false, ct);
+        return Content(html, "text/html; charset=utf-8");
+    }
+
     private async Task<Guid> ResolveBusinessIdAsync()
     {
         var businessId = _currentUser.GetBusinessId();

@@ -7,6 +7,8 @@ import type {
   BusinessStatusFilter,
   CreateSubscriptionPlanPayload,
   ProcessingJob,
+  SubscriptionHistoryItem,
+  SubscriptionInvoice,
   SubscriptionPlan,
   UpdateSubscriptionPlanPayload,
 } from '@/types/admin'
@@ -15,7 +17,7 @@ import type { ApiEnvelope, PagedResult } from '@/types/api'
 import { apiClient } from './apiClient'
 import { ensureAdminAuth } from './authService'
 
-export type { AdminNotification, AdminNotificationsResponse }
+export type { AdminNotification, AdminNotificationsResponse, SubscriptionHistoryItem, SubscriptionInvoice }
 
 export interface BusinessListParams {
   status?: BusinessStatusFilter
@@ -315,5 +317,44 @@ export const adminService = {
       throw new Error(res.data.error ?? 'Failed to load notifications')
     }
     return res.data.data
+  },
+
+  async getBusinessSubscriptionHistory(businessId: string): Promise<SubscriptionHistoryItem[]> {
+    await ensureAdminAuth()
+    const res = await apiClient.get<ApiEnvelope<SubscriptionHistoryItem[]>>(
+      `/admin/businesses/${businessId}/subscriptions/history`,
+    )
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to load subscription history')
+    }
+    return res.data.data
+  },
+
+  async getAllSubscriptionsHistory(): Promise<SubscriptionHistoryItem[]> {
+    await ensureAdminAuth()
+    const res = await apiClient.get<ApiEnvelope<SubscriptionHistoryItem[]>>(
+      '/admin/subscriptions/all-history',
+    )
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to load all subscriptions history')
+    }
+    return res.data.data
+  },
+
+  async getSubscriptionInvoice(subscriptionId: string): Promise<SubscriptionInvoice> {
+    await ensureAdminAuth()
+    const res = await apiClient.get<ApiEnvelope<SubscriptionInvoice>>(
+      `/admin/subscriptions/${subscriptionId}/invoice`,
+    )
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to load subscription invoice')
+    }
+    return res.data.data
+  },
+
+  getSubscriptionInvoiceHtmlUrl(subscriptionId: string): string {
+    const baseURL = apiClient.defaults.baseURL || '/api'
+    const token = localStorage.getItem('ar_admin_token') || ''
+    return `${baseURL}/admin/subscriptions/${subscriptionId}/invoice/html?token=${encodeURIComponent(token)}`
   },
 }

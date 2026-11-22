@@ -5,10 +5,14 @@ import {
   CheckCircle,
   Clock,
   Crown,
+  Download,
   FileText,
+  History,
   MapPin,
   Play,
   Power,
+  ReceiptText,
+  RefreshCw,
   ShieldAlert,
   Sparkles,
   Store,
@@ -21,11 +25,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { adminService } from '@/services/adminService'
 import {
   BUSINESS_STATUS_LABELS,
   BUSINESS_TYPE_LABELS,
+  formatPaise,
   KYC_STATUS_LABELS,
   type AdminBusiness,
+  type SubscriptionHistoryItem,
 } from '@/types/admin'
 
 interface BusinessDetailModalProps {
@@ -58,6 +65,28 @@ export function BusinessDetailModal({
   const [actionPrompt, setActionPrompt] = useState<'deactivate' | 'suspend' | null>(null)
   const [statusReason, setStatusReason] = useState('')
   const [planActionLoading, setPlanActionLoading] = useState(false)
+
+  const [showHistory, setShowHistory] = useState(false)
+  const [historyList, setHistoryList] = useState<SubscriptionHistoryItem[]>([])
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+
+  const toggleHistory = async () => {
+    const nextState = !showHistory
+    setShowHistory(nextState)
+    if (nextState && !historyLoaded) {
+      setIsLoadingHistory(true)
+      try {
+        const history = await adminService.getBusinessSubscriptionHistory(business.id)
+        setHistoryList(history)
+        setHistoryLoaded(true)
+      } catch (err) {
+        console.error('Failed to load subscription history:', err)
+      } finally {
+        setIsLoadingHistory(false)
+      }
+    }
+  }
 
   const isPending = business.status === 0
   const isActive = business.status === 1
@@ -406,6 +435,99 @@ export function BusinessDetailModal({
                   </Button>
                 )}
               </div>
+            </div>
+
+            {/* Past Subscriptions & GST Invoices Section */}
+            <div className="pt-2 border-t border-border/60">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                  <ReceiptText className="h-3.5 w-3.5" />
+                  Past Subscriptions & Tax Invoices (GST)
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[11px] text-primary hover:bg-primary/10"
+                  onClick={toggleHistory}
+                >
+                  <History className="mr-1 h-3 w-3" />
+                  {showHistory ? 'Hide Invoices' : 'View Invoices & Bills'}
+                </Button>
+              </div>
+
+              {showHistory && (
+                <div className="mt-2 space-y-2">
+                  {isLoadingHistory ? (
+                    <div className="flex items-center justify-center p-3 text-xs text-muted-foreground">
+                      <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />
+                      Loading past subscriptions & invoices...
+                    </div>
+                  ) : historyList.length === 0 ? (
+                    <div className="rounded border border-dashed border-border/80 p-3 text-center text-xs text-muted-foreground">
+                      No past subscriptions or invoices found for this business.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                      {historyList.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between rounded border border-border/60 bg-muted/30 p-2 text-xs"
+                        >
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-foreground">{item.planName}</span>
+                              <Badge
+                                variant={
+                                  item.status === 'Active'
+                                    ? 'success'
+                                    : item.status === 'Trial'
+                                      ? 'warning'
+                                      : item.status === 'Expired'
+                                        ? 'danger'
+                                        : 'muted'
+                                }
+                                className="text-[10px] px-1.5 py-0"
+                              >
+                                {item.status}
+                              </Badge>
+                              {item.invoiceNumber && (
+                                <span className="font-mono text-[10px] text-muted-foreground">
+                                  #{item.invoiceNumber}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              {item.startsAt.slice(0, 10)} to {item.endsAt.slice(0, 10)} •{' '}
+                              {item.totalAmountPaise ? (
+                                <span className="font-medium text-foreground">
+                                  {formatPaise(item.totalAmountPaise)}{' '}
+                                  <span className="text-[10px] text-muted-foreground">(incl. 18% GST)</span>
+                                </span>
+                              ) : (
+                                'Free / Trial'
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-xs border-primary/30 text-primary hover:bg-primary/10"
+                              onClick={() => {
+                                const url = adminService.getSubscriptionInvoiceHtmlUrl(item.id)
+                                window.open(url, '_blank')
+                              }}
+                            >
+                              <Download className="mr-1 h-3 w-3" />
+                              GST Bill
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

@@ -259,6 +259,83 @@ public record VerifyPaymentRequest(
 
 public record VerifyPaymentResponse(SubscriptionDto Subscription, string Message);
 
+public record SubscriptionHistoryItemDto(
+    Guid Id,
+    Guid BusinessId,
+    string InvoiceNumber,
+    DateTime InvoiceDate,
+    string PlanName,
+    string PlanSlug,
+    string BillingCycle,
+    string Status,
+    DateTime StartsAt,
+    DateTime EndsAt,
+    int DurationDays,
+    int BaseAmountPaise,
+    int GstPaise,
+    int TotalAmountPaise,
+    double BaseAmountRupees,
+    double GstRupees,
+    double TotalAmountRupees,
+    string? PaymentMethod,
+    string? PaymentRef,
+    string? CustomerGstNumber,
+    bool IsTrial,
+    string? SacCode = "998313"
+);
+
+public record SubscriptionInvoiceDto(
+    Guid Id,
+    Guid BusinessId,
+    string InvoiceNumber,
+    DateTime InvoiceDate,
+    string PlanName,
+    string PlanSlug,
+    string BillingCycle,
+    string Status,
+    DateTime StartsAt,
+    DateTime EndsAt,
+    int DurationDays,
+    int BaseAmountPaise,
+    int GstPaise,
+    int TotalAmountPaise,
+    double BaseAmountRupees,
+    double GstRupees,
+    double TotalAmountRupees,
+    double CgstRupees,
+    double SgstRupees,
+    double IgstRupees,
+    double CgstRate,
+    double SgstRate,
+    double IgstRate,
+    bool IsInterState,
+    string SacCode,
+    string? PaymentMethod,
+    string? PaymentRef,
+    // Supplier Details (Platform)
+    string SupplierName,
+    string SupplierAddress,
+    string SupplierGstNumber,
+    string SupplierPan,
+    string SupplierState,
+    string SupplierStateCode,
+    string SupplierEmail,
+    string SupplierPhone,
+    // Customer Details (Buyer / Business)
+    string CustomerBusinessName,
+    string? CustomerOwnerName,
+    string? CustomerEmail,
+    string? CustomerPhone,
+    string? CustomerGstNumber,
+    string CustomerAddress,
+    string CustomerCity,
+    string CustomerState,
+    string CustomerStateCode,
+    bool IsGstRegistered,
+    string AmountInWords,
+    string PlaceOfSupply
+);
+
 // ── QR Code ─────────────────────────────────────────────────────────────────
 
 public record QrCodeDto(

@@ -40,6 +40,39 @@ public static class DatabaseSeeder
 
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Products]') AND name = 'CustomizationJson')
                     ALTER TABLE [Products] ADD [CustomizationJson] nvarchar(max) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'InvoiceNumber')
+                    ALTER TABLE [Subscriptions] ADD [InvoiceNumber] nvarchar(50) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'BaseAmountPaise')
+                    ALTER TABLE [Subscriptions] ADD [BaseAmountPaise] int NOT NULL DEFAULT 0;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'GstPaise')
+                    ALTER TABLE [Subscriptions] ADD [GstPaise] int NOT NULL DEFAULT 0;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'TotalAmountPaise')
+                    ALTER TABLE [Subscriptions] ADD [TotalAmountPaise] int NOT NULL DEFAULT 0;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'PaymentMethod')
+                    ALTER TABLE [Subscriptions] ADD [PaymentMethod] nvarchar(50) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'PaymentRef')
+                    ALTER TABLE [Subscriptions] ADD [PaymentRef] nvarchar(100) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerGstNumber')
+                    ALTER TABLE [Subscriptions] ADD [CustomerGstNumber] nvarchar(50) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerBusinessName')
+                    ALTER TABLE [Subscriptions] ADD [CustomerBusinessName] nvarchar(200) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerAddress')
+                    ALTER TABLE [Subscriptions] ADD [CustomerAddress] nvarchar(500) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerState')
+                    ALTER TABLE [Subscriptions] ADD [CustomerState] nvarchar(100) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'SacCode')
+                    ALTER TABLE [Subscriptions] ADD [SacCode] nvarchar(20) NULL DEFAULT '998313';
             ");
         }
         catch (Exception ex)

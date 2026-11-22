@@ -236,4 +236,43 @@ public class AdminController : ControllerBase
         var result = await _subscriptions.AdminTogglePlanStatusAsync(id, ct);
         return Ok(ApiResponse<SubscriptionPlanDto>.Ok(result, $"Plan status set to {(result.IsActive ? "Active" : "Inactive")}"));
     }
+
+    /// <summary>Get history of all past subscriptions and invoices for a specific business.</summary>
+    [HttpGet("businesses/{id:guid}/subscriptions/history")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>>> GetBusinessSubscriptionHistory(
+        Guid id,
+        CancellationToken ct)
+    {
+        var result = await _subscriptions.GetSubscriptionHistoryAsync(id, ct);
+        return Ok(ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>.Ok(result));
+    }
+
+    /// <summary>Get all past subscription transactions across the platform for admin audit & analytics.</summary>
+    [HttpGet("subscriptions/all-history")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>>> GetAllSubscriptionHistory(
+        CancellationToken ct)
+    {
+        var result = await _subscriptions.AdminGetAllSubscriptionHistoryAsync(ct);
+        return Ok(ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>.Ok(result));
+    }
+
+    /// <summary>Get full GST Tax Invoice JSON for any past subscription transaction.</summary>
+    [HttpGet("subscriptions/{id:guid}/invoice")]
+    public async Task<ActionResult<ApiResponse<SubscriptionInvoiceDto>>> GetSubscriptionInvoice(
+        Guid id,
+        CancellationToken ct)
+    {
+        var result = await _subscriptions.GetInvoiceAsync(id, requestingBusinessId: null, isAdmin: true, ct);
+        return Ok(ApiResponse<SubscriptionInvoiceDto>.Ok(result));
+    }
+
+    /// <summary>Download/View printable Government & Audit compliant A4 GST Tax Invoice HTML for any past subscription transaction.</summary>
+    [HttpGet("subscriptions/{id:guid}/invoice/html")]
+    public async Task<IActionResult> GetSubscriptionInvoiceHtml(
+        Guid id,
+        CancellationToken ct)
+    {
+        var html = await _subscriptions.GenerateInvoiceHtmlAsync(id, requestingBusinessId: null, isAdmin: true, ct);
+        return Content(html, "text/html; charset=utf-8");
+    }
 }

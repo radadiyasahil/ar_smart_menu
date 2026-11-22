@@ -93,7 +93,11 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.subscription,
       parentNavigatorKey: rootNavigatorKey,
-      builder: (_, _) => const SubscriptionScreen(),
+      builder: (_, state) {
+        final tab = state.uri.queryParameters['tab'] ?? (state.extra is int ? state.extra.toString() : null);
+        final tabIndex = (tab == 'history' || tab == 'invoices' || tab == '1') ? 1 : 0;
+        return SubscriptionScreen(initialTabIndex: tabIndex);
+      },
     ),
     StatefulShellRoute.indexedStack(
       builder: (_, _, shell) => MainShell(navigationShell: shell),

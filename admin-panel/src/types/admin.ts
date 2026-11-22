@@ -269,3 +269,58 @@ export interface AdminNotificationsResponse {
   pendingProductsCount: number
 }
 
+export interface SubscriptionHistoryItem {
+  id: string
+  businessId: string
+  planId?: string | null
+  planName: string
+  planSlug: string
+  status: string
+  billingCycle: string
+  startsAt: string
+  endsAt: string
+  createdAt: string
+  hasInvoice: boolean
+  invoiceNumber?: string | null
+  totalAmountPaise?: number | null
+  baseAmountPaise?: number | null
+  gstPaise?: number | null
+  paymentMethod?: string | null
+  paymentRef?: string | null
+}
+
+export interface SubscriptionInvoice {
+  subscriptionId: string
+  invoiceNumber: string
+  invoiceDate: string
+  businessId: string
+  customerBusinessName: string
+  customerGstNumber?: string | null
+  customerAddress?: string | null
+  customerState?: string | null
+  customerStateCode?: string | null
+  customerEmail?: string | null
+  customerPhone?: string | null
+  planName: string
+  sacCode: string
+  billingCycle: string
+  periodStart: string
+  periodEnd: string
+  baseAmountPaise: number
+  gstPaise: number
+  totalAmountPaise: number
+  isInterState: boolean
+  cgstPaise: number
+  sgstPaise: number
+  igstPaise: number
+  supplierName: string
+  supplierGstNumber: string
+  supplierPan: string
+  supplierAddress: string
+  supplierState: string
+  paymentMethod: string
+  paymentRef?: string | null
+  status: string
+}
+
+

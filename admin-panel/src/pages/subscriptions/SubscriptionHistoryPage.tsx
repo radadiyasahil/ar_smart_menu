@@ -1,14 +1,9 @@
 import {
-  Calendar,
-  Check,
   CreditCard,
-  Download,
-  ExternalLink,
   FileSpreadsheet,
   FileText,
   Filter,
   IndianRupee,
-  Layers,
   Printer,
   RefreshCw,
   Search,
@@ -69,7 +64,7 @@ export function SubscriptionHistoryPage() {
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim()
         const matchesInvoice = item.invoiceNumber?.toLowerCase().includes(query) ?? false
-        const matchesBusiness = item.businessName.toLowerCase().includes(query)
+        const matchesBusiness = (item.businessName ?? '').toLowerCase().includes(query)
         const matchesOwner = item.ownerName?.toLowerCase().includes(query) ?? false
         const matchesPhone = item.ownerMobile?.includes(query) ?? false
         const matchesPlan = item.planName.toLowerCase().includes(query)
@@ -149,7 +144,7 @@ export function SubscriptionHistoryPage() {
     const rows = filteredHistory.map((item) => [
       `"${item.invoiceNumber ?? ''}"`,
       `"${new Date(item.invoiceDate ?? item.startsAt).toLocaleDateString('en-IN')}"`,
-      `"${item.businessName.replace(/"/g, '""')}"`,
+      `"${(item.businessName ?? '').replace(/"/g, '""')}"`,
       `"${item.customerGstNumber ?? 'URP'}"`,
       `"${item.customerCity ?? ''}"`,
       `"${item.ownerMobile ?? ''}"`,
@@ -401,7 +396,7 @@ export function SubscriptionHistoryPage() {
 
                       {/* Plan & Period */}
                       <td className="py-3.5 px-4">
-                        <Badge variant="outline" className="font-medium text-xs">
+                        <Badge variant="muted" className="font-medium text-xs">
                           {item.planName}
                         </Badge>
                         <p className="text-[11px] text-muted-foreground mt-1">
@@ -438,15 +433,15 @@ export function SubscriptionHistoryPage() {
                       {/* Status */}
                       <td className="py-3.5 px-4">
                         {item.status === 0 && item.isActive ? (
-                          <Badge variant="outline" className="border-emerald-500 text-emerald-600 bg-emerald-500/10">
+                          <Badge variant="success" className="border-emerald-500 text-emerald-600 bg-emerald-500/10">
                             Active
                           </Badge>
                         ) : item.status === 2 ? (
-                          <Badge variant="outline" className="border-amber-500 text-amber-600 bg-amber-500/10">
+                          <Badge variant="warning" className="border-amber-500 text-amber-600 bg-amber-500/10">
                             Cancelled
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="border-slate-500 text-slate-500 bg-slate-500/10">
+                          <Badge variant="muted" className="border-slate-500 text-slate-500 bg-slate-500/10">
                             Expired
                           </Badge>
                         )}

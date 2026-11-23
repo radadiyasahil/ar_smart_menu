@@ -1,6 +1,5 @@
 import {
   Download,
-  ExternalLink,
   FileText,
   Printer,
   ShieldCheck,
@@ -118,7 +117,7 @@ export function GstInvoiceModal({ invoice, onClose }: GstInvoiceModalProps) {
                 <p className="mt-1 text-[11px] text-slate-500">
                   Rule 46 of CGST Rules, 2017
                 </p>
-                <Badge variant="outline" className="mt-1.5 border-emerald-500 text-emerald-700 bg-emerald-50 text-[11px]">
+                <Badge variant="success" className="mt-1.5 border-emerald-500 text-emerald-700 bg-emerald-50 text-[11px]">
                   Original for Recipient
                 </Badge>
               </div>

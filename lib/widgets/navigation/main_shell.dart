@@ -75,14 +75,26 @@ class _MainShellState extends State<MainShell> {
     });
   }
 
+  int _calculateSelectedIndex(BuildContext context) {
+    try {
+      final path = GoRouterState.of(context).uri.path;
+      if (path == AppRoutes.dashboard) return 0;
+      if (path.startsWith(AppRoutes.products)) return 1;
+      if (path == AppRoutes.billing) return 2;
+      if (path == AppRoutes.analytics) return 3;
+      if (path.startsWith(AppRoutes.account)) return 4;
+    } catch (_) {}
+    return widget.navigationShell.currentIndex.clamp(0, 4);
+  }
+
   void _onTabTapped(int index, bool isAuthenticated, bool isApproved) {
     if (!isAuthenticated) {
       _showLoginRequiredDialog(context);
       return;
     }
 
-    // Only Account tab (index 5) is accessible when not approved yet
-    if (!isApproved && index != 5) {
+    // Only Account tab (index 4) is accessible when not approved yet
+    if (!isApproved && index != 4) {
       final isRejected = context.read<BusinessProvider>().isRejected;
       TopToast.warning(
         context,
@@ -98,10 +110,25 @@ class _MainShellState extends State<MainShell> {
       context.read<TableOrdersProvider>().clearAlertMessage();
     }
 
-    widget.navigationShell.goBranch(
-      index,
-      initialLocation: index == widget.navigationShell.currentIndex,
-    );
+    switch (index) {
+      case 0:
+        context.go(AppRoutes.dashboard);
+        break;
+      case 1:
+        context.go(AppRoutes.products);
+        break;
+      case 2:
+        context.go(AppRoutes.billing);
+        break;
+      case 3:
+        context.go(AppRoutes.analytics);
+        break;
+      case 4:
+        context.go(AppRoutes.account);
+        break;
+      default:
+        context.go(AppRoutes.dashboard);
+    }
   }
 
   @override
@@ -117,6 +144,9 @@ class _MainShellState extends State<MainShell> {
     final isDark = theme.brightness == Brightness.dark;
     final navTheme = theme.navigationBarTheme;
 
+    final selectedIndex = _calculateSelectedIndex(context);
+    final isAccountPath = selectedIndex == 4;
+
     final bId = businessProvider.business?.id;
     if (isAuthenticated && isApproved && bId != null && bId.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -125,10 +155,13 @@ class _MainShellState extends State<MainShell> {
     }
 
     // Guard against unapproved / rejected business accessing operational shell branches
-    if (isAuthenticated && businessProvider.hasBusiness && !isApproved && widget.navigationShell.currentIndex != 5) {
+    if (isAuthenticated && businessProvider.hasBusiness && !isApproved && !isAccountPath) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !context.read<BusinessProvider>().isActive && widget.navigationShell.currentIndex != 5) {
-          context.go(AppRoutes.businessStatus);
+        if (mounted && !context.read<BusinessProvider>().isActive) {
+          final p = GoRouterState.of(context).uri.path;
+          if (!p.startsWith(AppRoutes.account) && p != AppRoutes.businessStatus) {
+            context.go(AppRoutes.businessStatus);
+          }
         }
       });
     }
@@ -225,9 +258,7 @@ class _MainShellState extends State<MainShell> {
                     ),
                     icon: const Icon(Icons.play_circle_outline, size: 16),
                     label: const Text('Reactivate', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    onPressed: () {
-                      widget.navigationShell.goBranch(5);
-                    },
+                    onPressed: () => context.go(AppRoutes.account),
                   ),
                 ],
               ),
@@ -255,7 +286,7 @@ class _MainShellState extends State<MainShell> {
                     ),
                     onPressed: () {
                       ordersProvider.clearAlertMessage();
-                      widget.navigationShell.goBranch(2);
+                      context.go(AppRoutes.billing);
                     },
                     child: const Text('Open Orders'),
                   ),
@@ -292,7 +323,7 @@ class _MainShellState extends State<MainShell> {
           ),
         ),
         child: NavigationBar(
-          selectedIndex: widget.navigationShell.currentIndex,
+          selectedIndex: selectedIndex,
           onDestinationSelected: (idx) => _onTabTapped(idx, isAuthenticated, isApproved),
           backgroundColor: navTheme.backgroundColor,
           indicatorColor: navTheme.indicatorColor,
@@ -321,11 +352,6 @@ class _MainShellState extends State<MainShell> {
                 child: const Icon(Icons.receipt_long),
               ),
               label: 'nav_billing'.tr(),
-            ),
-            NavigationDestination(
-              icon: Icon(!isApproved && isAuthenticated ? Icons.lock_outline : Icons.qr_code_outlined),
-              selectedIcon: const Icon(Icons.qr_code),
-              label: 'nav_qr'.tr(),
             ),
             NavigationDestination(
               icon: Icon(!isApproved && isAuthenticated ? Icons.lock_outline : Icons.bar_chart_outlined),

@@ -185,6 +185,19 @@ public class PublicArService : IPublicArService
             .OrderBy(t => int.TryParse(t, out var n) ? n : 999)
             .ToList();
 
+        var dynamicGstSetting = await _db.SystemSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Key == "Billing.GstRatePercent", ct);
+        double platformGstRate = 5.0;
+        if (dynamicGstSetting != null && double.TryParse(dynamicGstSetting.Value, out var parsedRate) && parsedRate >= 0)
+        {
+            platformGstRate = parsedRate;
+        }
+
+        var effectiveGstRate = (business.GstRate > 0 && business.GstRate != 5.0)
+            ? business.GstRate
+            : platformGstRate;
+
         return new PublicMenuResponse(
             slug,
             business.BusinessName,
@@ -204,7 +217,7 @@ public class PublicArService : IPublicArService
             business.GeofenceRadiusMeters > 0 ? business.GeofenceRadiusMeters : 200,
             business.Latitude,
             business.Longitude,
-            business.GstRate > 0 ? business.GstRate : 5.0
+            effectiveGstRate
         );
     }
 

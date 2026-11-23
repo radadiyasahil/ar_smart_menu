@@ -8,11 +8,13 @@ import '../../core/services/subscription_service.dart';
 import '../../core/utils/ar_preview.dart';
 import '../../core/utils/owner_notifications_sync.dart';
 import '../../core/utils/subscription_guard.dart';
+import '../../core/utils/top_toast.dart';
 import '../../models/product_model.dart';
 import '../../providers/analytics_provider.dart';
 import '../../providers/business_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/product_provider.dart';
+import '../../providers/table_orders_provider.dart';
 import '../../widgets/common/hover_card.dart';
 
 /// Owner home dashboard styled after modern dark food discovery apps.
@@ -25,7 +27,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  int _selectedCategoryIndex = 0;
+  String _dailyItemFilter = 'all';
 
   @override
   void initState() {
@@ -57,8 +59,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return Consumer3<BusinessProvider, ProductProvider, AnalyticsProvider>(
-      builder: (context, business, products, analytics, _) {
+    return Consumer4<BusinessProvider, ProductProvider, AnalyticsProvider, TableOrdersProvider>(
+      builder: (context, business, products, analytics, orders, _) {
         if (!business.isActive && business.hasBusiness) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (context.mounted) context.go(AppRoutes.businessStatus);
@@ -67,7 +69,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
         final bName = business.business?.businessName ?? 'Restaurant';
         final city = business.business?.city ?? '';
-        final dishes = _getDishes(products);
 
         return Scaffold(
           backgroundColor: theme.scaffoldBackgroundColor,
@@ -81,21 +82,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
                 children: [
-                  _buildHeader(theme, isDark, bName, city),
+                  _buildHeader(theme, isDark, bName, city, business.business?.logoUrl),
                   const SizedBox(height: 14),
                   _buildSearchBar(theme, isDark),
                   const SizedBox(height: 16),
+                  _buildDailyOperationsHub(theme, isDark, products, orders),
+                  const SizedBox(height: 16),
                   _buildHeroBanner(theme, isDark, products),
                   const SizedBox(height: 20),
-                  _buildExploreCategories(theme, isDark, products),
-                  const SizedBox(height: 16),
                   _buildPulseCard(theme, isDark, products, analytics),
                   const SizedBox(height: 20),
-                  _buildDishSection(theme, isDark, dishes),
+                  _build3DModelsShowcase(theme, isDark, products),
+                  const SizedBox(height: 20),
+                  _buildDailyUseItemsSection(theme, isDark, products),
                   const SizedBox(height: 16),
                   _buildSubscriptionStatusBanner(business, isDark),
-                  const SizedBox(height: 16),
-                  _buildQrCard(theme, isDark),
                 ],
               ),
             ),
@@ -107,7 +108,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ─── 1. Header (Avatar, Location, Notification & AR) ──────────────────────
 
-  Widget _buildHeader(ThemeData theme, bool isDark, String name, String city) {
+  Widget _buildHeader(ThemeData theme, bool isDark, String name, String city, String? logoUrl) {
     final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final btnBg = isDark ? AppColors.darkSurface : AppColors.lightSurface;
 
@@ -115,31 +116,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          Consumer<BusinessProvider>(
-            builder: (_, bProv, _) {
-              final logo = bProv.business?.logoUrl;
-              return GestureDetector(
-                onTap: () => context.go(AppRoutes.account),
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: borderColor, width: 1.2),
-                    color: AppColors.primaryOrange.withValues(alpha: 0.12),
-                    image: (logo != null && logo.isNotEmpty)
-                        ? DecorationImage(
-                            image: NetworkImage(logo),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                  ),
-                  child: (logo == null || logo.isEmpty)
-                      ? const Icon(Icons.restaurant, color: AppColors.primaryOrange, size: 22)
-                      : null,
-                ),
-              );
-            },
+          GestureDetector(
+            onTap: () => context.go(AppRoutes.account),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: borderColor, width: 1.2),
+                color: AppColors.primaryOrange.withValues(alpha: 0.12),
+                image: (logoUrl != null && logoUrl.isNotEmpty)
+                    ? DecorationImage(
+                        image: NetworkImage(logoUrl),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+              ),
+              child: (logoUrl == null || logoUrl.isEmpty)
+                  ? const Icon(Icons.restaurant, color: AppColors.primaryOrange, size: 22)
+                  : null,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -387,119 +383,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // ─── 4. Explore Categories (Dynamic Menu Categories) ──────────────────────
-
-  Widget _buildExploreCategories(ThemeData theme, bool isDark, ProductProvider products) {
-    final categoriesMap = <String, int>{};
-    for (final p in products.products) {
-      final label = p.category?.label ?? 'Other';
-      categoriesMap[label] = (categoriesMap[label] ?? 0) + 1;
-    }
-
-    final categories = <(String, IconData, VoidCallback)>[
-      ('All (${products.products.length})', Icons.restaurant_menu, () => context.go(AppRoutes.products)),
-      if (products.products.any((p) => p.photos.length >= 4))
-        ('3D Models (${products.products.where((p) => p.photos.length >= 4).length})', Icons.view_in_ar, () => context.go(AppRoutes.products)),
-      ...categoriesMap.entries.take(5).map((e) => (
-        '${e.key} (${e.value})',
-        Icons.local_dining,
-        () => context.go(AppRoutes.products),
-      )),
-      ('Table QRs', Icons.qr_code_2, () => context.go(AppRoutes.qr)),
-      ('Analytics', Icons.insights, () => context.go(AppRoutes.analytics)),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Explore Categories',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : AppColors.black,
-                ),
-              ),
-              InkWell(
-                onTap: () => context.go(AppRoutes.products),
-                child: const Text(
-                  'See All',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primaryOrange,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 42,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: categories.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (_, i) {
-              final (label, icon, onTap) = categories[i];
-              final isSelected = _selectedCategoryIndex == i;
-
-              return HoverCard(
-                borderRadius: 24,
-                hoverBorderColor: AppColors.primaryOrange,
-                onTap: () {
-                  setState(() => _selectedCategoryIndex = i);
-                  onTap();
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppColors.primaryOrange
-                        : (isDark ? AppColors.darkSurface : AppColors.lightSurface),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: isSelected
-                          ? AppColors.primaryOrange
-                          : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
-                      width: 1.0,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        icon,
-                        size: 16,
-                        color: isSelected ? Colors.white : (isDark ? Colors.white70 : AppColors.black),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                          color: isSelected ? Colors.white : (isDark ? Colors.white70 : AppColors.black),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ─── 5. Real-Time 3D Pulse Stats ──────────────────────────────────────────
+  // ─── 4. Real-Time 3D Pulse Stats ──────────────────────────────────────────
 
   Widget _buildPulseCard(ThemeData theme, bool isDark, ProductProvider prod, AnalyticsProvider a) {
     final scans = a.totalScans;
@@ -582,199 +466,207 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // ─── 6. Popular in 3D Dish Section (ItaliaCrisp Style) ─────────────────────
+  // ─── 4b. Daily Operations Hub & Fast Operational Actions ────────────────
+  Widget _buildDailyOperationsHub(ThemeData theme, bool isDark, ProductProvider products, TableOrdersProvider orders) {
+    final activeTables = orders.activeBills.length;
+    final pendingOrders = orders.pendingCount;
+    final kitchenOrders = orders.kitchenOrders.length;
+    final soldOut = products.products.where((p) => p.soldOutToday).length;
 
-  // ─── 6. Dishes Section (100% Dynamic from Restaurant Menu) ───────────────
-
-  Widget _buildDishSection(ThemeData theme, bool isDark, List<_DishItem> dishes) {
-    if (dishes.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-              width: 1.0,
-            ),
-          ),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryOrange.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.restaurant_menu,
-                  size: 28,
-                  color: AppColors.primaryOrange,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'No Menu Dishes Added Yet',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : AppColors.black,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Add dishes to your menu to show them here and on customer 3D table menus.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, color: AppColors.mediumGray),
-              ),
-              const SizedBox(height: 14),
-              ElevatedButton.icon(
-                onPressed: () {
-                  if (checkSubscriptionGuard(context, featureName: 'adding dishes')) {
-                    context.push(AppRoutes.addProduct);
-                  }
-                },
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text(
-                  'Add First Dish',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryOrange,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    final tiles = [
+      (
+        icon: Icons.table_restaurant_rounded,
+        color: const Color(0xFF10B981),
+        title: '$activeTables Active',
+        subtitle: 'Table Billing & POS',
+        caption: activeTables > 0 ? '$activeTables seated tables' : 'All tables open',
+        badge: activeTables > 0 ? 'Live' : null,
+        onTap: () => context.go(AppRoutes.billing),
+      ),
+      (
+        icon: Icons.soup_kitchen_rounded,
+        color: const Color(0xFFF59E0B),
+        title: '${pendingOrders + kitchenOrders} Tickets',
+        subtitle: 'Kitchen & KOT',
+        caption: '$pendingOrders new • $kitchenOrders cooking',
+        badge: pendingOrders > 0 ? '$pendingOrders New' : null,
+        onTap: () => context.go(AppRoutes.billing),
+      ),
+      (
+        icon: Icons.inventory_2_outlined,
+        color: soldOut > 0 ? AppColors.error : const Color(0xFF06B6D4),
+        title: soldOut > 0 ? '$soldOut Sold Out' : 'All In Stock',
+        subtitle: 'Daily Stock (86)',
+        caption: '${products.products.length} menu items total',
+        badge: soldOut > 0 ? '86 Alert' : 'Ready',
+        onTap: () => context.go(AppRoutes.products),
+      ),
+      (
+        icon: Icons.add_photo_alternate_rounded,
+        color: const Color(0xFF8B5CF6),
+        title: '+ Add Dish',
+        subtitle: 'Upload 3D AR Dish',
+        caption: 'Capture 4 angle photos',
+        badge: 'New',
+        onTap: () {
+          if (checkSubscriptionGuard(context, featureName: 'adding dishes')) context.push(AppRoutes.addProduct);
+        },
+      ),
+    ];
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Menu Dishes',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : AppColors.black,
-                ),
-              ),
-              InkWell(
-                onTap: () => context.go(AppRoutes.products),
-                child: const Text(
-                  'See All',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primaryOrange,
-                  ),
-                ),
-              ),
-            ],
-          ),
+        _sectionHeader(
+          icon: Icons.bolt_rounded,
+          iconColor: AppColors.accentGreen,
+          title: 'Daily Operations & Quick Actions',
+          actionLabel: 'POS View →',
+          onAction: () => context.go(AppRoutes.billing),
+          isDark: isDark,
         ),
         const SizedBox(height: 12),
-        SizedBox(
-          height: 235,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: dishes.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 14),
-            itemBuilder: (_, i) => _DishCard(dish: dishes[i]),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(child: _operationTile(tiles[0], isDark)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _operationTile(tiles[1], isDark)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(child: _operationTile(tiles[2], isDark)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _operationTile(tiles[3], isDark)),
+                ],
+              ),
+            ],
           ),
         ),
       ],
     );
   }
 
-  // ─── 6b. Plan & Subscription Banner (Between Products & QR Menu) ────────
+  Widget _operationTile(
+    ({IconData icon, Color color, String title, String subtitle, String caption, String? badge, VoidCallback onTap}) tile,
+    bool isDark,
+  ) {
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final cardBg = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+
+    return HoverCard(
+      borderRadius: 16,
+      onTap: tile.onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderColor, width: 1.0),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: tile.color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(tile.icon, color: tile.color, size: 20),
+                ),
+                if (tile.badge != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: tile.color.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      tile.badge!,
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: tile.color),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              tile.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: isDark ? Colors.white : AppColors.black),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              tile.subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: isDark ? Colors.white70 : Colors.black87),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              tile.caption,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: AppColors.mediumGray),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── 5. Plan & Subscription Banner ─────────────────────────────────────────
   Widget _buildSubscriptionStatusBanner(BusinessProvider business, bool isDark) {
     final sub = business.subscription;
     final isSubActive = business.hasActiveSubscription;
     final isTrial = business.isTrial;
     final days = business.daysRemaining;
-
-    if (isSubActive) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.12 : 0.08),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            children: [
-              Icon(isTrial ? Icons.stars_rounded : Icons.check_circle_rounded, color: const Color(0xFF10B981), size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  isTrial ? '7-Day Free Trial Active • $days days left' : '${sub?.planName ?? "Plan Active"} • $days days left',
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
-                ),
-              ),
-              InkWell(
-                onTap: () => context.push(AppRoutes.subscription),
-                child: Text(
-                  isTrial ? 'Upgrade' : 'Manage',
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.white70),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     final isExpired = sub != null && sub.status == 'Expired';
+
+    final Color bannerColor = isSubActive
+        ? const Color(0xFF10B981)
+        : (isExpired ? const Color(0xFFEF4444) : const Color(0xFFFF5353));
+
+    final String message = isSubActive
+        ? (isTrial ? '7-Day Free Trial Active • $days days left' : '${sub?.planName ?? "Plan Active"} • $days days left')
+        : (isExpired ? 'Subscription Expired • Renew now' : 'Upgrade to Growth Plan for 3D AR Models');
+
+    final String actionLabel = isSubActive ? (isTrial ? 'Upgrade' : 'Manage') : (isExpired ? 'Renew' : 'View Plans');
+    final IconData icon = isSubActive
+        ? (isTrial ? Icons.stars_rounded : Icons.check_circle_rounded)
+        : (isExpired ? Icons.lock_clock_rounded : Icons.flash_on_rounded);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: (isExpired ? const Color(0xFFEF4444) : const Color(0xFFFF5353)).withValues(alpha: isDark ? 0.14 : 0.08),
+          color: bannerColor.withValues(alpha: isDark ? 0.12 : 0.08),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: (isExpired ? const Color(0xFFEF4444) : const Color(0xFFFF5353)).withValues(alpha: 0.35),
-          ),
+          border: Border.all(color: bannerColor.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
-            Icon(
-              isExpired ? Icons.lock_clock_rounded : Icons.flash_on_rounded,
-              color: isExpired ? const Color(0xFFEF4444) : const Color(0xFFFF5353),
-              size: 17,
-            ),
+            Icon(icon, color: bannerColor, size: 16),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                isExpired
-                    ? 'Subscription Expired • Renew now'
-                    : 'Upgrade to Growth Plan for 3D AR Models',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.bold,
-                  color: isExpired ? const Color(0xFFEF4444) : const Color(0xFFFF5353),
-                ),
+                message,
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: bannerColor),
               ),
             ),
             InkWell(
               onTap: () => context.push(AppRoutes.subscription),
               child: Text(
-                isExpired ? 'Renew' : 'View Plans',
+                actionLabel,
                 style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.white70),
               ),
             ),
@@ -784,168 +676,153 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // ─── 7. Table QR Tent Cards Card ──────────────────────────────────────────
+  // ─── 6. Featured 3D AR Dish Models Showcase ───────────────────────────────
+  Widget _build3DModelsShowcase(ThemeData theme, bool isDark, ProductProvider products) {
+    final modelDishes = products.products.where((p) => p.photos.length >= 4 || p.isHero).toList();
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final cardBg = isDark ? AppColors.darkSurface : AppColors.lightSurface;
 
-  Widget _buildQrCard(ThemeData theme, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: HoverCard(
-        borderRadius: 18,
-        onTap: () => context.go(AppRoutes.qr),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-              width: 1.0,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          icon: Icons.view_in_ar_rounded,
+          iconColor: AppColors.primaryOrange,
+          title: 'Featured 3D AR Models',
+          badge: '${modelDishes.length} Ready',
+          badgeColor: const Color(0xFF6366F1),
+          actionLabel: 'WebAR Menu →',
+          onAction: _openWebAr,
+          isDark: isDark,
+        ),
+        const SizedBox(height: 12),
+        if (modelDishes.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: cardBg,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: borderColor),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryOrange.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.view_in_ar_rounded, color: AppColors.primaryOrange, size: 28),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'No 3D Models Added Yet',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppColors.black),
+                        ),
+                        const SizedBox(height: 3),
+                        const Text(
+                          'Add 4 angle photos to turn any dish into an interactive 3D model for diners.',
+                          style: TextStyle(fontSize: 11, color: AppColors.mediumGray),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () {
+                      if (checkSubscriptionGuard(context, featureName: 'adding dishes')) {
+                        context.push(AppRoutes.addProduct);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryOrange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      minimumSize: Size.zero,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Add 3D', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          SizedBox(
+            height: 240,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: modelDishes.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 14),
+              itemBuilder: (_, i) => _build3DModelCard(modelDishes[i], isDark, products),
             ),
           ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryOrange.withValues(alpha: isDark ? 0.14 : 0.08),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: AppColors.primaryOrange.withValues(alpha: 0.25),
-                  ),
-                ),
-                child: const Icon(Icons.qr_code_scanner, color: AppColors.primaryOrange, size: 28),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Table QR Tent Cards Ready',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : AppColors.black,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    const Text(
-                      'Guests scan on tables to view 3D models.',
-                      style: TextStyle(fontSize: 11, color: AppColors.mediumGray),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Download Tent Cards (PDF) →',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.primaryOrange,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      ],
     );
   }
 
-  List<_DishItem> _getDishes(ProductProvider p) {
-    final live = p.products.where((x) => x.isLive).toList();
-    if (live.isEmpty) return const [];
-    return live.take(10).map((prod) {
-      final isVeg = prod.vegStatus == VegStatus.veg || prod.vegStatus == VegStatus.vegan;
-      return _DishItem(
-        name: prod.name,
-        price: prod.priceLabel,
-        category: prod.category?.label ?? 'Dish',
-        imageUrl: prod.thumbnailUrl ?? '',
-        isVeg: isVeg,
-        is3d: prod.photos.length >= 4,
-        onTap: () => context.push(AppRoutes.productDetail(prod.id)),
-      );
-    }).toList();
-  }
-}
-
-// ─── Dish Component & Palette ────────────────────────────────────────────────
-
-class _DishItem {
-  const _DishItem({
-    required this.name,
-    required this.price,
-    required this.category,
-    required this.imageUrl,
-    this.isVeg = true,
-    this.is3d = false,
-    this.onTap,
-  });
-
-  final String name, price, category, imageUrl;
-  final bool isVeg, is3d;
-  final VoidCallback? onTap;
-}
-
-class _DishCard extends StatelessWidget {
-  const _DishCard({
-    required this.dish,
-  });
-
-  final _DishItem dish;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  Widget _build3DModelCard(ProductModel p, bool isDark, ProductProvider products) {
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final isVeg = p.vegStatus == VegStatus.veg || p.vegStatus == VegStatus.vegan;
 
     return HoverCard(
       borderRadius: 18,
-      onTap: dish.onTap,
-      child: SizedBox(
-        width: 175,
+      onTap: () => context.push(AppRoutes.productDetail(p.id)),
+      child: Container(
+        width: 190,
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: borderColor),
+        ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Stack(
               children: [
-                SizedBox(
-                  height: 125,
-                  width: double.infinity,
-                  child: dish.imageUrl.isNotEmpty
-                      ? Image.network(
-                          dish.imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => _placeholder(isDark),
-                        )
-                      : _placeholder(isDark),
+                _dishImage(p, isDark, width: double.infinity, height: 115),
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)]),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(color: const Color(0xFF6366F1).withValues(alpha: 0.4), blurRadius: 6),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.view_in_ar_rounded, size: 10, color: Colors.white),
+                        SizedBox(width: 3),
+                        Text(
+                          '3D AR MODEL',
+                          style: TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w900),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                if (dish.is3d)
+                if (p.soldOutToday)
                   Positioned(
                     top: 8,
                     right: 8,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.8),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.white24, width: 0.5),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.view_in_ar, size: 10, color: Colors.white),
-                          SizedBox(width: 3),
-                          Text(
-                            '3D',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: AppColors.error, borderRadius: BorderRadius.circular(6)),
+                      child: const Text('86 SOLD OUT', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
                     ),
                   ),
               ],
@@ -958,41 +835,37 @@ class _DishCard extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        dish.price,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          color: isDark ? Colors.white : AppColors.black,
-                        ),
-                      ),
-                      _vegDot(dish.isVeg),
+                      Text(p.priceLabel, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: isDark ? Colors.white : AppColors.black)),
+                      _vegDotWidget(isVeg),
                     ],
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
-                    dish.name,
+                    p.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : AppColors.black,
-                    ),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppColors.black),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.restaurant, size: 11, color: AppColors.mediumGray),
-                      const SizedBox(width: 4),
                       Expanded(
-                        child: Text(
-                          dish.category,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11, color: AppColors.mediumGray),
+                        child: OutlinedButton.icon(
+                          onPressed: () => previewProductInAr(context, productId: p.id, productName: p.name),
+                          icon: const Icon(Icons.view_in_ar, size: 12),
+                          label: const Text('View 3D', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primaryOrange,
+                            side: const BorderSide(color: AppColors.primaryOrange, width: 0.8),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 6),
+                      _stockToggle(p, products, compact: true),
                     ],
                   ),
                 ],
@@ -1004,32 +877,349 @@ class _DishCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder(bool isDark) {
-    return Container(
-      color: isDark ? const Color(0xFF222533) : const Color(0xFFF1F3F7),
-      child: Center(
-        child: Icon(
-          Icons.fastfood_outlined,
-          color: isDark ? Colors.white24 : Colors.grey.shade400,
-          size: 32,
+  // ─── 7. Daily Use Items & Stock Availability (86) ────────────────────────
+  Widget _buildDailyUseItemsSection(ThemeData theme, bool isDark, ProductProvider products) {
+    final allProducts = products.products;
+    final bestsellers = allProducts.where((p) => p.isBestseller).toList();
+    final soldOut = allProducts.where((p) => p.soldOutToday).toList();
+    final modelDishes = allProducts.where((p) => p.photos.length >= 4).toList();
+
+    final displayedList = switch (_dailyItemFilter) {
+      '3d' => modelDishes,
+      'bestseller' => bestsellers.isNotEmpty ? bestsellers : allProducts,
+      'soldout' => soldOut,
+      _ => allProducts,
+    };
+
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          icon: Icons.restaurant_menu_rounded,
+          iconColor: const Color(0xFF10B981),
+          title: 'Daily Menu Items & Stock',
+          actionLabel: 'Manage Menu →',
+          onAction: () => context.go(AppRoutes.products),
+          isDark: isDark,
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              _filterChip('all', 'All (${allProducts.length})', isDark),
+              const SizedBox(width: 8),
+              _filterChip('3d', '3D Models (${modelDishes.length})', isDark),
+              const SizedBox(width: 8),
+              _filterChip('bestseller', 'Bestsellers (${bestsellers.length})', isDark),
+              const SizedBox(width: 8),
+              _filterChip('soldout', 'Sold Out / 86 (${soldOut.length})', isDark, isAlert: soldOut.isNotEmpty),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (displayedList.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: borderColor),
+              ),
+              child: Center(
+                child: Text(
+                  _dailyItemFilter == 'soldout'
+                      ? 'No items are currently sold out. All dishes in stock!'
+                      : 'No dishes found in this filter.',
+                  style: const TextStyle(fontSize: 12, color: AppColors.mediumGray),
+                ),
+              ),
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: displayedList.take(6).length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (_, i) => _buildDailyUseItemTile(displayedList[i], isDark, products),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDailyUseItemTile(ProductModel p, bool isDark, ProductProvider products) {
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final cardBg = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+    final isVeg = p.vegStatus == VegStatus.veg || p.vegStatus == VegStatus.vegan;
+
+    return HoverCard(
+      borderRadius: 14,
+      onTap: () => context.push(AppRoutes.productDetail(p.id)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          children: [
+            _dishImage(p, isDark, width: 48, height: 48, borderRadius: 10),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _vegDotWidget(isVeg),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          p.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppColors.black),
+                        ),
+                      ),
+                      if (p.photos.length >= 4) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6366F1).withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text('3D', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Color(0xFF6366F1))),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Text(p.priceLabel, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: AppColors.primaryOrange)),
+                      const SizedBox(width: 8),
+                      Text('• ${p.category?.label ?? "Dish"}', style: const TextStyle(fontSize: 11, color: AppColors.mediumGray)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _stockToggle(p, products),
+          ],
         ),
       ),
     );
   }
 
-  Widget _vegDot(bool isVeg) {
+  // ─── Shared UI Helpers (Reusable across dashboard sections) ───────────────
+  Widget _sectionHeader({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    String? badge,
+    Color? badgeColor,
+    String? actionLabel,
+    VoidCallback? onAction,
+    bool isDark = true,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 18, color: iconColor),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : AppColors.black,
+                ),
+              ),
+              if (badge != null) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: (badgeColor ?? iconColor).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    badge,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: badgeColor ?? iconColor,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (actionLabel != null && onAction != null)
+            InkWell(
+              onTap: onAction,
+              child: Text(
+                actionLabel,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? AppColors.primaryOrangeLight : AppColors.primaryOrange,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stockToggle(ProductModel p, ProductProvider products, {bool compact = false}) {
+    final isSoldOut = p.soldOutToday;
+    final color = isSoldOut ? AppColors.error : AppColors.accentGreen;
+
+    return InkWell(
+      onTap: () async {
+        final newStatus = !isSoldOut;
+        await products.toggleSoldOut(p.id, soldOut: newStatus);
+        if (mounted) {
+          TopToast.show(
+            context,
+            newStatus ? '${p.name} marked 86 / Sold Out today' : '${p.name} marked In Stock',
+            isWarning: newStatus,
+          );
+        }
+      },
+      borderRadius: BorderRadius.circular(compact ? 8 : 20),
+      child: Container(
+        padding: compact
+            ? const EdgeInsets.symmetric(horizontal: 6, vertical: 4)
+            : const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(compact ? 8 : 20),
+          border: Border.all(color: color.withValues(alpha: 0.4), width: 0.8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isSoldOut ? Icons.cancel_outlined : Icons.check_circle_outline,
+              size: 13,
+              color: color,
+            ),
+            if (!compact) ...[
+              const SizedBox(width: 4),
+              Text(
+                isSoldOut ? '86 Sold Out' : 'In Stock',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dishImage(ProductModel p, bool isDark, {double? width, double? height, double borderRadius = 0}) {
+    final hasUrl = p.photos.isNotEmpty && p.photos.first.photoUrl.isNotEmpty;
+    final img = hasUrl
+        ? Image.network(
+            p.photos.first.photoUrl,
+            fit: BoxFit.cover,
+            width: width,
+            height: height,
+            errorBuilder: (_, _, _) => _placeholderBox(isDark, width: width, height: height),
+          )
+        : _placeholderBox(isDark, width: width, height: height);
+
+    if (borderRadius > 0) {
+      return ClipRRect(borderRadius: BorderRadius.circular(borderRadius), child: img);
+    }
+    return SizedBox(width: width, height: height, child: img);
+  }
+
+  Widget _filterChip(String key, String label, bool isDark, {bool isAlert = false}) {
+    final isSelected = _dailyItemFilter == key;
+    Color activeColor = AppColors.primaryOrange;
+    if (isAlert) activeColor = AppColors.error;
+
+    return InkWell(
+      onTap: () => setState(() => _dailyItemFilter = key),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? activeColor
+              : (isDark ? AppColors.darkSurface : AppColors.lightSurface),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected
+                ? activeColor
+                : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+            width: 1.0,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            color: isSelected ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholderBox(bool isDark, {double? width, double? height}) {
+    return Container(
+      width: width,
+      height: height,
+      color: isDark ? const Color(0xFF222533) : const Color(0xFFF1F3F7),
+      child: Center(
+        child: Icon(
+          Icons.fastfood_outlined,
+          color: isDark ? Colors.white24 : Colors.grey.shade400,
+          size: (width != null && width <= 48) ? 20 : 26,
+        ),
+      ),
+    );
+  }
+
+  Widget _vegDotWidget(bool isVeg) {
     final c = isVeg ? AppColors.accentGreen : AppColors.error;
     return Container(
-      width: 14,
-      height: 14,
+      width: 13,
+      height: 13,
       decoration: BoxDecoration(
         border: Border.all(color: c, width: 1.2),
         borderRadius: BorderRadius.circular(3),
       ),
       child: Center(
         child: Container(
-          width: 6,
-          height: 6,
+          width: 5,
+          height: 5,
           decoration: BoxDecoration(color: c, shape: BoxShape.circle),
         ),
       ),

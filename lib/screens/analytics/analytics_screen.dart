@@ -45,6 +45,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       }
 
       final historyBills = await BillingService().getCompletedHistory(business?.id);
+      final dynamicGstRate = await BillingService().getDynamicGstRate(business?.id);
 
       await AnalyticsExportService.instance.exportFinancialReport(
         business: business,
@@ -53,6 +54,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         topProducts: analytics.topProducts,
         bills: historyBills,
         range: targetRange,
+        gstRate: dynamicGstRate,
       );
 
       if (mounted) {

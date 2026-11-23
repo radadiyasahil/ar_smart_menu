@@ -20,6 +20,7 @@ class AnalyticsExportService {
     required List<TopProductAnalyticsModel> topProducts,
     required List<TableBill> bills,
     required AnalyticsRange range,
+    double gstRate = 5.0,
   }) async {
     final bName = business?.businessName ?? 'Restaurant';
     final city = business?.city ?? '';
@@ -53,13 +54,14 @@ class AnalyticsExportService {
     final grossRevenue = overview?.totalRevenue ?? 0;
     final totalOrders = overview?.totalOrders ?? 0;
     final aov = overview?.averageOrderValue ?? 0.0;
-    final estGst = (grossRevenue * 0.05).round();
+    final gstRateStr = gstRate.truncateToDouble() == gstRate ? gstRate.toStringAsFixed(0) : gstRate.toStringAsFixed(1);
+    final estGst = (grossRevenue * (gstRate / 100.0)).round();
     final netSales = grossRevenue - estGst;
 
     sb.writeln('--- FINANCIAL SUMMARY ---');
     sb.writeln('Metric,Amount (INR),Unit / Details');
     sb.writeln('Total Gross Revenue (Sales),$grossRevenue,INR');
-    sb.writeln('Estimated GST / Taxes (5%),$estGst,INR');
+    sb.writeln('Estimated GST / Taxes ($gstRateStr%),$estGst,INR');
     sb.writeln('Net Revenue (Excl. Tax),$netSales,INR');
     sb.writeln('Total Orders Completed,$totalOrders,Orders');
     sb.writeln('Average Order Value (AOV),${aov.toStringAsFixed(2)},INR per order');
@@ -72,12 +74,12 @@ class AnalyticsExportService {
     // SECTION 3: PERIODIC BREAKDOWN (SALES LEDGER)
     // ─────────────────────────────────────────────────────────────
     sb.writeln('--- PERIODIC SALES & ORDER BREAKDOWN ---');
-    sb.writeln('Date / Period,Orders,QR Scans,3D Dish Views,Gross Revenue (INR),Est. GST 5% (INR),Net Revenue (INR)');
+    sb.writeln('Date / Period,Orders,QR Scans,3D Dish Views,Gross Revenue (INR),Est. GST $gstRateStr% (INR),Net Revenue (INR)');
     if (chartPoints.isEmpty) {
       sb.writeln('No transaction records in selected range,,,,,,');
     } else {
       for (final p in chartPoints) {
-        final dayGst = (p.revenue * 0.05).round();
+        final dayGst = (p.revenue * (gstRate / 100.0)).round();
         final dayNet = p.revenue - dayGst;
         sb.writeln('${p.date},${p.orders},${p.scans},${p.views},${p.revenue},$dayGst,$dayNet');
       }

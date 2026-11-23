@@ -178,7 +178,8 @@ class TableBill {
       '────────────────────────',
       'Subtotal: ₹$subtotal',
       if (discountAmount > 0) 'Discount: -₹$discountAmount',
-      if (gstRate > 0) 'GST (${gstRate.toStringAsFixed(0)}%): ₹$gstAmount',
+      if (gstRate > 0)
+        'GST (${gstRate.truncateToDouble() == gstRate ? gstRate.toStringAsFixed(0) : gstRate.toStringAsFixed(1)}%): ₹$gstAmount',
       '💰 *TOTAL PAID: ₹$grandTotal*',
       '────────────────────────',
       '✅ *Status:* PAID',

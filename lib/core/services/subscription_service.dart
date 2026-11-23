@@ -277,6 +277,19 @@ class SubscriptionService {
     } catch (_) {}
     return SupportContactModel.defaultContact;
   }
+
+  /// Fetches the dynamic GST rate percent configured by platform admin
+  Future<double> getGstRate() async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/subscriptions/gst-rate');
+      final envelope = response.data;
+      if (envelope != null && envelope['data'] != null) {
+        final rate = (envelope['data']['gstRatePercent'] as num?)?.toDouble();
+        if (rate != null && rate >= 0) return rate;
+      }
+    } catch (_) {}
+    return 18.0;
+  }
 }
 
 class SupportContactModel {

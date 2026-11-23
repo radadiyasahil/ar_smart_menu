@@ -85,6 +85,10 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   bool _loading = true;
 
   int _selectedTableIndex = 0;
+  double _dynamicGstRate = 5.0;
+
+  String _formatGstPercent(double rate) =>
+      rate.truncateToDouble() == rate ? rate.toStringAsFixed(0) : rate.toStringAsFixed(1);
 
   String get _businessId =>
       context.read<BusinessProvider>().business?.id.toString() ?? '';
@@ -203,6 +207,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       setState(() => _loading = true);
     }
 
+    _dynamicGstRate = await _billingService.getDynamicGstRate(bId);
+
     await _loadConfiguredQrs();
 
     final active = await _billingService.getActiveBills(bId);
@@ -244,9 +250,12 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     // Do not show any default table when 0 items; clean up empty tables from storage
     active.removeWhere((b) => b.items.isEmpty);
 
-    // Normalize table names and merge any duplicate active tables
+    // Normalize table names, update dynamic GST for open bills, and merge any duplicate active tables
     final uniqueActive = <TableBill>[];
     for (final b in active) {
+      if (!b.isPaid) {
+        b.gstRate = _dynamicGstRate;
+      }
       b.tableNumber = _canonicalTableName(b.tableNumber);
       final existingIdx = uniqueActive.indexWhere(
         (u) => _isSameTable(u.tableNumber, b.tableNumber),
@@ -436,6 +445,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                   tableNumber: canonical,
                   createdAt: order.createdAt,
                   customerPhone: order.customerPhone,
+                  gstRate: _dynamicGstRate,
                 );
                 if (!order.isPending) {
                   newBill.addItems(order.items);
@@ -637,6 +647,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
         tableNumber: canonicalOrderTable,
 
         createdAt: DateTime.now(),
+
+        gstRate: _dynamicGstRate,
       );
 
       _activeBills.add(targetBill);
@@ -795,6 +807,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
         id: billId,
         tableNumber: canonicalName,
         createdAt: DateTime.now(),
+        gstRate: _dynamicGstRate,
       );
       for (final order in tableOrders) {
         newBill.addItems(order.items);
@@ -907,6 +920,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
           id: id,
           tableNumber: canonicalName,
           createdAt: DateTime.now(),
+          gstRate: _dynamicGstRate,
         ),
       );
 
@@ -1593,7 +1607,12 @@ class _TableBillingScreenState extends State<TableBillingScreen>
 
               setState(() {
                 _activeBills.add(
-                  TableBill(id: id, tableNumber: t, createdAt: DateTime.now()),
+                  TableBill(
+                    id: id,
+                    tableNumber: t,
+                    createdAt: DateTime.now(),
+                    gstRate: _dynamicGstRate,
+                  ),
                 );
 
                 _selectedTableIndex = _activeBills.length - 1;
@@ -2388,6 +2407,109 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     }
   }
 
+  void _showEditGstRateDialog(TableBill bill, [VoidCallback? onUpdated]) {
+    final controller = TextEditingController(text: _formatGstPercent(bill.gstRate));
+    final quickRates = [0.0, 5.0, 12.0, 18.0, 28.0, 40.0];
+    if (!quickRates.contains(_dynamicGstRate)) {
+      quickRates.add(_dynamicGstRate);
+      quickRates.sort();
+    }
+
+    showDialog(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (dlgCtx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.percent, color: AppColors.primaryOrange, size: 22),
+              SizedBox(width: 8),
+              Text('Edit GST Rate', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Adjust GST percentage applied to ${_canonicalTableName(bill.tableNumber)} (Platform default: ${_formatGstPercent(_dynamicGstRate)}%):',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'GST Rate (%)',
+                  suffixText: '%',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  filled: true,
+                  fillColor: Colors.grey.withValues(alpha: 0.08),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text('Quick Rates:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: quickRates.map((r) {
+                  final isSelected = (double.tryParse(controller.text) ?? -1) == r;
+                  final label = r == 0 ? '0% (Exempt)' : '${_formatGstPercent(r)}%';
+                  return ChoiceChip(
+                    label: Text(label, style: TextStyle(fontSize: 11, color: isSelected ? Colors.white : null)),
+                    selected: isSelected,
+                    selectedColor: AppColors.primaryOrange,
+                    onSelected: (selected) {
+                      if (selected) {
+                        setDlgState(() {
+                          controller.text = _formatGstPercent(r);
+                        });
+                      }
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dlgCtx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryOrange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                final parsed = double.tryParse(controller.text.trim());
+                if (parsed == null || parsed < 0 || parsed > 100) {
+                  _showNotification('Please enter a valid GST rate between 0% and 100%', isError: true);
+                  return;
+                }
+                Navigator.pop(dlgCtx);
+                setState(() {
+                  bill.gstRate = parsed;
+                  _dynamicGstRate = parsed;
+                });
+                final bId = context.read<BusinessProvider>().business?.id.toString() ?? '';
+                await _billingService.saveGstRate(parsed, bId);
+                await _save();
+                onUpdated?.call();
+                _showNotification('GST rate set to ${_formatGstPercent(parsed)}%');
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showReceiptPreviewDialog(TableBill bill) {
     final biz = context.read<BusinessProvider>().business;
 
@@ -2406,7 +2528,8 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     showDialog(
       context: context,
 
-      builder: (ctx) => Dialog(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setPreviewState) => Dialog(
         backgroundColor: Colors.transparent,
 
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
@@ -2953,26 +3076,37 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                         if (bill.gstRate > 0)
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
                             children: [
-                              Text(
-                                'GST (${bill.gstRate.toStringAsFixed(0)}%)',
-
-                                style: const TextStyle(
-                                  fontSize: 11,
-
-                                  color: Colors.grey,
+                              InkWell(
+                                onTap: () => _showEditGstRateDialog(bill, () {
+                                  setPreviewState(() {});
+                                }),
+                                borderRadius: BorderRadius.circular(4),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'GST (${_formatGstPercent(bill.gstRate)}%)',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey,
+                                          decoration: TextDecoration.underline,
+                                          decorationStyle: TextDecorationStyle.dotted,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.edit, size: 10, color: Colors.grey),
+                                    ],
+                                  ),
                                 ),
                               ),
-
                               Text(
                                 '₹${bill.gstAmount}',
-
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
-
                                   fontSize: 11,
-
                                   color: Colors.black87,
                                 ),
                               ),
@@ -3149,6 +3283,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -7181,15 +7316,34 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                     ],
                   ),
                 ),
-                if (bill.gstAmount > 0)
+                if (bill.gstRate > 0)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'GST (${bill.gstRate.toStringAsFixed(0)}%)',
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        InkWell(
+                          onTap: () => _showEditGstRateDialog(bill),
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'GST (${_formatGstPercent(bill.gstRate)}%)',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                    decoration: TextDecoration.underline,
+                                    decorationStyle: TextDecorationStyle.dotted,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.edit, size: 11, color: Colors.grey),
+                              ],
+                            ),
+                          ),
                         ),
                         Text(
                           '₹${bill.gstAmount}',

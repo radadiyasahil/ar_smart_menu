@@ -1,20 +1,23 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-background: #f8fafc;
-  --color-foreground: #0f172a;
-  --color-card: #ffffff;
-  --color-card-foreground: #0f172a;
-  --color-primary: #ea580c;
+  --color-background: #0b0f19;
+  --color-foreground: #f1f5f9;
+  --color-card: #111827;
+  --color-card-foreground: #f8fafc;
+  --color-primary: #f97316;
   --color-primary-foreground: #ffffff;
-  --color-muted: #f1f5f9;
-  --color-muted-foreground: #64748b;
-  --color-border: #e2e8f0;
-  --color-accent: #fff7ed;
+  --color-secondary: #1e293b;
+  --color-secondary-foreground: #f1f5f9;
+  --color-muted: #1e293b;
+  --color-muted-foreground: #94a3b8;
+  --color-border: #1e293b;
+  --color-accent: rgba(249, 115, 22, 0.15);
+  --color-accent-foreground: #f97316;
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
-  --color-info: #0284c7;
+  --color-info: #38bdf8;
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
@@ -23,6 +26,10 @@
 
 * {
   border-color: var(--color-border);
+}
+
+html {
+  color-scheme: dark;
 }
 
 body {
@@ -46,7 +53,13 @@ body {
   min-height: 100vh;
 }
 
-/* Subtle clean scrollbars */
+/* Ensure native select dropdown menus render dark with crisp light text */
+select option {
+  background-color: var(--color-card);
+  color: var(--color-foreground);
+}
+
+/* Subtle clean dark slate scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -57,12 +70,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #334155;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #475569;
 }
 
 /* Utility for hiding scrollbar where desired */

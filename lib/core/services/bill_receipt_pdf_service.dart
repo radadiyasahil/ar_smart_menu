@@ -149,7 +149,10 @@ class BillReceiptPdfService {
               if (bill.discountAmount > 0)
                 _buildSummaryRow('Discount', '- Rs.${bill.discountAmount}'),
               if (bill.gstRate > 0)
-                _buildSummaryRow('GST (${bill.gstRate.toStringAsFixed(0)}%)', 'Rs.${bill.gstAmount}'),
+                _buildSummaryRow(
+                  'GST (${bill.gstRate.truncateToDouble() == bill.gstRate ? bill.gstRate.toStringAsFixed(0) : bill.gstRate.toStringAsFixed(1)}%)',
+                  'Rs.${bill.gstAmount}',
+                ),
 
               pw.SizedBox(height: 3),
               pw.Divider(thickness: 0.8),
@@ -732,8 +735,11 @@ class BillReceiptPdfService {
         ? '''<div style="display: flex; justify-content: space-between; margin: 2px 0;"><span>Discount:</span><span>- Rs.${bill.discountAmount}</span></div>'''
         : '';
 
+    final gstRateStr = bill.gstRate.truncateToDouble() == bill.gstRate
+        ? bill.gstRate.toStringAsFixed(0)
+        : bill.gstRate.toStringAsFixed(1);
     final gstRow = bill.gstRate > 0
-        ? '''<div style="display: flex; justify-content: space-between; margin: 2px 0;"><span>GST (${bill.gstRate.toStringAsFixed(0)}%):</span><span>Rs.${bill.gstAmount}</span></div>'''
+        ? '''<div style="display: flex; justify-content: space-between; margin: 2px 0;"><span>GST ($gstRateStr%):</span><span>Rs.${bill.gstAmount}</span></div>'''
         : '';
 
     final displayTable = bill.tableNumber.toLowerCase().startsWith('table')

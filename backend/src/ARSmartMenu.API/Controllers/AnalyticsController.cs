@@ -125,14 +125,30 @@ public class AnalyticsController : ControllerBase
         sb.AppendLine($"Generated On (UTC),\"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}\"");
         sb.AppendLine();
 
+        var dynamicGstSetting = await _db.SystemSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Key == "Billing.GstRatePercent", ct);
+        decimal platformGstRate = 5.0m;
+        if (dynamicGstSetting != null && decimal.TryParse(dynamicGstSetting.Value, out var parsedRate) && parsedRate >= 0)
+        {
+            platformGstRate = parsedRate;
+        }
+
+        var effectiveGstRate = (business.GstRate > 0 && business.GstRate != 5.0)
+            ? (decimal)business.GstRate
+            : platformGstRate;
+
+        var gstMultiplier = effectiveGstRate / 100m;
+        var netMultiplier = Math.Max(0m, 1m - gstMultiplier);
+
         // Financial KPI Summary
         sb.AppendLine("KEY FINANCIAL AUDIT METRICS");
         sb.AppendLine("Metric,Value,Unit / Notes");
         sb.AppendLine($"Total Gross Revenue,{overview.TotalRevenue},INR (₹)");
         sb.AppendLine($"Total Orders Completed,{overview.TotalOrders},Orders");
         sb.AppendLine($"Average Order Value (AOV),{overview.AverageOrderValue:F2},INR (₹)");
-        sb.AppendLine($"Estimated GST (5%),{Math.Round(overview.TotalRevenue * 0.05m, 2)},INR (₹)");
-        sb.AppendLine($"Net Revenue (Excl. GST),{Math.Round(overview.TotalRevenue * 0.95m, 2)},INR (₹)");
+        sb.AppendLine($"Estimated GST ({effectiveGstRate:0.##}%),{Math.Round(overview.TotalRevenue * gstMultiplier, 2)},INR (₹)");
+        sb.AppendLine($"Net Revenue (Excl. GST),{Math.Round(overview.TotalRevenue * netMultiplier, 2)},INR (₹)");
         sb.AppendLine($"Total Dine-in AR Scans,{overview.TotalScans},Scans");
         sb.AppendLine($"Unique Diners / Visitors,{overview.UniqueVisitors},Visitors");
         sb.AppendLine($"Conversion Rate,{overview.ConversionRate:F2},%");
@@ -140,11 +156,11 @@ public class AnalyticsController : ControllerBase
 
         // Periodic Breakdown
         sb.AppendLine("PERIODIC SALES & ORDER LEDGER");
-        sb.AppendLine("Date / Period,Orders,Dine-in Scans,Menu Views,Gross Revenue (INR),Est. GST 5% (INR),Net Revenue (INR)");
+        sb.AppendLine($"Date / Period,Orders,Dine-in Scans,Menu Views,Gross Revenue (INR),Est. GST {effectiveGstRate:0.##}% (INR),Net Revenue (INR)");
         foreach (var p in chart)
         {
-            var gst = Math.Round(p.Revenue * 0.05m, 2);
-            var net = Math.Round(p.Revenue * 0.95m, 2);
+            var gst = Math.Round(p.Revenue * gstMultiplier, 2);
+            var net = Math.Round(p.Revenue * netMultiplier, 2);
             sb.AppendLine($"{p.Date},{p.Orders},{p.Scans},{p.Views},{p.Revenue},{gst},{net}");
         }
         sb.AppendLine();

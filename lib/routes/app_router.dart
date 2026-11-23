@@ -99,6 +99,11 @@ final GoRouter appRouter = GoRouter(
         return SubscriptionScreen(initialTabIndex: tabIndex);
       },
     ),
+    GoRoute(
+      path: AppRoutes.qr,
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (_, _) => const QrCodesScreen(),
+    ),
     StatefulShellRoute.indexedStack(
       builder: (_, _, shell) => MainShell(navigationShell: shell),
       branches: [
@@ -125,9 +130,6 @@ final GoRouter appRouter = GoRouter(
         ]),
         StatefulShellBranch(routes: [
           GoRoute(path: AppRoutes.billing, builder: (_, _) => const TableBillingScreen()),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(path: AppRoutes.qr, builder: (_, _) => const QrCodesScreen()),
         ]),
         StatefulShellBranch(routes: [
           GoRoute(path: AppRoutes.analytics, builder: (_, _) => const AnalyticsScreen()),

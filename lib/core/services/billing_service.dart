@@ -27,6 +27,7 @@ class BillingService {
   static const String _historyBillsBaseKey = 'ar_history_table_bills_v1';
   static const String _billCounterBaseKey = 'ar_bill_counter_v1';
   static const String _customPresetsBaseKey = 'ar_custom_quick_presets_v1';
+  static const String _gstRateBaseKey = 'ar_billing_gst_rate_v1';
 
   static String _activeKey(String? bId) =>
       (bId != null && bId.isNotEmpty) ? 'ar_active_table_bills_$bId' : _activeBillsBaseKey;
@@ -36,6 +37,35 @@ class BillingService {
       (bId != null && bId.isNotEmpty) ? 'ar_bill_counter_$bId' : _billCounterBaseKey;
   static String _presetsKey(String? bId) =>
       (bId != null && bId.isNotEmpty) ? 'ar_custom_quick_presets_$bId' : _customPresetsBaseKey;
+  static String _gstRateKey(String? bId) =>
+      (bId != null && bId.isNotEmpty) ? 'ar_billing_gst_rate_$bId' : _gstRateBaseKey;
+
+  /// Fetches dynamic GST rate percent from backend (admin configured) or local cache
+  Future<double> getDynamicGstRate([String? businessId]) async {
+    final prefs = await SharedPreferences.getInstance();
+    try {
+      final res = await ApiClient.dio.get('/subscriptions/gst-rate');
+      final data = res.data;
+      if (data is Map && data['data'] != null) {
+        final serverRate = (data['data']['gstRatePercent'] as num?)?.toDouble();
+        if (serverRate != null && serverRate >= 0) {
+          await prefs.setDouble(_gstRateKey(businessId), serverRate);
+          return serverRate;
+        }
+      }
+    } catch (_) {}
+
+    final cached = prefs.getDouble(_gstRateKey(businessId));
+    if (cached != null && cached >= 0) return cached;
+
+    return 5.0;
+  }
+
+  /// Saves a customized GST rate for the business locally
+  Future<void> saveGstRate(double rate, [String? businessId]) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_gstRateKey(businessId), rate);
+  }
 
   static const List<QuickCustomPreset> defaultPresets = [
     QuickCustomPreset('Water Bottle (1L)', 20),
@@ -147,6 +177,7 @@ class BillingService {
   Future<List<TableBill>> fetchActiveBills(String businessId) async {
     if (businessId.isEmpty) return [];
     try {
+      final dynamicGstRate = await getDynamicGstRate(businessId);
       final orders = await getPendingOrders(businessId);
       final acceptedOrders = orders
           .where((o) => !o.isCancelled && (o.isAccepted || o.isCompleted))
@@ -190,6 +221,7 @@ class BillingService {
               .firstWhere((o) => o.customerPhone.isNotEmpty, orElse: () => firstOrder)
               .customerPhone,
           items: combinedItems,
+          gstRate: dynamicGstRate,
         );
         resultBills.add(bill);
       }
@@ -438,6 +470,7 @@ class BillingService {
       final res = await ApiClient.dio.get('/businesses/$businessId/table-orders?status=TODAY');
       final data = res.data;
       if (data is Map && data['data'] is List) {
+        final dynamicGstRate = await getDynamicGstRate(businessId);
         final list = data['data'] as List<dynamic>;
         final orders = list.map((e) => PendingTableOrder.fromJson(e as Map<String, dynamic>)).toList();
         final bills = <TableBill>[];
@@ -452,6 +485,7 @@ class BillingService {
             paidAt: (o.completedAt ?? o.createdAt).toLocal(),
             isPaid: true,
             paymentMode: 'Online / Paid',
+            gstRate: dynamicGstRate,
             customerPhone: o.customerPhone,
             rating: o.rating,
             feedbackComment: o.feedbackComment,

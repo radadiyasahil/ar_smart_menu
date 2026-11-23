@@ -361,6 +361,16 @@ public class SubscriptionService : ISubscriptionService
         }
 
         await _db.SaveChangesAsync(ct);
+        // Keep businesses on default GST rate synced to new platform rate
+        var businessesToSync = await _db.Businesses
+            .Where(b => b.GstRate <= 0 || b.GstRate == 5.0)
+            .ToListAsync(ct);
+        foreach (var b in businessesToSync)
+        {
+            b.GstRate = (double)newRatePercent;
+        }
+        await _db.SaveChangesAsync(ct);
+
         _cachedGstRate = newRatePercent;
 
         var halfRate = Math.Round(newRatePercent / 2m, 2);

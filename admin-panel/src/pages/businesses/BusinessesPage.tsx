@@ -5,11 +5,15 @@ import {
   ArrowUpDown,
   Check,
   Eye,
+  FileSpreadsheet,
   RefreshCw,
   Search,
   ShieldAlert,
+  ShoppingBag,
   SlidersHorizontal,
+  Star,
   Store,
+  UtensilsCrossed,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -34,12 +38,13 @@ import {
   BUSINESS_TYPE_LABELS,
   KYC_STATUS_LABELS,
   type AdminBusiness,
+  type AdminOperationsSummary,
   type BusinessStatusFilter,
   businessStatusKey,
 } from '@/types/admin'
 import { cn } from '@/utils/cn'
 
-type BusinessSortField = 'name' | 'owner' | 'city' | 'status' | 'products' | 'date'
+type BusinessSortField = 'name' | 'owner' | 'city' | 'status' | 'products' | 'date' | 'orders'
 type SortOrder = 'asc' | 'desc'
 
 const STATUS_TABS: { label: string; value: BusinessStatusFilter }[] = [
@@ -65,6 +70,8 @@ export function BusinessesPage() {
   const [actionId, setActionId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [operationsSummary, setOperationsSummary] = useState<AdminOperationsSummary | null>(null)
+  const [downloadingCsv, setDownloadingCsv] = useState(false)
 
   // Rich Filter & Sorting state
   const [businessTypeFilter, setBusinessTypeFilter] = useState<string>('all')
@@ -76,20 +83,37 @@ export function BusinessesPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await adminService.listBusinesses({
-        status: statusFilter,
-        search: search || undefined,
-        page: 1,
-        limit: 100,
-      })
+      const [result, summary] = await Promise.all([
+        adminService.listBusinesses({
+          status: statusFilter,
+          search: search || undefined,
+          page: 1,
+          limit: 100,
+        }),
+        adminService.getOperationsSummary().catch(() => null),
+      ])
       setBusinesses(result.items)
       setTotal(result.total)
+      if (summary) {
+        setOperationsSummary(summary)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load businesses')
     } finally {
       setLoading(false)
     }
   }, [statusFilter, search])
+
+  const handleDownloadCsv = async () => {
+    try {
+      setDownloadingCsv(true)
+      await adminService.downloadOperationsCsv()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to download CSV report')
+    } finally {
+      setDownloadingCsv(false)
+    }
+  }
 
   useEffect(() => {
     void load()
@@ -168,6 +192,9 @@ export function BusinessesPage() {
         case 'products':
           cmp = a.productCount - b.productCount
           break
+        case 'orders':
+          cmp = (a.completedOrdersCount ?? 0) - (b.completedOrdersCount ?? 0)
+          break
         case 'status':
           cmp = a.status - b.status
           break
@@ -235,16 +262,93 @@ export function BusinessesPage() {
         <div>
           <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <Store className="h-6 w-6 text-primary" />
-            Restaurant & Business Approvals
+            Restaurant Operations & Approvals
           </h2>
           <p className="text-sm text-muted-foreground">
-            Review onboarding submissions, verify FSSAI/GSTIN compliance, and approve owner registrations.
+            Monitor real-world restaurant dish listings, completed table orders, and compliance.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadCsv}
+            disabled={downloadingCsv}
+            className="border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 gap-1.5"
+            title="Download full operational report for all restaurants as CSV"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            {downloadingCsv ? 'Exporting...' : 'Export Operations Report (CSV)'}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* Real-time System-wide Operations & Orders KPI Strip */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {/* Metric 1: Dishes Listed */}
+        <div className="rounded-xl border border-border bg-card p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">Total Dishes Listed</span>
+            <UtensilsCrossed className="h-4 w-4 text-primary" />
+          </div>
+          <div className="mt-1.5 text-xl font-bold text-foreground">
+            {operationsSummary ? operationsSummary.totalDishesListed.toLocaleString() : '—'}
+          </div>
+          <div className="mt-1 flex items-center gap-1.5 text-[11px]">
+            <span className="font-semibold text-emerald-600">{operationsSummary?.totalLiveDishes ?? 0} Live</span>
+            <span className="text-muted-foreground">•</span>
+            <span className="font-semibold text-purple-600">{operationsSummary?.totalArDishes ?? 0} 3D AR</span>
+          </div>
+        </div>
+
+        {/* Metric 2: Completed Orders */}
+        <div className="rounded-xl border border-border bg-card p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">Completed Orders</span>
+            <ShoppingBag className="h-4 w-4 text-emerald-600" />
+          </div>
+          <div className="mt-1.5 text-xl font-bold text-foreground">
+            {operationsSummary ? operationsSummary.totalOrdersCompleted.toLocaleString() : '—'}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            of <strong className="text-foreground">{operationsSummary?.totalOrdersPlaced ?? 0}</strong> placed (
+            {operationsSummary && operationsSummary.totalOrdersPlaced > 0
+              ? Math.round((operationsSummary.totalOrdersCompleted / operationsSummary.totalOrdersPlaced) * 100)
+              : 0}% fulfillment)
+          </div>
+        </div>
+
+        {/* Metric 3: AR Engagement */}
+        <div className="rounded-xl border border-border bg-card p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">AR Menu Engagement</span>
+            <Eye className="h-4 w-4 text-purple-600" />
+          </div>
+          <div className="mt-1.5 text-xl font-bold text-foreground">
+            {operationsSummary ? operationsSummary.totalViews.toLocaleString() : '—'}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            from <strong className="text-foreground">{operationsSummary?.totalScans.toLocaleString() ?? 0}</strong> QR scans
+          </div>
+        </div>
+
+        {/* Metric 4: Customer Satisfaction & Rating */}
+        <div className="rounded-xl border border-border bg-card p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">Customer Rating</span>
+            <Star className="h-4 w-4 text-amber-500 fill-amber-500" />
+          </div>
+          <div className="mt-1.5 text-xl font-bold text-amber-500 font-mono">
+            {operationsSummary?.averageRating != null ? `⭐ ${operationsSummary.averageRating.toFixed(1)} / 5` : '—'}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            from <strong className="text-foreground">{operationsSummary?.totalReviews ?? 0}</strong> customer reviews
+          </div>
+        </div>
       </div>
 
       {/* Pending Banner if pending registrations exist */}
@@ -351,7 +455,8 @@ export function BusinessesPage() {
               <option value="name-asc">Sort: Business (A to Z)</option>
               <option value="name-desc">Sort: Business (Z to A)</option>
               <option value="city-asc">Sort: City (A to Z)</option>
-              <option value="products-desc">Sort: Most Dishes</option>
+              <option value="products-desc">Sort: Most Dishes Listed</option>
+              <option value="orders-desc">Sort: Most Orders Completed</option>
               <option value="status-asc">Sort: Status</option>
             </select>
 
@@ -456,7 +561,8 @@ export function BusinessesPage() {
                   <TableHead>Compliance</TableHead>
                   <TableHead>{renderSortHeader('Status', 'status')}</TableHead>
                   <TableHead>Subscription</TableHead>
-                  <TableHead>{renderSortHeader('Dishes', 'products')}</TableHead>
+                  <TableHead>{renderSortHeader('Dishes Listed', 'products')}</TableHead>
+                  <TableHead>{renderSortHeader('Completed Orders', 'orders')}</TableHead>
                   <TableHead>{renderSortHeader('Registered', 'date')}</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -464,7 +570,7 @@ export function BusinessesPage() {
               <TableBody>
                 {filteredAndSortedBusinesses.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="h-32 text-center">
+                    <TableCell colSpan={11} className="h-32 text-center">
                       <div className="flex flex-col items-center justify-center gap-2 py-4">
                         <p className="text-muted-foreground text-sm">
                           {hasActiveFilters
@@ -574,9 +680,33 @@ export function BusinessesPage() {
                           )}
                         </TableCell>
 
-                        {/* Dishes Count */}
+                        {/* Dishes Listed */}
                         <TableCell>
-                          <span className="font-semibold text-xs">{b.productCount}</span>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 font-semibold text-xs">
+                              <span>{b.productCount} Dishes</span>
+                              <span className="text-[10px] text-muted-foreground font-normal">
+                                / {b.effectiveDishLimit ?? 50} limit
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 text-[10px]">
+                              <span className="text-emerald-600 font-semibold">{b.liveProductCount ?? 0} Live</span>
+                              <span className="text-muted-foreground">•</span>
+                              <span className="text-purple-600 font-semibold">{b.arProductCount ?? 0} 3D AR</span>
+                            </div>
+                          </div>
+                        </TableCell>
+
+                        {/* Completed Orders */}
+                        <TableCell>
+                          <div className="space-y-0.5">
+                            <div className="font-semibold text-xs text-foreground">
+                              <span className="text-emerald-600">{b.completedOrdersCount ?? 0} Completed</span>
+                            </div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {b.totalOrdersCount ?? 0} total placed
+                            </div>
+                          </div>
                         </TableCell>
 
                         {/* Registered Date */}

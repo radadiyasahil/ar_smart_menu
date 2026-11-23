@@ -33,6 +33,13 @@ public class ProductsController : ControllerBase
             .AnyAsync(s => s.BusinessId == businessId && s.Status == ARSmartMenu.Domain.Enums.SubscriptionStatus.Active && s.EndsAt > DateTime.UtcNow, ct);
         if (!hasActive)
         {
+            // If the business has an Admin-granted custom dish limit, allow managing dishes within that limit!
+            var business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == businessId, ct);
+            if (business?.CustomDishLimit.HasValue == true && business.CustomDishLimit.Value > 0)
+            {
+                return; // Admin granted custom limit override!
+            }
+
             // Auto-grant 7-day free trial if not used yet
             var trialPlan = await _db.SubscriptionPlans
                 .FirstOrDefaultAsync(p => p.Slug == "trial-7-days" && p.IsActive, ct);

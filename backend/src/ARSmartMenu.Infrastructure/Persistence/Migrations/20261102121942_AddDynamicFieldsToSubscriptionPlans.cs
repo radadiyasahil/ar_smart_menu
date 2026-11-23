@@ -10,71 +10,37 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "Badge",
-                table: "SubscriptionPlans",
-                type: "nvarchar(max)",
-                nullable: true);
+            migrationBuilder.Sql(@"
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SubscriptionPlans]') AND name = 'Badge')
+                    ALTER TABLE [SubscriptionPlans] ADD [Badge] nvarchar(max) NULL;
 
-            migrationBuilder.AddColumn<int>(
-                name: "BasePricePaise",
-                table: "SubscriptionPlans",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SubscriptionPlans]') AND name = 'BasePricePaise')
+                    ALTER TABLE [SubscriptionPlans] ADD [BasePricePaise] int NOT NULL DEFAULT 0;
 
-            migrationBuilder.AddColumn<string>(
-                name: "Description",
-                table: "SubscriptionPlans",
-                type: "nvarchar(max)",
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SubscriptionPlans]') AND name = 'Description')
+                    ALTER TABLE [SubscriptionPlans] ADD [Description] nvarchar(max) NULL;
 
-            migrationBuilder.AddColumn<int>(
-                name: "DiscountPercent",
-                table: "SubscriptionPlans",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SubscriptionPlans]') AND name = 'DiscountPercent')
+                    ALTER TABLE [SubscriptionPlans] ADD [DiscountPercent] int NOT NULL DEFAULT 0;
 
-            migrationBuilder.AddColumn<int>(
-                name: "DurationDays",
-                table: "SubscriptionPlans",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SubscriptionPlans]') AND name = 'DurationDays')
+                    ALTER TABLE [SubscriptionPlans] ADD [DurationDays] int NOT NULL DEFAULT 0;
 
-            migrationBuilder.AddColumn<string>(
-                name: "FacilitiesJson",
-                table: "SubscriptionPlans",
-                type: "nvarchar(max)",
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SubscriptionPlans]') AND name = 'FacilitiesJson')
+                    ALTER TABLE [SubscriptionPlans] ADD [FacilitiesJson] nvarchar(max) NULL;
 
-            migrationBuilder.AddColumn<int>(
-                name: "GstPaise",
-                table: "SubscriptionPlans",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SubscriptionPlans]') AND name = 'GstPaise')
+                    ALTER TABLE [SubscriptionPlans] ADD [GstPaise] int NOT NULL DEFAULT 0;
 
-            migrationBuilder.AddColumn<bool>(
-                name: "IsDeleted",
-                table: "SubscriptionPlans",
-                type: "bit",
-                nullable: false,
-                defaultValue: false);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SubscriptionPlans]') AND name = 'IsDeleted')
+                    ALTER TABLE [SubscriptionPlans] ADD [IsDeleted] bit NOT NULL DEFAULT CAST(0 AS bit);
 
-            migrationBuilder.AddColumn<int>(
-                name: "OriginalPricePaise",
-                table: "SubscriptionPlans",
-                type: "int",
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SubscriptionPlans]') AND name = 'OriginalPricePaise')
+                    ALTER TABLE [SubscriptionPlans] ADD [OriginalPricePaise] int NULL;
 
-            migrationBuilder.AddColumn<int>(
-                name: "TotalPricePaise",
-                table: "SubscriptionPlans",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SubscriptionPlans]') AND name = 'TotalPricePaise')
+                    ALTER TABLE [SubscriptionPlans] ADD [TotalPricePaise] int NOT NULL DEFAULT 0;
+            ");
         }
 
         /// <inheritdoc />

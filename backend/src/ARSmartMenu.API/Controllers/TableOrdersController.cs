@@ -1949,6 +1949,42 @@ public class TableOrdersController : ControllerBase
         return Ok(ApiResponse<bool>.Ok(true, "Waiter call attended"));
     }
 
+    /// <summary>Owner endpoint when customer clicks "I Have Paid" but no payment was received.</summary>
+    [HttpPost("api/businesses/{businessId}/table/{tableNumber}/reject-payment")]
+    [AllowAnonymous]
+    public ActionResult<ApiResponse<bool>> RejectPaymentClaim(Guid businessId, string tableNumber, [FromBody] RejectPaymentRequest? request)
+    {
+        var cleanTable = tableNumber.Trim().ToLowerInvariant();
+        var key = GetChatKey(businessId, cleanTable);
+        _waiterCallsStore.TryRemove(key, out _);
+
+        var reason = !string.IsNullOrWhiteSpace(request?.Reason)
+            ? request.Reason.Trim()
+            : "Payment was not received in restaurant account.";
+
+        var chatMsg = new TableChatMessageDto
+        {
+            Id = Guid.NewGuid().ToString(),
+            Sender = "RESTAURANT",
+            SenderName = "Cashier / Counter",
+            Text = $"⚠️ Verification Alert: {reason} Please show transaction screenshot or pay at counter.",
+            Timestamp = DateTime.UtcNow
+        };
+        _tableChatStore.AddOrUpdate(
+            key,
+            new List<TableChatMessageDto> { chatMsg },
+            (_, list) => { lock (list) { list.Add(chatMsg); } return list; }
+        );
+
+        TableSyncManager.Broadcast(businessId, tableNumber, "payment_rejected", new {
+            tableNumber,
+            reason,
+            timestamp = DateTime.UtcNow
+        });
+
+        return Ok(ApiResponse<bool>.Ok(true, "Payment claim rejected"));
+    }
+
     /// <summary>Public endpoint for customer to notify restaurant that they paid via dynamic UPI.</summary>
     [HttpPost("api/public/orders/{slug}/table/{tableNumber}/notify-upi")]
     [AllowAnonymous]
@@ -1974,7 +2010,8 @@ public class TableOrdersController : ControllerBase
 
         var amount = request?.Amount ?? 0;
         var app = string.IsNullOrWhiteSpace(request?.UpiApp) ? "UPI" : request.UpiApp.Trim();
-        var note = $"💰 Paid ₹{amount} via {app}";
+        var utrText = !string.IsNullOrWhiteSpace(request?.Utr) ? $" [UTR: {request.Utr.Trim()}]" : "";
+        var note = $"💰 Paid ₹{amount} via {app}{utrText}";
 
         var call = new TableWaiterCallDto
         {
@@ -2007,10 +2044,99 @@ public class TableOrdersController : ControllerBase
             tableNumber = targetTable,
             amount = amount,
             upiApp = app,
+            utr = request?.Utr?.Trim(),
             timestamp = DateTime.UtcNow
         });
 
         return Ok(ApiResponse<object>.Ok(new { success = true }, "Payment notification sent to restaurant"));
+    }
+
+    /// <summary>Public endpoint for customer to submit feedback/rating after payment.</summary>
+    [HttpPost("api/public/orders/{slug}/table/{tableNumber}/feedback")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object>>> SubmitFeedback(
+        string slug,
+        string tableNumber,
+        [FromBody] SubmitFeedbackRequest request,
+        CancellationToken ct)
+    {
+        var targetTable = !string.IsNullOrWhiteSpace(tableNumber) ? tableNumber : "Dine-in";
+        var cleanSlug = slug.Trim().ToLowerInvariant();
+        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
+
+        Guid businessId;
+        if (qr != null) businessId = qr.BusinessId;
+        else if (Guid.TryParse(cleanSlug, out var bId)) businessId = bId;
+        else
+        {
+            var b = await _db.Businesses.FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
+            if (b == null) return NotFound(ApiResponse<object>.Fail("Restaurant not found"));
+            businessId = b.Id;
+        }
+
+        var rating = Math.Clamp(request?.Rating ?? 5, 1, 5);
+        var comment = request?.Comment?.Trim();
+        var tags = request?.Tags ?? new List<string>();
+        var tagsJson = JsonSerializer.Serialize(tags);
+
+        var cleanTable = targetTable.Trim().ToLowerInvariant();
+        var altTable = cleanTable.StartsWith("table") ? cleanTable.Replace("table", "").Trim() : ("table " + cleanTable);
+        var tableDigits = Regex.Match(cleanTable, @"\d+").Value;
+        var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
+
+        var cutoff = DateTime.UtcNow.AddHours(-24);
+        var orders = await _db.TableOrders
+            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
+                        (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
+                         (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum))))
+            .OrderByDescending(o => o.CreatedAt)
+            .ToListAsync(ct);
+
+        if (orders.Count > 0)
+        {
+            foreach (var o in orders)
+            {
+                o.Rating = rating;
+                o.FeedbackComment = comment;
+                o.FeedbackTagsJson = tagsJson;
+                o.FeedbackSubmittedAt = DateTime.UtcNow;
+                if (!string.IsNullOrWhiteSpace(request?.CustomerPhone) && string.IsNullOrWhiteSpace(o.CustomerPhone))
+                {
+                    o.CustomerPhone = request.CustomerPhone.Trim();
+                }
+            }
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // Notify restaurant staff and POS
+        var ratingStars = new string('⭐', rating);
+        var tagsText = tags.Count > 0 ? $" ({string.Join(", ", tags)})" : "";
+        var chatNote = $"{ratingStars} Customer Feedback: {rating}/5{tagsText}{(string.IsNullOrWhiteSpace(comment) ? "" : $" - \"{comment}\"")}";
+
+        var key = GetChatKey(businessId, targetTable);
+        var chatMsg = new TableChatMessageDto
+        {
+            Id = Guid.NewGuid().ToString(),
+            Sender = "CUSTOMER",
+            SenderName = targetTable.StartsWith("Table", StringComparison.OrdinalIgnoreCase) ? targetTable : $"Table {targetTable}",
+            Text = chatNote,
+            Timestamp = DateTime.UtcNow
+        };
+        _tableChatStore.AddOrUpdate(
+            key,
+            new List<TableChatMessageDto> { chatMsg },
+            (_, list) => { lock (list) { list.Add(chatMsg); } return list; }
+        );
+
+        TableSyncManager.Broadcast(businessId, targetTable, "customer_feedback_submitted", new {
+            tableNumber = targetTable,
+            rating = rating,
+            comment = comment,
+            tags = tags,
+            timestamp = DateTime.UtcNow
+        });
+
+        return Ok(ApiResponse<object>.Ok(new { success = true }, "Thank you for your feedback!"));
     }
 
 
@@ -2221,7 +2347,17 @@ public class TableOrdersController : ControllerBase
 
         }
 
-
+        List<string> feedbackTags;
+        try
+        {
+            feedbackTags = !string.IsNullOrWhiteSpace(o.FeedbackTagsJson)
+                ? JsonSerializer.Deserialize<List<string>>(o.FeedbackTagsJson) ?? new()
+                : new();
+        }
+        catch
+        {
+            feedbackTags = new();
+        }
 
         return new TableOrderResponse
 
@@ -2256,6 +2392,14 @@ public class TableOrdersController : ControllerBase
             CompletedAt = o.CompletedAt.HasValue ? DateTime.SpecifyKind(o.CompletedAt.Value, DateTimeKind.Utc) : null,
 
             PartyPin = o.PartyPin,
+
+            Rating = o.Rating,
+
+            FeedbackComment = o.FeedbackComment,
+
+            FeedbackTags = feedbackTags,
+
+            FeedbackSubmittedAt = o.FeedbackSubmittedAt.HasValue ? DateTime.SpecifyKind(o.FeedbackSubmittedAt.Value, DateTimeKind.Utc) : null,
 
         };
 
@@ -2523,6 +2667,12 @@ public class NotifyUpiPaymentRequest
 {
     public int Amount { get; set; }
     public string? UpiApp { get; set; }
+    public string? Utr { get; set; }
+}
+
+public class RejectPaymentRequest
+{
+    public string? Reason { get; set; }
 }
 
 
@@ -2561,6 +2711,23 @@ public class TableOrderResponse
 
     public string? PartyPin { get; set; }
 
+    public int? Rating { get; set; }
+
+    public string? FeedbackComment { get; set; }
+
+    public List<string> FeedbackTags { get; set; } = new();
+
+    public DateTime? FeedbackSubmittedAt { get; set; }
+
+}
+
+public class SubmitFeedbackRequest
+{
+    public int Rating { get; set; } = 5;
+    public string? Comment { get; set; }
+    public List<string>? Tags { get; set; }
+    public string? CustomerPhone { get; set; }
+    public string? SessionToken { get; set; }
 }
 
 public class JoinTablePartyRequest

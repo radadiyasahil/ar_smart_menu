@@ -29,11 +29,13 @@ public class PublicArService : IPublicArService
             ?? throw new NotFoundException("AR experience not found.");
 
         var product = resolved.Product;
-        var glbUrl = ResolveModelUrl(
-            product.Model3d?.GlbS3Key,
-            product.Model3d?.GlbUrl,
-            resolved.FallbackGlbUrl);
-        var usdzUrl = product.Model3d?.UsdzUrl ?? resolved.FallbackUsdzUrl;
+        var isArActive = resolved.Business.ArViewEnabled && (resolved.Business.ArViewCredits > 0 || resolved.Business.ArPerViewChargePaise == 0);
+        var glbUrl = isArActive
+            ? ResolveModelUrl(product.Model3d?.GlbS3Key, product.Model3d?.GlbUrl, resolved.FallbackGlbUrl)
+            : null;
+        var usdzUrl = isArActive
+            ? (product.Model3d?.UsdzUrl ?? resolved.FallbackUsdzUrl)
+            : null;
         var orderingUrl = await ResolveOrderingUrlAsync(resolved.Business.Id, product.Id, ct);
         var otherProducts = await GetOtherProductsAsync(
             resolved.Business.Id,
@@ -201,7 +203,8 @@ public class PublicArService : IPublicArService
             business.RequireGeofence,
             business.GeofenceRadiusMeters > 0 ? business.GeofenceRadiusMeters : 200,
             business.Latitude,
-            business.Longitude
+            business.Longitude,
+            business.GstRate > 0 ? business.GstRate : 5.0
         );
     }
 
@@ -251,6 +254,20 @@ public class PublicArService : IPublicArService
         };
 
         _db.ArViewEvents.Add(view);
+
+        if (view.ArLaunched)
+        {
+            var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == qr.BusinessId, ct);
+            if (business != null)
+            {
+                business.ArViewsUsed++;
+                if (business.ArViewCredits > 0)
+                {
+                    business.ArViewCredits--;
+                }
+            }
+        }
+
         await _db.SaveChangesAsync(ct);
 
         return new LogEventResponse(view.Id, "View event logged.");

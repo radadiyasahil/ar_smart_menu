@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { tableOrderService, type LiveTableOrder } from '@/services/tableOrderService'
 import { soundAlerts } from '@/utils/soundAlerts'
+import { CustomerFeedbackModal } from './CustomerFeedbackModal'
 
 interface TableOrderStatusModalProps {
   isOpen: boolean
@@ -38,6 +39,7 @@ interface TableOrderStatusModalProps {
   wifiName?: string
   wifiPassword?: string
   upiId?: string
+  gstRate?: number
 }
 
 export function TableOrderStatusModal({
@@ -56,12 +58,15 @@ export function TableOrderStatusModal({
   wifiName,
   wifiPassword,
   upiId,
+  gstRate = 5.0,
 }: TableOrderStatusModalProps) {
   const [wifiCopied, setWifiCopied] = useState(false)
   const [pinCopied, setPinCopied] = useState(false)
   const [showUpiQr, setShowUpiQr] = useState(false)
   const [upiPaidNotified, setUpiPaidNotified] = useState(false)
   const [isNotifyingUpi, setIsNotifyingUpi] = useState(false)
+  const [upiUtr, setUpiUtr] = useState('')
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false)
   const [upiIdCopied, setUpiIdCopied] = useState(false)
   const [isRequestingBill, setIsRequestingBill] = useState(false)
   const [billRequestSent, setBillRequestSent] = useState(false)
@@ -136,7 +141,10 @@ export function TableOrderStatusModal({
     (sum, o) => sum + (o.items || []).reduce((itemSum, i) => itemSum + (i.quantity || 1), 0),
     0,
   )
-  const runningBillTotal = nonCancelledOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+  const subtotal = nonCancelledOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+  const effectiveGstRate = typeof gstRate === 'number' && gstRate >= 0 ? gstRate : 5.0
+  const gstAmount = Math.round(subtotal * (effectiveGstRate / 100))
+  const grandTotal = subtotal + gstAmount
 
   // Status breakdown
   const hasOrders = activeOrders.length > 0
@@ -386,7 +394,10 @@ export function TableOrderStatusModal({
             </div>
             <div className="text-center">
               <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Running Bill</p>
-              <p className="text-base font-black text-emerald-400 mt-0.5">₹{runningBillTotal.toLocaleString('en-IN')}</p>
+              <p className="text-base font-black text-emerald-400 mt-0.5">₹{grandTotal.toLocaleString('en-IN')}</p>
+              {gstAmount > 0 && (
+                <p className="text-[9px] text-gray-400 mt-0.5">₹{subtotal} + ₹{gstAmount} GST</p>
+              )}
             </div>
           </div>
 
@@ -512,7 +523,7 @@ export function TableOrderStatusModal({
             )}
 
             {/* Pay at Table with Dynamic Table UPI */}
-            {isBillAlreadyRequested && runningBillTotal > 0 && (
+            {isBillAlreadyRequested && grandTotal > 0 && (
               <div className="p-4 rounded-2xl bg-gradient-to-br from-[#1B2620] via-[#161F1A] to-[#121815] border border-emerald-500/30 space-y-3.5 shadow-lg">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -526,7 +537,25 @@ export function TableOrderStatusModal({
                   </div>
                   <div className="text-right">
                     <span className="text-[10px] text-gray-400 block">Total Due</span>
-                    <span className="text-base font-black text-emerald-400">₹{runningBillTotal.toLocaleString('en-IN')}</span>
+                    <span className="text-base font-black text-emerald-400">₹{grandTotal.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+
+                {/* Itemized Bill Breakdown (Matches Restaurant Bill Exactly) */}
+                <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 text-xs">
+                  <div className="flex justify-between text-gray-300">
+                    <span>Items Subtotal ({totalItemsCount} items)</span>
+                    <span>₹{subtotal.toLocaleString('en-IN')}</span>
+                  </div>
+                  {gstAmount > 0 && (
+                    <div className="flex justify-between text-gray-400 text-[11px]">
+                      <span>Restaurant GST ({effectiveGstRate}%)</span>
+                      <span>+₹{gstAmount.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold text-emerald-400 pt-1 border-t border-white/10 text-sm">
+                    <span>Total Amount Payable</span>
+                    <span>₹{grandTotal.toLocaleString('en-IN')}</span>
                   </div>
                 </div>
 
@@ -535,7 +564,7 @@ export function TableOrderStatusModal({
                   type="button"
                   onClick={() => {
                     const effectiveUpi = upiId?.trim() || 'restaurant@upi'
-                    const upiUrl = `upi://pay?pa=${encodeURIComponent(effectiveUpi)}&pn=${encodeURIComponent(restaurantName)}&am=${runningBillTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Table ${tableNumber} Bill`)}`
+                    const upiUrl = `upi://pay?pa=${encodeURIComponent(effectiveUpi)}&pn=${encodeURIComponent(restaurantName)}&am=${grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Table ${tableNumber} Bill`)}`
                     window.location.href = upiUrl
                   }}
                   className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 cursor-pointer transition active:scale-[0.98]"
@@ -577,13 +606,13 @@ export function TableOrderStatusModal({
                   <div className="p-3.5 bg-white rounded-xl flex flex-col items-center justify-center gap-2 animate-fadeIn">
                     <img
                       src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=4&data=${encodeURIComponent(
-                        `upi://pay?pa=${encodeURIComponent(upiId?.trim() || 'restaurant@upi')}&pn=${encodeURIComponent(restaurantName)}&am=${runningBillTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Table ${tableNumber} Bill`)}`
+                        `upi://pay?pa=${encodeURIComponent(upiId?.trim() || 'restaurant@upi')}&pn=${encodeURIComponent(restaurantName)}&am=${grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Table ${tableNumber} Bill`)}`
                       )}`}
                       alt="Table UPI QR"
                       className="w-40 h-40 object-contain rounded-lg"
                     />
                     <div className="text-center text-gray-900 text-xs font-black">
-                      Scan & Pay ₹{runningBillTotal.toLocaleString('en-IN')}
+                      Scan & Pay ₹{grandTotal.toLocaleString('en-IN')}
                     </div>
                     {upiId && (
                       <div className="text-[10px] text-gray-500 font-medium">
@@ -594,30 +623,59 @@ export function TableOrderStatusModal({
                 )}
 
                 {/* "I Have Paid" Confirmation */}
-                <div className="pt-2 border-t border-white/10">
+                <div className="pt-2 border-t border-white/10 space-y-2.5">
                   {upiPaidNotified ? (
-                    <div className="p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold text-center flex items-center justify-center gap-2">
-                      <CheckCircle2 size={15} />
-                      <span>Payment Notified to Cashier! Server is verifying.</span>
+                    <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs space-y-2">
+                      <div className="flex items-center gap-2 font-bold text-amber-300">
+                        <Clock className="w-4 h-4 animate-spin shrink-0" />
+                        <span>Payment Submitted — Cashier Verification Pending</span>
+                      </div>
+                      <p className="text-[11px] text-gray-300 leading-relaxed">
+                        You reported paying <strong className="text-emerald-400">₹{grandTotal.toLocaleString('en-IN')}</strong>. Cashier is verifying this in their UPI app / soundbox.
+                      </p>
+                      <div className="p-2 rounded-xl bg-black/40 border border-white/5 text-[10.5px] text-amber-300 flex items-center gap-2">
+                        <span className="text-sm">⚠️</span>
+                        <span>Please show your UPI payment success screen to your server or wait for confirmation.</span>
+                      </div>
+                      <div className="flex items-center justify-between pt-1 border-t border-amber-500/20">
+                        <span className="text-[10px] text-gray-400">Did not pay or clicked by mistake?</span>
+                        <button
+                          type="button"
+                          onClick={() => setUpiPaidNotified(false)}
+                          className="text-[11px] text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer"
+                        >
+                          Cancel & Re-pay
+                        </button>
+                      </div>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      disabled={isNotifyingUpi}
-                      onClick={async () => {
-                        setIsNotifyingUpi(true)
-                        if (slug) {
-                          await tableOrderService.notifyUpiPayment(slug, tableNumber, runningBillTotal)
-                        }
-                        soundAlerts.playBillSettled()
-                        setUpiPaidNotified(true)
-                        setIsNotifyingUpi(false)
-                      }}
-                      className="w-full py-2.5 bg-white/10 hover:bg-white/15 border border-white/20 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer transition"
-                    >
-                      <CheckCircle2 size={13} className="text-emerald-400" />
-                      <span>I Have Paid ₹{runningBillTotal.toLocaleString('en-IN')} via UPI</span>
-                    </button>
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={upiUtr}
+                          onChange={(e) => setUpiUtr(e.target.value)}
+                          placeholder="Optional: UPI Ref / UTR / Last 4 digits (e.g. 5182)"
+                          className="w-full text-xs px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500/50"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isNotifyingUpi}
+                        onClick={async () => {
+                          setIsNotifyingUpi(true)
+                          if (slug) {
+                            await tableOrderService.notifyUpiPayment(slug, tableNumber, grandTotal, 'UPI', upiUtr)
+                          }
+                          setUpiPaidNotified(true)
+                          setIsNotifyingUpi(false)
+                        }}
+                        className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 transition active:scale-95 disabled:opacity-50"
+                      >
+                        <CheckCircle2 size={14} className="text-white" />
+                        <span>I Have Paid ₹{grandTotal.toLocaleString('en-IN')} via UPI</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -923,7 +981,7 @@ export function TableOrderStatusModal({
               <span>
                 {isRequestingBill
                   ? 'Notifying restaurant...'
-                  : `Request Final Bill (Total: ₹${runningBillTotal.toLocaleString('en-IN')})`}
+                  : `Request Final Bill (Total: ₹${grandTotal.toLocaleString('en-IN')})`}
               </span>
             </button>
           )}
@@ -952,6 +1010,16 @@ export function TableOrderStatusModal({
           </div>
         </div>
       </div>
+
+      {slug && (
+        <CustomerFeedbackModal
+          isOpen={isFeedbackModalOpen}
+          onClose={() => setIsFeedbackModalOpen(false)}
+          slug={slug}
+          tableNumber={tableNumber}
+          restaurantName={restaurantName}
+        />
+      )}
     </div>
   )
 }

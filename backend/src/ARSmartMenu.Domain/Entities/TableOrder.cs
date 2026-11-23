@@ -19,5 +19,17 @@ public class TableOrder : BaseEntity
     /// <summary>3-digit PIN for multi-diner table collaboration (e.g. "482").</summary>
     public string? PartyPin { get; set; }
 
+    /// <summary>Customer feedback rating (1 to 5 stars).</summary>
+    public int? Rating { get; set; }
+
+    /// <summary>Optional review / comment left by customer after bill settlement.</summary>
+    public string? FeedbackComment { get; set; }
+
+    /// <summary>JSON serialized tags selected by customer (e.g. ["Delicious Food", "Fast Service"]).</summary>
+    public string? FeedbackTagsJson { get; set; }
+
+    /// <summary>Timestamp when customer submitted their feedback.</summary>
+    public DateTime? FeedbackSubmittedAt { get; set; }
+
     public Business? Business { get; set; }
 }

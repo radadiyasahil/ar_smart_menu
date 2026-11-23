@@ -61,6 +61,7 @@ public static class DependencyInjection
 
         // Hangfire jobs
         services.AddScoped<PipelineJobRunner>();
+        services.AddScoped<ARSmartMenu.Infrastructure.Jobs.SubscriptionExpirationJob>();
 
         return services;
     }

@@ -228,6 +228,18 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("ApprovedById")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("ArPerViewChargePaise")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ArViewCredits")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("ArViewEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ArViewsUsed")
+                        .HasColumnType("int");
+
                     b.Property<string>("BankAccountNumber")
                         .HasColumnType("nvarchar(max)");
 
@@ -251,6 +263,9 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("CustomDishLimit")
+                        .HasColumnType("int");
+
                     b.Property<string>("FssaiNumber")
                         .HasColumnType("nvarchar(max)");
 
@@ -258,11 +273,23 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("GeofenceRadiusMeters")
+                        .HasColumnType("int");
+
                     b.Property<string>("GstNumber")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<double>("GstRate")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("float");
+
                     b.Property<string>("LogoUrl")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("float");
 
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uniqueidentifier");
@@ -276,6 +303,9 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                     b.Property<string>("RejectionReason")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("RequireGeofence")
+                        .HasColumnType("bit");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -283,6 +313,12 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("UpiId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("WifiName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("WifiPassword")
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
@@ -769,10 +805,10 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("Description")
+                    b.Property<string>("CustomizationJson")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("CustomizationJson")
+                    b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("DisplayOrder")
@@ -1016,6 +1052,9 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("BasePricePaise")
+                        .HasColumnType("int");
+
                     b.Property<int>("BillingCycle")
                         .HasColumnType("int");
 
@@ -1031,8 +1070,36 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("CustomerAddress")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CustomerBusinessName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CustomerCity")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CustomerGstNumber")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("EndsAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<int>("GstPaise")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("InvoiceDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("InvoiceNumber")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PaymentStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("PlanId")
                         .HasColumnType("uniqueidentifier");
@@ -1049,12 +1116,20 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
+                    b.Property<int>("TotalPricePaise")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TransactionRef")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 
                     b.HasIndex("BusinessId");
+
+                    b.HasIndex("InvoiceNumber");
 
                     b.HasIndex("PlanId");
 
@@ -1179,6 +1254,15 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("FeedbackComment")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("FeedbackSubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FeedbackTagsJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Instructions")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -1186,6 +1270,12 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
                     b.Property<string>("ItemsJson")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PartyPin")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("Rating")
+                        .HasColumnType("int");
 
                     b.Property<int>("Round")
                         .HasColumnType("int");

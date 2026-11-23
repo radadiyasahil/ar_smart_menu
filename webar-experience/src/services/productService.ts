@@ -93,6 +93,7 @@ export interface PublicMenuResponse {
   geofenceRadiusMeters?: number
   latitude?: number
   longitude?: number
+  gstRate?: number
 }
 
 import { apiClient, type ApiEnvelope } from './apiClient'

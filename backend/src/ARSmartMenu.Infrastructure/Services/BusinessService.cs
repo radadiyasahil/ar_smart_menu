@@ -266,5 +266,10 @@ public class BusinessService : IBusinessService
         business.Latitude,
         business.Longitude,
         business.GeofenceRadiusMeters,
-        business.RequireGeofence);
+        business.RequireGeofence,
+        business.CustomDishLimit,
+        business.ArViewEnabled,
+        business.ArPerViewChargePaise,
+        business.ArViewCredits,
+        business.ArViewsUsed);
 }

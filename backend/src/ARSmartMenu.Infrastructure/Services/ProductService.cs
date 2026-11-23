@@ -599,21 +599,38 @@ public class ProductService : IProductService
 
     private async Task EnsureWithinPlanLimitAsync(Guid businessId, int additionalCount, CancellationToken ct = default)
     {
+        var business = await _db.Businesses
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == businessId, ct);
+
         var subscription = await _db.Subscriptions
             .AsNoTracking()
             .Include(s => s.Plan)
-            .Where(s => s.BusinessId == businessId && s.Status == SubscriptionStatus.Active)
+            .Where(s => s.BusinessId == businessId && s.Status == SubscriptionStatus.Active && s.EndsAt > DateTime.UtcNow)
             .OrderByDescending(s => s.EndsAt)
             .FirstOrDefaultAsync(ct);
 
-        if (subscription is null) return;
+        int maxDishes;
+        if (business?.CustomDishLimit.HasValue == true && business.CustomDishLimit.Value > 0)
+        {
+            maxDishes = business.CustomDishLimit.Value;
+        }
+        else if (subscription?.Plan != null)
+        {
+            maxDishes = subscription.Plan.MaxProducts;
+        }
+        else
+        {
+            throw new ValidationException(
+                "An active subscription plan or custom dish limit is required to add dishes. Please renew your plan or contact Admin.");
+        }
 
         var count = await _db.Products.CountAsync(p => p.BusinessId == businessId, ct);
-        if (count + additionalCount > subscription.Plan.MaxProducts)
+        if (count + additionalCount > maxDishes)
         {
             var msg = additionalCount > 1
-                ? $"Adding {additionalCount} items would exceed your plan product limit ({count}/{subscription.Plan.MaxProducts}). Upgrade your plan to list more items."
-                : $"Product limit ({subscription.Plan.MaxProducts}) reached for your plan.";
+                ? $"Adding {additionalCount} items would exceed your allocated dish limit ({count}/{maxDishes}). Contact Admin or upgrade your plan to list more items."
+                : $"Dish limit reached ({count}/{maxDishes}). You cannot add more dishes beyond your allocated limit of {maxDishes}. Please upgrade your subscription plan or contact Admin.";
             throw new ValidationException(msg);
         }
     }

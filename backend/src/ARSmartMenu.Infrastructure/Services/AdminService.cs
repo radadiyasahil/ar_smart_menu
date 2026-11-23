@@ -80,14 +80,144 @@ public class AdminService : IAdminService
             .Take(Math.Clamp(pagination.Limit, 1, 100))
             .ToListAsync(ct);
 
-        var items = businesses.Select(MapAdminBusiness).ToList();
+        var businessIds = businesses.Select(b => b.Id).ToList();
+
+        // 1. Grouped product counts (total, live on menu, and with 3D AR model)
+        var productStats = await _db.Products
+            .AsNoTracking()
+            .Where(p => businessIds.Contains(p.BusinessId))
+            .GroupBy(p => p.BusinessId)
+            .Select(g => new
+            {
+                BusinessId = g.Key,
+                Total = g.Count(),
+                Live = g.Count(p => p.Status == ProductStatus.Live),
+                WithAr = g.Count(p => p.Model3d != null)
+            })
+            .ToDictionaryAsync(x => x.BusinessId, ct);
+
+        // 2. Grouped table order stats (counting distinct dining orders where Round <= 1; sales kept 0 for super-admin privacy)
+        var orderStats = await _db.TableOrders
+            .AsNoTracking()
+            .Where(o => businessIds.Contains(o.BusinessId) && o.Round <= 1)
+            .GroupBy(o => o.BusinessId)
+            .Select(g => new
+            {
+                BusinessId = g.Key,
+                TotalOrders = g.Count(),
+                CompletedOrders = g.Count(o => o.Status == "COMPLETED" || o.Status == "PAID" || o.Status == "SETTLED"),
+                CompletedSalesPaise = 0L
+            })
+            .ToDictionaryAsync(x => x.BusinessId, ct);
+
+        // 3. Grouped AR scans and 3D views
+        var scanStats = await _db.ArScanEvents
+            .AsNoTracking()
+            .Where(e => businessIds.Contains(e.BusinessId))
+            .GroupBy(e => e.BusinessId)
+            .Select(g => new { BusinessId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.BusinessId, x => x.Count, ct);
+
+        var viewStats = await _db.ArViewEvents
+            .AsNoTracking()
+            .Where(e => businessIds.Contains(e.BusinessId))
+            .GroupBy(e => e.BusinessId)
+            .Select(g => new { BusinessId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.BusinessId, x => x.Count, ct);
+
+        // 4. Grouped customer reviews and ratings
+        var feedbackStats = await _db.TableOrders
+            .AsNoTracking()
+            .Where(o => businessIds.Contains(o.BusinessId) && o.Rating.HasValue && o.Rating.Value > 0)
+            .GroupBy(o => o.BusinessId)
+            .Select(g => new
+            {
+                BusinessId = g.Key,
+                Count = g.Count(),
+                AvgRating = Math.Round(g.Average(o => (double)o.Rating!.Value), 1)
+            })
+            .ToDictionaryAsync(x => x.BusinessId, ct);
+
+        var now = DateTime.UtcNow;
+        var items = businesses.Select(b =>
+        {
+            var activeSub = b.Subscriptions
+                .Where(s => s.Status == SubscriptionStatus.Active && s.EndsAt > now)
+                .OrderByDescending(s => s.EndsAt)
+                .FirstOrDefault();
+
+            var latestSub = activeSub ?? b.Subscriptions
+                .OrderByDescending(s => s.EndsAt)
+                .FirstOrDefault();
+
+            var isSubActive = latestSub != null && latestSub.Status == SubscriptionStatus.Active && latestSub.EndsAt > now;
+            var daysRem = isSubActive ? Math.Max(0, (int)Math.Ceiling((latestSub!.EndsAt - now).TotalDays)) : 0;
+            var subStatus = latestSub == null
+                ? "None"
+                : (isSubActive
+                    ? (latestSub.Plan?.Slug == "trial-7-days" ? "Trial" : "Active")
+                    : "Expired");
+
+            var hasUsedTrial = b.Subscriptions.Any(s => s.Plan?.Slug == "trial-7-days");
+
+            var pStat = productStats.GetValueOrDefault(b.Id);
+            var oStat = orderStats.GetValueOrDefault(b.Id);
+            var scans = scanStats.GetValueOrDefault(b.Id, 0);
+            var views = viewStats.GetValueOrDefault(b.Id, 0);
+            var fStat = feedbackStats.GetValueOrDefault(b.Id);
+
+            return new AdminBusinessListItemDto(
+                b.Id,
+                b.BusinessName,
+                b.BusinessType,
+                b.City,
+                b.Status,
+                b.Owner.MobileNumber,
+                b.Owner.FullName,
+                b.Owner.KycStatus,
+                pStat?.Total ?? 0,
+                b.CreatedAt,
+                b.FullAddress,
+                b.FssaiNumber,
+                b.GstNumber,
+                b.UpiId,
+                b.BankAccountNumber,
+                b.BankIfsc,
+                b.BankPennyVerified,
+                b.Owner.WhatsAppNumber,
+                b.Owner.AadhaarLast4,
+                b.Owner.PanNumber,
+                b.RejectionReason,
+                b.AdminNotes,
+                latestSub?.Plan?.Name,
+                subStatus,
+                latestSub?.StartsAt,
+                latestSub?.EndsAt,
+                daysRem,
+                hasUsedTrial,
+                b.CustomDishLimit,
+                b.CustomDishLimit.HasValue && b.CustomDishLimit.Value > 0 ? b.CustomDishLimit.Value : (latestSub?.Plan?.MaxProducts ?? 50),
+                b.ArViewEnabled,
+                b.ArPerViewChargePaise,
+                b.ArViewCredits,
+                b.ArViewsUsed,
+                pStat?.Live ?? 0,
+                pStat?.WithAr ?? 0,
+                oStat?.TotalOrders ?? 0,
+                oStat?.CompletedOrders ?? 0,
+                oStat?.CompletedSalesPaise ?? 0,
+                scans,
+                views,
+                fStat != null ? fStat.AvgRating : (double?)null,
+                fStat?.Count ?? 0);
+        }).ToList();
 
         return new PagedResult<AdminBusinessListItemDto>
         {
             Items = items,
             Total = total,
             Page = pagination.Page,
-            Limit = pagination.Limit,
+            Limit = pagination.Limit
         };
     }
 
@@ -102,7 +232,7 @@ public class AdminService : IAdminService
             .FirstOrDefaultAsync(b => b.Id == businessId, ct);
 
         if (b == null) return null;
-        return MapAdminBusiness(b);
+        return await MapAdminBusinessDetailedAsync(b, ct);
     }
 
     public async Task<AdminBusinessListItemDto> UpdateBusinessAsync(
@@ -164,7 +294,127 @@ public class AdminService : IAdminService
         b.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
 
-        return MapAdminBusiness(b);
+        return await MapAdminBusinessDetailedAsync(b, ct);
+    }
+
+    public async Task<AdminBusinessListItemDto> UpdateBusinessSettingsAsync(
+        Guid businessId,
+        UpdateBusinessSettingsRequest request,
+        CancellationToken ct = default)
+    {
+        var business = await _db.Businesses
+            .Include(b => b.Owner)
+            .Include(b => b.Subscriptions)
+                .ThenInclude(s => s.Plan)
+            .FirstOrDefaultAsync(b => b.Id == businessId, ct)
+            ?? throw new NotFoundException("Business not found.");
+
+        if (request.CustomDishLimit.HasValue)
+        {
+            business.CustomDishLimit = request.CustomDishLimit.Value > 0 ? request.CustomDishLimit.Value : null;
+        }
+
+        if (request.ArViewEnabled.HasValue)
+        {
+            business.ArViewEnabled = request.ArViewEnabled.Value;
+        }
+
+        if (request.ArPerViewChargePaise.HasValue)
+        {
+            business.ArPerViewChargePaise = Math.Max(0, request.ArPerViewChargePaise.Value);
+        }
+
+        if (request.ArViewCredits.HasValue)
+        {
+            business.ArViewCredits = Math.Max(0, request.ArViewCredits.Value);
+        }
+
+        business.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return await MapAdminBusinessDetailedAsync(business, ct);
+    }
+
+    private async Task<AdminBusinessListItemDto> MapAdminBusinessDetailedAsync(Business b, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var latestSub = b.Subscriptions
+            .OrderByDescending(s => s.EndsAt)
+            .FirstOrDefault();
+
+        var isSubActive = latestSub != null && latestSub.Status == SubscriptionStatus.Active && latestSub.EndsAt > now;
+        var daysRem = isSubActive ? Math.Max(0, (int)Math.Ceiling((latestSub!.EndsAt - now).TotalDays)) : 0;
+        var subStatus = latestSub == null
+            ? "None"
+            : (isSubActive
+                ? (latestSub.Plan?.Slug == "trial-7-days" ? "Trial" : "Active")
+                : "Expired");
+
+        var hasUsedTrial = b.Subscriptions.Any(s => s.Plan?.Slug == "trial-7-days");
+        var effectiveDishLimit = b.CustomDishLimit.HasValue && b.CustomDishLimit.Value > 0
+            ? b.CustomDishLimit.Value
+            : (latestSub?.Plan?.MaxProducts ?? 50);
+
+        var productCount = await _db.Products.CountAsync(p => p.BusinessId == b.Id, ct);
+        var liveProductCount = await _db.Products.CountAsync(p => p.BusinessId == b.Id && p.Status == ProductStatus.Live, ct);
+        var arProductCount = await _db.Products.CountAsync(p => p.BusinessId == b.Id && p.Model3d != null, ct);
+
+        var totalOrdersCount = await _db.TableOrders.CountAsync(o => o.BusinessId == b.Id && o.Round <= 1, ct);
+        var completedOrdersQuery = _db.TableOrders.Where(o => o.BusinessId == b.Id && o.Round <= 1 && (o.Status == "COMPLETED" || o.Status == "PAID" || o.Status == "SETTLED"));
+        var completedOrdersCount = await completedOrdersQuery.CountAsync(ct);
+        var completedSalesPaise = 0L;
+
+        var scans = await _db.ArScanEvents.CountAsync(e => e.BusinessId == b.Id, ct);
+        var views = await _db.ArViewEvents.CountAsync(e => e.BusinessId == b.Id, ct);
+
+        var feedbackQuery = _db.TableOrders.Where(o => o.BusinessId == b.Id && o.Rating.HasValue && o.Rating.Value > 0);
+        var feedbackCount = await feedbackQuery.CountAsync(ct);
+        var avgRating = feedbackCount > 0 ? Math.Round(await feedbackQuery.AverageAsync(o => (double)o.Rating!.Value, ct), 1) : (double?)null;
+
+        return new AdminBusinessListItemDto(
+            b.Id,
+            b.BusinessName,
+            b.BusinessType,
+            b.City,
+            b.Status,
+            b.Owner?.MobileNumber ?? "",
+            b.Owner?.FullName,
+            b.Owner?.KycStatus ?? KycStatus.Pending,
+            productCount,
+            b.CreatedAt,
+            b.FullAddress,
+            b.FssaiNumber,
+            b.GstNumber,
+            b.UpiId,
+            b.BankAccountNumber,
+            b.BankIfsc,
+            b.BankPennyVerified,
+            b.Owner?.WhatsAppNumber,
+            b.Owner?.AadhaarLast4,
+            b.Owner?.PanNumber,
+            b.RejectionReason,
+            b.AdminNotes,
+            latestSub?.Plan?.Name,
+            subStatus,
+            latestSub?.StartsAt,
+            latestSub?.EndsAt,
+            daysRem,
+            hasUsedTrial,
+            b.CustomDishLimit,
+            effectiveDishLimit,
+            b.ArViewEnabled,
+            b.ArPerViewChargePaise,
+            b.ArViewCredits,
+            b.ArViewsUsed,
+            liveProductCount,
+            arProductCount,
+            totalOrdersCount,
+            completedOrdersCount,
+            completedSalesPaise,
+            scans,
+            views,
+            avgRating,
+            feedbackCount);
     }
 
     private static AdminBusinessListItemDto MapAdminBusiness(Business b)
@@ -193,7 +443,7 @@ public class AdminService : IAdminService
             b.Owner?.MobileNumber ?? "",
             b.Owner?.FullName,
             b.Owner?.KycStatus ?? KycStatus.Pending,
-            b.Products.Count,
+            b.Products?.Count ?? 0,
             b.CreatedAt,
             b.FullAddress,
             b.FssaiNumber,
@@ -212,7 +462,13 @@ public class AdminService : IAdminService
             latestSub?.StartsAt,
             latestSub?.EndsAt,
             daysRem,
-            hasUsedTrial);
+            hasUsedTrial,
+            b.CustomDishLimit,
+            b.CustomDishLimit.HasValue && b.CustomDishLimit.Value > 0 ? b.CustomDishLimit.Value : (latestSub?.Plan?.MaxProducts ?? 50),
+            b.ArViewEnabled,
+            b.ArPerViewChargePaise,
+            b.ArViewCredits,
+            b.ArViewsUsed);
     }
 
     public async Task<BusinessDto> ApproveBusinessAsync(
@@ -622,5 +878,159 @@ public class AdminService : IAdminService
         owner.PasswordHash = PasswordHelper.HashPassword(newPin.Trim());
         owner.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<AdminOperationsSummaryDto> GetOperationsSummaryAsync(CancellationToken ct = default)
+    {
+        var totalRestaurants = await _db.Businesses.CountAsync(ct);
+        var totalDishesListed = await _db.Products.CountAsync(ct);
+        var totalLiveDishes = await _db.Products.CountAsync(p => p.Status == ProductStatus.Live, ct);
+        var totalArDishes = await _db.Products.CountAsync(p => p.Model3d != null, ct);
+
+        var totalOrdersPlaced = await _db.TableOrders.CountAsync(o => o.Round <= 1, ct);
+        var completedOrdersQuery = _db.TableOrders.Where(o => o.Round <= 1 && (o.Status == "COMPLETED" || o.Status == "PAID" || o.Status == "SETTLED"));
+        var totalOrdersCompleted = await completedOrdersQuery.CountAsync(ct);
+        var totalCompletedSalesPaise = 0L; // Zeroed out to protect private restaurant revenue
+
+        var totalScans = await _db.ArScanEvents.CountAsync(ct);
+        var totalViews = await _db.ArViewEvents.CountAsync(ct);
+
+        var feedbackQuery = _db.TableOrders.Where(o => o.Rating.HasValue && o.Rating.Value > 0);
+        var totalReviews = await feedbackQuery.CountAsync(ct);
+        var averageRating = totalReviews > 0 ? Math.Round(await feedbackQuery.AverageAsync(o => (double)o.Rating!.Value, ct), 1) : (double?)null;
+
+        return new AdminOperationsSummaryDto(
+            totalRestaurants,
+            totalDishesListed,
+            totalLiveDishes,
+            totalArDishes,
+            totalOrdersPlaced,
+            totalOrdersCompleted,
+            totalCompletedSalesPaise,
+            totalScans,
+            totalViews,
+            averageRating,
+            totalReviews);
+    }
+
+    public async Task<byte[]> ExportOperationsCsvAsync(CancellationToken ct = default)
+    {
+        var businesses = await _db.Businesses
+            .AsNoTracking()
+            .Include(b => b.Owner)
+            .Include(b => b.Subscriptions)
+                .ThenInclude(s => s.Plan)
+            .OrderByDescending(b => b.CreatedAt)
+            .ToListAsync(ct);
+
+        var businessIds = businesses.Select(b => b.Id).ToList();
+
+        var productStats = await _db.Products
+            .AsNoTracking()
+            .Where(p => businessIds.Contains(p.BusinessId))
+            .GroupBy(p => p.BusinessId)
+            .Select(g => new
+            {
+                BusinessId = g.Key,
+                Total = g.Count(),
+                Live = g.Count(p => p.Status == ProductStatus.Live),
+                WithAr = g.Count(p => p.Model3d != null)
+            })
+            .ToDictionaryAsync(x => x.BusinessId, ct);
+
+        var orderStats = await _db.TableOrders
+            .AsNoTracking()
+            .Where(o => businessIds.Contains(o.BusinessId) && o.Round <= 1)
+            .GroupBy(o => o.BusinessId)
+            .Select(g => new
+            {
+                BusinessId = g.Key,
+                TotalOrders = g.Count(),
+                CompletedOrders = g.Count(o => o.Status == "COMPLETED" || o.Status == "PAID" || o.Status == "SETTLED")
+            })
+            .ToDictionaryAsync(x => x.BusinessId, ct);
+
+        var scanStats = await _db.ArScanEvents
+            .AsNoTracking()
+            .Where(e => businessIds.Contains(e.BusinessId))
+            .GroupBy(e => e.BusinessId)
+            .Select(g => new { BusinessId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.BusinessId, x => x.Count, ct);
+
+        var viewStats = await _db.ArViewEvents
+            .AsNoTracking()
+            .Where(e => businessIds.Contains(e.BusinessId))
+            .GroupBy(e => e.BusinessId)
+            .Select(g => new { BusinessId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.BusinessId, x => x.Count, ct);
+
+        var now = DateTime.UtcNow;
+        var sb = new System.Text.StringBuilder();
+
+        // UTF-8 BOM so Excel opens it with proper formatting
+        sb.Append('\uFEFF');
+        sb.AppendLine("Restaurant Name,City,Business Type,Status,Subscription Plan,Subscription Status,Days Remaining,Total Dishes Listed,Live Dishes,3D AR Dishes,Dish Limit,Capacity Used %,Total Orders Placed,Completed Orders,Fulfillment %,Total Scans,Total AR Views,Owner Name,Owner Mobile,Registered Date");
+
+        foreach (var b in businesses)
+        {
+            var activeSub = b.Subscriptions
+                .Where(s => s.Status == SubscriptionStatus.Active && s.EndsAt > now)
+                .OrderByDescending(s => s.EndsAt)
+                .FirstOrDefault();
+            var latestSub = activeSub ?? b.Subscriptions.OrderByDescending(s => s.EndsAt).FirstOrDefault();
+            var isSubActive = latestSub != null && latestSub.Status == SubscriptionStatus.Active && latestSub.EndsAt > now;
+            var daysRem = isSubActive ? Math.Max(0, (int)Math.Ceiling((latestSub!.EndsAt - now).TotalDays)) : 0;
+            var subStatus = latestSub == null
+                ? "None"
+                : (isSubActive
+                    ? (latestSub.Plan?.Slug == "trial-7-days" ? "Trial" : "Active")
+                    : "Expired");
+
+            var pStat = productStats.GetValueOrDefault(b.Id);
+            var oStat = orderStats.GetValueOrDefault(b.Id);
+            var scans = scanStats.GetValueOrDefault(b.Id, 0);
+            var views = viewStats.GetValueOrDefault(b.Id, 0);
+
+            var totalDishes = pStat?.Total ?? 0;
+            var liveDishes = pStat?.Live ?? 0;
+            var arDishes = pStat?.WithAr ?? 0;
+
+            var effectiveLimit = b.CustomDishLimit.HasValue && b.CustomDishLimit.Value > 0
+                ? b.CustomDishLimit.Value
+                : (latestSub?.Plan?.MaxProducts ?? 50);
+
+            var capacityPct = effectiveLimit > 0 ? Math.Round((double)totalDishes / effectiveLimit * 100.0, 1) : 0;
+
+            var totalOrders = oStat?.TotalOrders ?? 0;
+            var completedOrders = oStat?.CompletedOrders ?? 0;
+            var fulfillmentPct = totalOrders > 0 ? Math.Round((double)completedOrders / totalOrders * 100.0, 1) : 0;
+
+            string Escape(string? val) => $"\"{ (val ?? "").Replace("\"", "\"\"") }\"";
+
+            sb.AppendLine(string.Join(",",
+                Escape(b.BusinessName),
+                Escape(b.City),
+                Escape(b.BusinessType.ToString()),
+                Escape(b.Status.ToString()),
+                Escape(latestSub?.Plan?.Name ?? "None"),
+                Escape(subStatus),
+                daysRem,
+                totalDishes,
+                liveDishes,
+                arDishes,
+                effectiveLimit,
+                $"{capacityPct}%",
+                totalOrders,
+                completedOrders,
+                $"{fulfillmentPct}%",
+                scans,
+                views,
+                Escape(b.Owner.FullName ?? "Owner"),
+                Escape(b.Owner.MobileNumber),
+                b.CreatedAt.ToString("yyyy-MM-dd")
+            ));
+        }
+
+        return System.Text.Encoding.UTF8.GetBytes(sb.ToString());
     }
 }

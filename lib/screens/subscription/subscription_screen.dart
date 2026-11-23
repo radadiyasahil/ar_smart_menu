@@ -1172,6 +1172,44 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     '🟢 $daysRemaining days remaining • All features unlocked',
                     style: const TextStyle(fontSize: 12, color: Color(0xFF34D399), fontWeight: FontWeight.w600),
                   ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          currentSub?.customDishLimit != null
+                              ? '🍽️ Custom Dish Limit: ${currentSub!.customDishLimit}'
+                              : '🍽️ Max Dishes: ${currentSub?.maxProducts ?? 50}',
+                          style: const TextStyle(fontSize: 11, color: Colors.white70),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: (currentSub?.arViewEnabled ?? true)
+                              ? const Color(0xFF8B5CF6).withValues(alpha: 0.15)
+                              : Colors.red.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          (currentSub?.arViewEnabled ?? true)
+                              ? '✨ 3D AR Views: ${currentSub?.arViewsUsed ?? 0} used (${currentSub?.arViewCredits ?? 0} credits • ₹${(currentSub?.arPerViewChargeRupees ?? 0.5).toStringAsFixed(2)}/view)'
+                              : '✨ 3D AR View: Disabled by Admin',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: (currentSub?.arViewEnabled ?? true) ? const Color(0xFFA78BFA) : Colors.redAccent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),

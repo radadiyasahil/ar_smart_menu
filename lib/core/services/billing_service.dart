@@ -365,6 +365,21 @@ class BillingService {
     }
   }
 
+  /// Rejects an unverified/fake UPI payment claim from customer
+  Future<bool> rejectPaymentClaim(String businessId, String tableNumber, [String? reason]) async {
+    try {
+      final safeTable = Uri.encodeComponent(tableNumber.trim());
+      final res = await ApiClient.dio.post(
+        '/businesses/$businessId/table/$safeTable/reject-payment',
+        data: {'reason': reason ?? 'Payment of bill was not received in restaurant account.'},
+      );
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint('Error rejecting payment claim: $e');
+      return false;
+    }
+  }
+
   /// 1-Tap verifies and resets table for a new customer party handover
   Future<bool> verifyNewParty(String businessId, String tableNumber) async {
     try {
@@ -438,6 +453,10 @@ class BillingService {
             isPaid: true,
             paymentMode: 'Online / Paid',
             customerPhone: o.customerPhone,
+            rating: o.rating,
+            feedbackComment: o.feedbackComment,
+            feedbackTags: o.feedbackTags,
+            feedbackSubmittedAt: o.feedbackSubmittedAt,
             items: o.items.map((i) => BillItem(
               id: i.id,
               name: i.name,

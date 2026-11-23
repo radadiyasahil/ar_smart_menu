@@ -164,11 +164,23 @@ RecurringJob.AddOrUpdate<ARSmartMenu.Infrastructure.Jobs.PipelineJobRunner>(
     runner => runner.CleanupTemporaryFilesAsync(),
     Cron.Daily);
 
+RecurringJob.AddOrUpdate<ARSmartMenu.Infrastructure.Jobs.SubscriptionExpirationJob>(
+    "expire-ended-subscriptions",
+    runner => runner.ProcessExpiredSubscriptionsAsync(default),
+    Cron.Hourly);
+
 try
 {
     // Apply migrations + seed data
     await DatabaseSeeder.SeedAsync(app.Services);
     await SaaSDatabaseSeeder.SeedAsync(app.Services);
+
+    // Sweep any past-due subscriptions on startup
+    using (var scope = app.Services.CreateScope())
+    {
+        var expirationJob = scope.ServiceProvider.GetRequiredService<ARSmartMenu.Infrastructure.Jobs.SubscriptionExpirationJob>();
+        await expirationJob.ProcessExpiredSubscriptionsAsync();
+    }
 
     app.Run();
 }
@@ -204,9 +216,10 @@ static string ResolveDatabaseConnectionString(IConfiguration configuration)
         candidates.Add(configured);
     }
 
-    // Common developer database targets for seamless portability across machines
-    candidates.Add("Server=(localdb)\\mssqllocaldb;Database=ARSmartMenu;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true");
+    // Common developer database targets: prioritize installed SQL Server instance, then LocalDB/SQLEXPRESS
+    candidates.Add("Server=.;Database=ARSmartMenu;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true");
     candidates.Add("Server=localhost;Database=ARSmartMenu;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true");
+    candidates.Add("Server=(localdb)\\mssqllocaldb;Database=ARSmartMenu;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true");
     candidates.Add("Server=.\\SQLEXPRESS;Database=ARSmartMenu;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true");
     candidates.Add("Server=localhost\\SQLEXPRESS;Database=ARSmartMenu;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true");
 
@@ -221,7 +234,7 @@ static string ResolveDatabaseConnectionString(IConfiguration configuration)
             };
             using var conn = new SqlConnection(testBuilder.ConnectionString);
             conn.Open();
-            Console.WriteLine($"[Database] Successfully detected SQL Server instance: {testBuilder.DataSource}");
+            Console.WriteLine($"[Database] Successfully connected to SQL Server instance: {testBuilder.DataSource} (Database: {testBuilder.InitialCatalog ?? "ARSmartMenu"})");
             return rawConn;
         }
         catch

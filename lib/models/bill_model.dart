@@ -74,6 +74,10 @@ class TableBill {
   int discountAmount; // in Rupees
   String customerPhone;
   List<BillItem> items;
+  int? rating; // 1 to 5 stars
+  String? feedbackComment;
+  List<String> feedbackTags;
+  DateTime? feedbackSubmittedAt;
 
   TableBill({
     required this.id,
@@ -85,6 +89,10 @@ class TableBill {
     this.gstRate = 5.0,
     this.discountAmount = 0,
     this.customerPhone = '',
+    this.rating,
+    this.feedbackComment,
+    this.feedbackTags = const [],
+    this.feedbackSubmittedAt,
     List<BillItem>? items,
   }) : items = items ?? [];
 
@@ -192,6 +200,10 @@ class TableBill {
     'gstRate': gstRate,
     'discountAmount': discountAmount,
     'customerPhone': customerPhone,
+    'rating': rating,
+    'feedbackComment': feedbackComment,
+    'feedbackTags': feedbackTags,
+    'feedbackSubmittedAt': feedbackSubmittedAt?.toUtc().toIso8601String(),
     'items': items.map((i) => i.toJson()).toList(),
   };
 
@@ -207,6 +219,15 @@ class TableBill {
     gstRate: (json['gstRate'] as num?)?.toDouble() ?? 5.0,
     discountAmount: json['discountAmount'] as int? ?? 0,
     customerPhone: json['customerPhone'] as String? ?? '',
+    rating: (json['rating'] as num?)?.toInt(),
+    feedbackComment: json['feedbackComment'] as String?,
+    feedbackTags: (json['feedbackTags'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const [],
+    feedbackSubmittedAt: json['feedbackSubmittedAt'] != null
+        ? parseDateTime(json['feedbackSubmittedAt'])
+        : null,
     items:
         (json['items'] as List<dynamic>?)
             ?.map((i) => BillItem.fromJson(i as Map<String, dynamic>))
@@ -229,6 +250,10 @@ class PendingTableOrder {
   final DateTime? billRequestedAt;
   final DateTime createdAt;
   final DateTime? completedAt;
+  final int? rating;
+  final String? feedbackComment;
+  final List<String> feedbackTags;
+  final DateTime? feedbackSubmittedAt;
 
   PendingTableOrder({
     required this.id,
@@ -244,6 +269,10 @@ class PendingTableOrder {
     this.billRequestedAt,
     required this.createdAt,
     this.completedAt,
+    this.rating,
+    this.feedbackComment,
+    this.feedbackTags = const [],
+    this.feedbackSubmittedAt,
   });
 
   bool get isPending => status == 'PENDING';
@@ -277,6 +306,15 @@ class PendingTableOrder {
         completedAt: json['completedAt'] != null
             ? parseDateTime(json['completedAt'])
             : null,
+        rating: (json['rating'] as num?)?.toInt(),
+        feedbackComment: json['feedbackComment'] as String?,
+        feedbackTags: (json['feedbackTags'] as List<dynamic>?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [],
+        feedbackSubmittedAt: json['feedbackSubmittedAt'] != null
+            ? parseDateTime(json['feedbackSubmittedAt'])
+            : null,
       );
 }
 
@@ -289,6 +327,10 @@ class WaiterCallItem {
   final bool isAttended;
 
   bool get isNewPartyClaim => note.toLowerCase().contains('new party');
+  bool get isUpiPaymentClaim =>
+      note.contains('💰') ||
+      note.toLowerCase().contains('paid') ||
+      note.toLowerCase().contains('upi');
 
   WaiterCallItem({
     required this.id,

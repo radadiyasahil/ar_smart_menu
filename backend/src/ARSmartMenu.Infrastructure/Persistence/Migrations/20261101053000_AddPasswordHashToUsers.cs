@@ -10,11 +10,10 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "PasswordHash",
-                table: "Users",
-                type: "nvarchar(max)",
-                nullable: true);
+            migrationBuilder.Sql(@"
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Users]') AND name = 'PasswordHash')
+                    ALTER TABLE [Users] ADD [PasswordHash] nvarchar(max) NULL;
+            ");
         }
 
         /// <inheritdoc />

@@ -14,17 +14,13 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "WifiName",
-                table: "Businesses",
-                type: "nvarchar(max)",
-                nullable: true);
+            migrationBuilder.Sql(@"
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'WifiName')
+                    ALTER TABLE [Businesses] ADD [WifiName] nvarchar(max) NULL;
 
-            migrationBuilder.AddColumn<string>(
-                name: "WifiPassword",
-                table: "Businesses",
-                type: "nvarchar(max)",
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'WifiPassword')
+                    ALTER TABLE [Businesses] ADD [WifiPassword] nvarchar(max) NULL;
+            ");
         }
 
         /// <inheritdoc />

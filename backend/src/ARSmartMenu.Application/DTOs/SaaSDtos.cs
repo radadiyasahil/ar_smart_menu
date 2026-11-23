@@ -57,7 +57,12 @@ public record BusinessDto(
     double? Latitude = null,
     double? Longitude = null,
     int GeofenceRadiusMeters = 200,
-    bool RequireGeofence = false);
+    bool RequireGeofence = false,
+    int? CustomDishLimit = null,
+    bool ArViewEnabled = true,
+    int ArPerViewChargePaise = 50,
+    int ArViewCredits = 500,
+    int ArViewsUsed = 0);
 
 public record VerifyBankRequest(string BankAccountNumber, string BankIfsc);
 
@@ -255,7 +260,13 @@ public record SubscriptionDto(
     int DaysRemaining = 0,
     bool IsActive = false,
     bool IsTrial = false,
-    bool HasUsedTrial = false);
+    bool HasUsedTrial = false,
+    int? CustomDishLimit = null,
+    int EffectiveDishLimit = 50,
+    bool ArViewEnabled = true,
+    int ArPerViewChargePaise = 50,
+    int ArViewCredits = 500,
+    int ArViewsUsed = 0);
 
 public record ActivatePlanRequest(Guid PlanId, string? PaymentMethod = "UPI", string? TransactionRef = null);
 
@@ -294,13 +305,29 @@ public record SubscriptionHistoryItemDto(
     double BaseAmountRupees,
     double GstRupees,
     double TotalAmountRupees,
-    string? PaymentMethod,
-    string? PaymentRef,
-    string? CustomerGstNumber,
-    bool IsTrial,
+    string? PaymentMethod = null,
+    string? PaymentRef = null,
+    string? CustomerGstNumber = null,
+    bool IsTrial = false,
     string? SacCode = "998313",
-    decimal GstRatePercent = 18.0m
-);
+    decimal GstRatePercent = 18.0m,
+    string? BusinessName = null,
+    string? OwnerName = null,
+    string? OwnerMobile = null,
+    Guid? PlanId = null,
+    string? TransactionRef = null,
+    string? PaymentStatus = null,
+    DateTime? CancelledAt = null,
+    bool IsActive = false,
+    string? CustomerAddress = null,
+    string? CustomerCity = null
+)
+{
+    public int BasePricePaise => BaseAmountPaise;
+    public int TotalPricePaise => TotalAmountPaise;
+    public double BasePriceRupees => BaseAmountRupees;
+    public double TotalPriceRupees => TotalAmountRupees;
+}
 
 public record SubscriptionInvoiceDto(
     Guid Id,
@@ -352,8 +379,29 @@ public record SubscriptionInvoiceDto(
     bool IsGstRegistered,
     string AmountInWords,
     string PlaceOfSupply,
-    double GstRatePercent = 18.0
-);
+    double GstRatePercent = 18.0,
+    string? SupplierTradeName = null,
+    string? SupplierCity = null,
+    string? ServiceDescription = null,
+    string? PaymentStatus = "Completed",
+    DateTime? PaidAt = null,
+    bool IsReverseCharge = false,
+    string TermsAndConditions = "1. Goods/Services once subscribed are non-refundable.\n2. This is a computer-generated tax invoice issued in accordance with Section 31 of the CGST Act, 2017.\n3. Recipient is entitled to claim Input Tax Credit (ITC) if GSTIN is registered."
+)
+{
+    public Guid SubscriptionId => Id;
+    public string SupplierLegalName => SupplierName;
+    public string SupplierGstin => SupplierGstNumber;
+    public string RecipientBusinessName => CustomerBusinessName;
+    public string? RecipientOwnerName => CustomerOwnerName;
+    public string? RecipientMobile => CustomerPhone;
+    public string RecipientAddress => CustomerAddress;
+    public string RecipientCity => CustomerCity;
+    public string RecipientState => CustomerState;
+    public string RecipientStateCode => CustomerStateCode;
+    public string? RecipientGstin => CustomerGstNumber;
+    public string? TransactionRef => PaymentRef;
+}
 
 public record GstRateSettingDto(
     decimal GstRatePercent,
@@ -382,6 +430,13 @@ public record UpdateSupportContactSettingRequest(
     string? PhoneNumber = null,
     string? HelpMessage = null
 );
+
+public record AdminSubscriptionHistoryQuery(
+    Guid? BusinessId = null,
+    string? Search = null,
+    SubscriptionStatus? Status = null,
+    DateTime? FromDate = null,
+    DateTime? ToDate = null);
 
 // ── QR Code ─────────────────────────────────────────────────────────────────
 
@@ -490,7 +545,41 @@ public record AdminBusinessListItemDto(
     DateTime? SubscriptionStartsAt = null,
     DateTime? SubscriptionEndsAt = null,
     int? SubscriptionDaysRemaining = null,
-    bool HasUsedTrial = false);
+    bool HasUsedTrial = false,
+    int? CustomDishLimit = null,
+    int EffectiveDishLimit = 50,
+    bool ArViewEnabled = true,
+    int ArPerViewChargePaise = 50,
+    int ArViewCredits = 500,
+    int ArViewsUsed = 0,
+    int LiveProductCount = 0,
+    int ArProductCount = 0,
+    int TotalOrdersCount = 0,
+    int CompletedOrdersCount = 0,
+    long TotalCompletedSalesPaise = 0,
+    int TotalScans = 0,
+    int TotalViews = 0,
+    double? AverageRating = null,
+    int TotalReviews = 0);
+
+public record AdminOperationsSummaryDto(
+    int TotalRestaurants,
+    int TotalDishesListed,
+    int TotalLiveDishes,
+    int TotalArDishes,
+    int TotalOrdersPlaced,
+    int TotalOrdersCompleted,
+    long TotalCompletedSalesPaise,
+    int TotalScans,
+    int TotalViews,
+    double? AverageRating = null,
+    int TotalReviews = 0);
+
+public record UpdateBusinessSettingsRequest(
+    int? CustomDishLimit = null,
+    bool? ArViewEnabled = null,
+    int? ArPerViewChargePaise = null,
+    int? ArViewCredits = null);
 
 public record AdminBusinessFilter(
     BusinessStatus? Status = null,
@@ -560,7 +649,8 @@ public record PublicMenuResponse(
     bool RequireGeofence = false,
     int GeofenceRadiusMeters = 200,
     double? Latitude = null,
-    double? Longitude = null);
+    double? Longitude = null,
+    double GstRate = 5.0);
 
 public record PublicMenuCategoryDto(
     string CategoryName,

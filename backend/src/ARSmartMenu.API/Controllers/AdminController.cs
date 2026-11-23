@@ -212,6 +212,17 @@ public class AdminController : ControllerBase
         return Ok(ApiResponse<SubscriptionDto>.Ok(result, "Subscription cancelled successfully"));
     }
 
+    /// <summary>Configure dynamic dish limits and AR view pricing/credits for a business.</summary>
+    [HttpPatch("businesses/{id:guid}/settings")]
+    public async Task<ActionResult<ApiResponse<AdminBusinessListItemDto>>> UpdateBusinessSettings(
+        Guid id,
+        [FromBody] UpdateBusinessSettingsRequest request,
+        CancellationToken ct)
+    {
+        var result = await _admin.UpdateBusinessSettingsAsync(id, request, ct);
+        return Ok(ApiResponse<AdminBusinessListItemDto>.Ok(result, "Business limits and AR settings updated"));
+    }
+
     /// <summary>Get real-time pending approval notifications (businesses and dishes) for the admin.</summary>
     /// <summary>Get real-time pending approval notifications (businesses and dishes) for the admin.</summary>
     [HttpGet("notifications")]
@@ -344,5 +355,44 @@ public class AdminController : ControllerBase
     {
         var html = await _subscriptions.GenerateInvoiceHtmlAsync(id, requestingBusinessId: null, isAdmin: true, ct);
         return Content(html, "text/html; charset=utf-8");
+    }
+
+    // ── Subscription Transactions & GST Invoices ──────────────────────────────
+    /// <summary>List all subscription transactions with GST details across all restaurants.</summary>
+    [HttpGet("subscriptions/history")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>>> GetSubscriptionHistory(
+        [FromQuery] AdminSubscriptionHistoryQuery query,
+        CancellationToken ct)
+    {
+        var result = await _subscriptions.AdminListHistoryAsync(query, ct);
+        return Ok(ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>.Ok(result));
+    }
+
+    /// <summary>List subscription transactions for a specific business.</summary>
+    [HttpGet("businesses/{id:guid}/subscriptions")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>>> GetBusinessSubscriptions(
+        Guid id,
+        CancellationToken ct)
+    {
+        var result = await _subscriptions.GetHistoryAsync(id, ct);
+        return Ok(ApiResponse<IReadOnlyList<SubscriptionHistoryItemDto>>.Ok(result));
+    }
+
+    // ── Restaurant Operations & Completed Orders Report ───────────────────────
+    /// <summary>System-wide operational summary: total dishes, completed orders, gross sales & AR stats.</summary>
+    [HttpGet("reports/operations-summary")]
+    public async Task<ActionResult<ApiResponse<AdminOperationsSummaryDto>>> GetOperationsSummary(CancellationToken ct)
+    {
+        var summary = await _admin.GetOperationsSummaryAsync(ct);
+        return Ok(ApiResponse<AdminOperationsSummaryDto>.Ok(summary));
+    }
+
+    /// <summary>Download a full operations and orders CSV report across all restaurants.</summary>
+    [HttpGet("reports/operations-csv")]
+    public async Task<IActionResult> ExportOperationsCsv(CancellationToken ct)
+    {
+        var bytes = await _admin.ExportOperationsCsvAsync(ct);
+        var filename = $"ARSmartMenu_Operations_Report_{DateTime.UtcNow:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", filename);
     }
 }

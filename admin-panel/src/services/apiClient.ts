@@ -23,6 +23,12 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     console.error('[API Error]', error.response?.data ?? error.message)
+    if (error.response?.status === 401) {
+      localStorage.removeItem('admin_token')
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+    }
     return Promise.reject(error)
   },
 )

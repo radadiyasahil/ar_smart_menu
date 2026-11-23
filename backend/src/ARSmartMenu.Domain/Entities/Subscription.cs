@@ -20,16 +20,28 @@ public class Subscription : BaseEntity
     public int ShootsUsed { get; set; }
 
     // GST Tax Invoice & Audit Fields (Government Tax Return / Audit Compliant)
+    public int BasePricePaise { get; set; } = 0;
+    public int GstPaise { get; set; } = 0;
+    public int TotalPricePaise { get; set; } = 0;
+    public string? PaymentMethod { get; set; } = "UPI";
+    public string? TransactionRef { get; set; }
+    public string PaymentStatus { get; set; } = "Completed";
     public string? InvoiceNumber { get; set; }
-    public int BaseAmountPaise { get; set; }
-    public int GstPaise { get; set; }
-    public int TotalAmountPaise { get; set; }
-    public string? PaymentMethod { get; set; }
-    public string? PaymentRef { get; set; }
-    public string? CustomerGstNumber { get; set; }
+    public DateTime? InvoiceDate { get; set; }
     public string? CustomerBusinessName { get; set; }
+    public string? CustomerGstNumber { get; set; }
     public string? CustomerAddress { get; set; }
+    public string? CustomerCity { get; set; }
     public string? CustomerState { get; set; }
     public string? SacCode { get; set; } = "998313";
     public decimal GstRatePercent { get; set; } = 18.0m;
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public int BaseAmountPaise { get => BasePricePaise; set => BasePricePaise = value; }
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public int TotalAmountPaise { get => TotalPricePaise; set => TotalPricePaise = value; }
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public string? PaymentRef { get => TransactionRef; set => TransactionRef = value; }
 }

@@ -2,6 +2,7 @@ import {
   Box,
   Building2,
   ClipboardCheck,
+  CreditCard,
   LayoutDashboard,
   LogOut,
   Package,
@@ -19,6 +20,7 @@ const navItems = [
   { to: '/businesses', label: 'Businesses', icon: Building2 },
   { to: '/kyc', label: 'KYC Review', icon: ShieldCheck },
   { to: '/plans', label: 'Plans & Pricing', icon: Package },
+  { to: '/transactions', label: 'Invoices & Billing', icon: CreditCard },
   { to: '/products', label: 'Product Review', icon: ClipboardCheck },
   { to: '/processing', label: '3D Processing', icon: Box },
 ]

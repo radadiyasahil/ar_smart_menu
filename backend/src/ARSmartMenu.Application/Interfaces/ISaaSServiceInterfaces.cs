@@ -70,10 +70,14 @@ public interface ISubscriptionService
     Task<SubscriptionPlanDto> AdminUpdatePlanAsync(Guid id, UpdateSubscriptionPlanRequest request, CancellationToken ct = default);
     Task<bool> AdminDeletePlanAsync(Guid id, CancellationToken ct = default);
     Task<SubscriptionPlanDto> AdminTogglePlanStatusAsync(Guid id, CancellationToken ct = default);
+    // Subscription History & GST Invoicing
     Task<IReadOnlyList<SubscriptionHistoryItemDto>> GetSubscriptionHistoryAsync(Guid businessId, CancellationToken ct = default);
+    Task<IReadOnlyList<SubscriptionHistoryItemDto>> GetHistoryAsync(Guid businessId, CancellationToken ct = default);
     Task<IReadOnlyList<SubscriptionHistoryItemDto>> AdminGetAllSubscriptionHistoryAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<SubscriptionHistoryItemDto>> AdminListHistoryAsync(AdminSubscriptionHistoryQuery query, CancellationToken ct = default);
     Task<SubscriptionInvoiceDto> GetInvoiceAsync(Guid subscriptionId, Guid? requestingBusinessId = null, bool isAdmin = false, CancellationToken ct = default);
     Task<string> GenerateInvoiceHtmlAsync(Guid subscriptionId, Guid? requestingBusinessId = null, bool isAdmin = false, CancellationToken ct = default);
+    Task<string> GetInvoiceHtmlAsync(Guid subscriptionId, Guid? requesterBusinessId = null, bool isAdmin = false, CancellationToken ct = default);
     Task<GstRateSettingDto> GetGstRateSettingAsync(CancellationToken ct = default);
     Task<GstRateSettingDto> UpdateGstRateSettingAsync(decimal newRatePercent, CancellationToken ct = default);
     Task<SupportContactSettingDto> GetSupportContactSettingAsync(CancellationToken ct = default);
@@ -121,6 +125,9 @@ public interface IAdminService
     Task<ProductDto> SetProductStatusAsync(Guid adminUserId, Guid productId, ProductStatus status, CancellationToken ct = default);
     Task<AdminNotificationsResponse> GetNotificationsAsync(CancellationToken ct = default);
     Task ResetOwnerPinAsync(Guid businessId, string newPin, CancellationToken ct = default);
+    Task<AdminBusinessListItemDto> UpdateBusinessSettingsAsync(Guid businessId, UpdateBusinessSettingsRequest request, CancellationToken ct = default);
+    Task<AdminOperationsSummaryDto> GetOperationsSummaryAsync(CancellationToken ct = default);
+    Task<byte[]> ExportOperationsCsvAsync(CancellationToken ct = default);
 }
 
 public interface IPublicArService

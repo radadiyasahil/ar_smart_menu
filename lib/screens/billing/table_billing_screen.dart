@@ -80,6 +80,7 @@ class _TableBillingScreenState extends State<TableBillingScreen>
   List<QuickCustomPreset> _quickPresets = [];
 
   Timer? _pollingTimer;
+  int _historySyncCounter = 0;
 
   bool _loading = true;
 
@@ -213,11 +214,23 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       try {
         final serverTodayBills = await _billingService.fetchTodayHistoryOrders(bId);
         for (final s in serverTodayBills) {
-          final alreadyExists = history.any((h) =>
+          final existingIdx = history.indexWhere((h) =>
               h.id == s.id ||
+              h.id.contains(s.id.replaceAll('ORD-', '').replaceAll('TBL-', '')) ||
+              s.id.contains(h.id.replaceAll('ORD-', '').replaceAll('TBL-', '')) ||
               (_isSameTable(h.tableNumber, s.tableNumber) &&
-                  (h.paidAt ?? h.createdAt).toLocal().difference((s.paidAt ?? s.createdAt).toLocal()).inMinutes.abs() < 5));
-          if (!alreadyExists) {
+                  (h.paidAt ?? h.createdAt).toLocal().difference((s.paidAt ?? s.createdAt).toLocal()).inMinutes.abs() < 10));
+          if (existingIdx >= 0) {
+            if (s.rating != null && s.rating! > 0) {
+              history[existingIdx].rating = s.rating;
+              history[existingIdx].feedbackComment = s.feedbackComment;
+              history[existingIdx].feedbackTags = s.feedbackTags;
+              history[existingIdx].feedbackSubmittedAt = s.feedbackSubmittedAt;
+            }
+            if (s.customerPhone.isNotEmpty && history[existingIdx].customerPhone.isEmpty) {
+              history[existingIdx].customerPhone = s.customerPhone;
+            }
+          } else {
             history.add(s);
           }
         }
@@ -296,14 +309,42 @@ class _TableBillingScreenState extends State<TableBillingScreen>
         final all = await _billingService.getPendingOrders(bId);
         final calls = await _billingService.getWaiterCalls(bId);
 
-        if (_historyBills.isEmpty) {
+        _historySyncCounter++;
+        if (_historyBills.isEmpty || _historySyncCounter % 4 == 0) {
           try {
             final serverTodayBills = await _billingService.fetchTodayHistoryOrders(bId);
             if (serverTodayBills.isNotEmpty && mounted) {
-              setState(() {
-                _historyBills = serverTodayBills;
-              });
-              await _billingService.saveHistoryBills(serverTodayBills, bId);
+              bool historyUpdated = false;
+              for (final s in serverTodayBills) {
+                final existingIdx = _historyBills.indexWhere((h) =>
+                    h.id == s.id ||
+                    h.id.contains(s.id.replaceAll('ORD-', '').replaceAll('TBL-', '')) ||
+                    s.id.contains(h.id.replaceAll('ORD-', '').replaceAll('TBL-', '')) ||
+                    (_isSameTable(h.tableNumber, s.tableNumber) &&
+                        (h.paidAt ?? h.createdAt).toLocal().difference((s.paidAt ?? s.createdAt).toLocal()).inMinutes.abs() < 10));
+                if (existingIdx >= 0) {
+                  final h = _historyBills[existingIdx];
+                  if (s.rating != null && (h.rating != s.rating || h.feedbackComment != s.feedbackComment)) {
+                    h.rating = s.rating;
+                    h.feedbackComment = s.feedbackComment;
+                    h.feedbackTags = s.feedbackTags;
+                    h.feedbackSubmittedAt = s.feedbackSubmittedAt;
+                    historyUpdated = true;
+                  }
+                  if (s.customerPhone.isNotEmpty && h.customerPhone.isEmpty) {
+                    h.customerPhone = s.customerPhone;
+                    historyUpdated = true;
+                  }
+                } else {
+                  _historyBills.add(s);
+                  historyUpdated = true;
+                }
+              }
+              if (historyUpdated) {
+                _historyBills.sort((a, b) => (b.paidAt ?? b.createdAt).compareTo(a.paidAt ?? a.createdAt));
+                if (mounted) setState(() {});
+                await _billingService.saveHistoryBills(_historyBills, bId);
+              }
             }
           } catch (_) {}
         }
@@ -454,6 +495,41 @@ class _TableBillingScreenState extends State<TableBillingScreen>
     await _loadPendingOrders();
     if (mounted && success) {
       _showNotification('Attended waiter request for ${_canonicalTableName(tableNumber)}.');
+    }
+  }
+
+  Future<void> _rejectPaymentClaim(TableBill bill) async {
+    final bId = context.read<BusinessProvider>().business?.id.toString() ?? '';
+    if (bId.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Payment Not Received?'),
+        content: Text(
+          'Confirm that payment of ₹${bill.grandTotal} was NOT received in your bank or UPI account for ${_canonicalTableName(bill.tableNumber)}.\n\nThe diner will be notified immediately to re-check their payment or pay at counter.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm Not Received'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final success = await _billingService.rejectPaymentClaim(bId, bill.tableNumber);
+    await _loadPendingOrders();
+    if (mounted && success) {
+      _showNotification('⚠️ Payment claim rejected. Diner alerted for ${_canonicalTableName(bill.tableNumber)}.', isWarning: true);
     }
   }
 
@@ -1617,6 +1693,10 @@ class _TableBillingScreenState extends State<TableBillingScreen>
       final hasRealUpi = biz?.upiId?.trim().isNotEmpty == true;
       final upiId = hasRealUpi ? biz!.upiId!.trim() : 'restaurant@upi';
       final isDark = Theme.of(context).brightness == Brightness.dark;
+      final waiterCall = _waiterCalls.cast<WaiterCallItem?>().firstWhere(
+        (c) => c != null && _isSameTable(c.tableNumber, bill.tableNumber),
+        orElse: () => null,
+      );
 
       showDialog(
         context: context,
@@ -1699,6 +1779,45 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                       ],
                     ),
                   ),
+                  if (waiterCall != null && waiterCall.isUpiPaymentClaim) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.amber, size: 15),
+                              SizedBox(width: 6),
+                              Text(
+                                'Diner Reported Payment',
+                                style: TextStyle(
+                                  color: Colors.amber,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${waiterCall.note}\n⚠️ Verify bank credit/soundbox before tapping "Settle as Paid".',
+                            style: TextStyle(
+                              color: isDark ? Colors.white70 : Colors.black87,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 14),
 
                   // Crisp White QR Box
@@ -4693,6 +4812,111 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                 ],
               ),
             )
+          else if (waiterCall.isUpiPaymentClaim)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF064E3B).withValues(alpha: 0.45)
+                    : const Color(0xFFECFDF5),
+                border: Border(
+                  bottom: BorderSide(
+                    color: const Color(0xFF10B981),
+                    width: 1.5,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.payments_outlined,
+                      color: Color(0xFF10B981),
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              '💰 Customer Reported UPI Payment: ₹${bill.grandTotal}',
+                              style: const TextStyle(
+                                color: Color(0xFF10B981),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.amber, width: 0.7),
+                              ),
+                              child: const Text(
+                                'CHECK BANK FIRST',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.amber,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          waiterCall.note.isNotEmpty
+                              ? waiterCall.note
+                              : 'Please check your UPI app or Soundbox before settling bill.',
+                          style: TextStyle(
+                            color: isDark ? Colors.white70 : const Color(0xFF047857),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () {
+                      bill.paymentMode = 'UPI';
+                      _archiveBill(bill);
+                    },
+                    icon: const Icon(Icons.check_circle_outline, size: 15),
+                    label: const Text('Settle as Paid', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  OutlinedButton.icon(
+                    onPressed: () => _rejectPaymentClaim(bill),
+                    icon: const Icon(Icons.close, size: 14, color: Colors.redAccent),
+                    label: const Text('Not Received', style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.redAccent),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
+            )
           else
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -6716,6 +6940,110 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                     ],
                   ),
                 ),
+                // ── Customer Experience & Feedback Card ─────────
+                if (bill.rating != null && bill.rating! > 0)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: isDark
+                            ? [const Color(0xFF451A03).withValues(alpha: 0.35), const Color(0xFF78350F).withValues(alpha: 0.25)]
+                            : [const Color(0xFFFEF3C7), const Color(0xFFFDE68A)],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: Colors.amber.withValues(alpha: 0.45),
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.stars_rounded, color: Colors.amber, size: 18),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'CUSTOMER FEEDBACK',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.6,
+                                    color: isDark ? Colors.amberAccent : const Color(0xFF92400E),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              children: List.generate(
+                                5,
+                                (i) => Icon(
+                                  i < (bill.rating ?? 0) ? Icons.star : Icons.star_border,
+                                  size: 16,
+                                  color: Colors.amber,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (bill.feedbackComment != null && bill.feedbackComment!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '"${bill.feedbackComment!.trim()}"',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        ],
+                        if (bill.feedbackTags.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: bill.feedbackTags.map((tag) => Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? Colors.black.withValues(alpha: 0.3)
+                                    : Colors.white.withValues(alpha: 0.8),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: Colors.amber.withValues(alpha: 0.3),
+                                  width: 0.5,
+                                ),
+                              ),
+                              child: Text(
+                                tag,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: isDark ? Colors.amber.shade200 : const Color(0xFF78350F),
+                                ),
+                              ),
+                            )).toList(),
+                          ),
+                        ],
+                        if (bill.feedbackSubmittedAt != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Submitted on ${DateFormat('dd MMM yyyy, hh:mm a').format(bill.feedbackSubmittedAt!.toLocal())}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: isDark ? Colors.white54 : Colors.brown.shade400,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 6),
                 Text(
                   'ORDERED ITEMS (${bill.items.length})',
@@ -7031,12 +7359,42 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '${_canonicalTableName(b.tableNumber)} • #${b.id}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 6,
+                          children: [
+                            Text(
+                              '${_canonicalTableName(b.tableNumber)} • #${b.id}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            if (b.rating != null && b.rating! > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(5),
+                                  border: Border.all(color: Colors.amber.withValues(alpha: 0.5), width: 0.8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.star, size: 11, color: Colors.amber),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '${b.rating}',
+                                      style: const TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.amber,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
                         Text(
                           '${fmt.format((b.paidAt ?? b.createdAt).toLocal())} • ${b.items.length} items • ${b.paymentMode}${b.customerPhone.isNotEmpty ? ' • 📱 ${b.customerPhone}' : ''}',
@@ -7045,6 +7403,30 @@ class _TableBillingScreenState extends State<TableBillingScreen>
                             color: Colors.grey,
                           ),
                         ),
+                        if (b.rating != null && b.rating! > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.rate_review_outlined, size: 11, color: Colors.amber),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    b.feedbackComment?.isNotEmpty == true
+                                        ? '"${b.feedbackComment}"${b.feedbackTags.isNotEmpty ? ' (${b.feedbackTags.join(', ')})' : ''}'
+                                        : (b.feedbackTags.isNotEmpty ? b.feedbackTags.join(', ') : 'Rated ${b.rating}/5 stars'),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontStyle: FontStyle.italic,
+                                      color: isDark ? Colors.amber.shade200 : Colors.amber.shade900,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   ),

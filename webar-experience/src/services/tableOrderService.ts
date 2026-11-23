@@ -28,6 +28,17 @@ export interface LiveTableOrder {
   acceptedAt?: string | null
   completedAt?: string | null
   partyPin?: string | null
+  rating?: number | null
+  feedbackComment?: string | null
+  feedbackTags?: string[]
+  feedbackSubmittedAt?: string | null
+}
+
+export interface SubmitFeedbackPayload {
+  rating: number
+  comment?: string
+  tags?: string[]
+  customerPhone?: string
 }
 
 export interface PlaceTableOrderPayload {
@@ -445,16 +456,35 @@ export const tableOrderService = {
     }
   },
 
-  async notifyUpiPayment(slug: string, tableNumber: string, amount: number, upiApp: string = 'UPI'): Promise<boolean> {
+  async notifyUpiPayment(slug: string, tableNumber: string, amount: number, upiApp: string = 'UPI', utr?: string): Promise<boolean> {
     try {
       await apiClient.post(
         `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber || 'dine-in')}/notify-upi`,
-        { amount, upiApp },
+        { amount, upiApp, utr: utr?.trim() || undefined },
       )
       return true
     } catch {
       // Graceful fallback to callWaiter notification
-      return await this.callWaiter(slug, tableNumber, `💰 Paid ₹${amount} via UPI`)
+      const utrSuffix = utr?.trim() ? ` [UTR: ${utr.trim()}]` : ''
+      return await this.callWaiter(slug, tableNumber, `💰 Paid ₹${amount} via UPI${utrSuffix}`)
+    }
+  },
+
+  async submitFeedback(slug: string, tableNumber: string, payload: SubmitFeedbackPayload): Promise<{ success: boolean; message: string }> {
+    try {
+      const token = this.getSessionToken(tableNumber)
+      const res = await apiClient.post<ApiEnvelope<any>>(
+        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber || 'dine-in')}/feedback`,
+        { ...payload, sessionToken: token || undefined },
+      )
+      return {
+        success: res.data?.success ?? true,
+        message: res.data?.message || 'Thank you for your feedback!',
+      }
+    } catch (err: any) {
+      console.warn('Failed to submit feedback:', err)
+      const msg = err?.response?.data?.message || err?.response?.data?.error || err.message || 'Failed to submit feedback'
+      return { success: false, message: msg }
     }
   },
 

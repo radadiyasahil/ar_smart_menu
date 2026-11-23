@@ -3,6 +3,7 @@ import type {
   AdminDashboardStats,
   AdminNotification,
   AdminNotificationsResponse,
+  AdminOperationsSummary,
   AdminProductReviewItem,
   AdminUpdateBusinessPayload,
   BusinessStatusFilter,
@@ -19,7 +20,7 @@ import type {
 import type { ApiEnvelope, PagedResult } from '@/types/api'
 
 import { apiClient } from './apiClient'
-import { ensureAdminAuth } from './authService'
+import { ensureAdminAuth, getAdminToken } from './authService'
 
 export type {
   AdminNotification,
@@ -347,6 +348,26 @@ export const adminService = {
     }
   },
 
+  async updateBusinessSettings(
+    businessId: string,
+    payload: {
+      customDishLimit?: number | null
+      arViewEnabled?: boolean
+      arPerViewChargePaise?: number
+      arViewCredits?: number
+    },
+  ): Promise<AdminBusiness> {
+    await ensureAdminAuth()
+    const res = await apiClient.patch<ApiEnvelope<AdminBusiness>>(
+      `/admin/businesses/${businessId}/settings`,
+      payload,
+    )
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to update business settings')
+    }
+    return res.data.data
+  },
+
   async getNotifications(): Promise<AdminNotificationsResponse> {
     await ensureAdminAuth()
     const res = await apiClient.get<ApiEnvelope<AdminNotificationsResponse>>('/admin/notifications')
@@ -356,10 +377,64 @@ export const adminService = {
     return res.data.data
   },
 
+  async getOperationsSummary(): Promise<AdminOperationsSummary> {
+    await ensureAdminAuth()
+    const res = await apiClient.get<ApiEnvelope<AdminOperationsSummary>>('/admin/reports/operations-summary')
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to load operations summary')
+    }
+    return res.data.data
+  },
+
+  async downloadOperationsCsv(): Promise<void> {
+    await ensureAdminAuth()
+    const token = getAdminToken()
+    const baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5232/api'
+    const res = await fetch(`${baseUrl}/admin/reports/operations-csv`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    if (!res.ok) {
+      throw new Error('Failed to download operations CSV report')
+    }
+    const blob = await res.blob()
+    const blobUrl = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = `ARSmartMenu_Operations_Report_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(blobUrl)
+  },
+
   async getBusinessSubscriptionHistory(businessId: string): Promise<SubscriptionHistoryItem[]> {
     await ensureAdminAuth()
     const res = await apiClient.get<ApiEnvelope<SubscriptionHistoryItem[]>>(
-      `/admin/businesses/${businessId}/subscriptions/history`,
+      `/admin/businesses/${businessId}/subscriptions`,
+    )
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.error ?? 'Failed to load business subscriptions')
+    }
+    return res.data.data
+  },
+
+  async getBusinessSubscriptions(businessId: string): Promise<SubscriptionHistoryItem[]> {
+    return this.getBusinessSubscriptionHistory(businessId)
+  },
+
+  async listSubscriptionHistory(params?: {
+    businessId?: string
+    search?: string
+    status?: number
+    fromDate?: string
+    toDate?: string
+  }): Promise<SubscriptionHistoryItem[]> {
+    await ensureAdminAuth()
+    const res = await apiClient.get<ApiEnvelope<SubscriptionHistoryItem[]>>(
+      '/admin/subscriptions/history',
+      { params },
     )
     if (!res.data.success || !res.data.data) {
       throw new Error(res.data.error ?? 'Failed to load subscription history')
@@ -368,20 +443,13 @@ export const adminService = {
   },
 
   async getAllSubscriptionsHistory(): Promise<SubscriptionHistoryItem[]> {
-    await ensureAdminAuth()
-    const res = await apiClient.get<ApiEnvelope<SubscriptionHistoryItem[]>>(
-      '/admin/subscriptions/all-history',
-    )
-    if (!res.data.success || !res.data.data) {
-      throw new Error(res.data.error ?? 'Failed to load all subscriptions history')
-    }
-    return res.data.data
+    return this.listSubscriptionHistory()
   },
 
   async getSubscriptionInvoice(subscriptionId: string): Promise<SubscriptionInvoice> {
     await ensureAdminAuth()
     const res = await apiClient.get<ApiEnvelope<SubscriptionInvoice>>(
-      `/admin/subscriptions/${subscriptionId}/invoice`,
+      `/subscriptions/${subscriptionId}/invoice`,
     )
     if (!res.data.success || !res.data.data) {
       throw new Error(res.data.error ?? 'Failed to load subscription invoice')
@@ -392,7 +460,7 @@ export const adminService = {
   getSubscriptionInvoiceHtmlUrl(subscriptionId: string): string {
     const baseURL = apiClient.defaults.baseURL || '/api'
     const token = localStorage.getItem('ar_admin_token') || ''
-    return `${baseURL}/admin/subscriptions/${subscriptionId}/invoice/html?token=${encodeURIComponent(token)}`
+    return `${baseURL}/subscriptions/${subscriptionId}/invoice/html?token=${encodeURIComponent(token)}`
   },
 
   async getGstRateSetting(): Promise<GstRateSetting> {

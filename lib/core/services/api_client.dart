@@ -17,6 +17,7 @@ class ApiClient {
   )..interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          options.baseUrl = ApiConfig.baseUrl;
           final prefs = await SharedPreferences.getInstance();
           final token = prefs.getString('auth_token');
           if (token != null && token.isNotEmpty) {

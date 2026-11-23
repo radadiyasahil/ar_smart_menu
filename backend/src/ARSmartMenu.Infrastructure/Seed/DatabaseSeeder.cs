@@ -38,6 +38,18 @@ public static class DatabaseSeeder
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[TableOrders]') AND name = 'PartyPin')
                     ALTER TABLE [TableOrders] ADD [PartyPin] nvarchar(max) NULL;
 
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[TableOrders]') AND name = 'Rating')
+                    ALTER TABLE [TableOrders] ADD [Rating] int NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[TableOrders]') AND name = 'FeedbackComment')
+                    ALTER TABLE [TableOrders] ADD [FeedbackComment] nvarchar(max) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[TableOrders]') AND name = 'FeedbackTagsJson')
+                    ALTER TABLE [TableOrders] ADD [FeedbackTagsJson] nvarchar(max) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[TableOrders]') AND name = 'FeedbackSubmittedAt')
+                    ALTER TABLE [TableOrders] ADD [FeedbackSubmittedAt] datetime2 NULL;
+
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Products]') AND name = 'CustomizationJson')
                     ALTER TABLE [Products] ADD [CustomizationJson] nvarchar(max) NULL;
 
@@ -95,6 +107,24 @@ public static class DatabaseSeeder
                     INSERT INTO [SystemSettings] ([Id], [Key], [Value], [Description], [Group], [CreatedAt])
                     VALUES (NEWID(), 'Billing.GstRatePercent', '18.0', 'GST percentage applied to subscription plans and customer invoices', 'Billing', GETUTCDATE());
                 END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'CustomDishLimit')
+                    ALTER TABLE [Businesses] ADD [CustomDishLimit] int NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'ArViewEnabled')
+                    ALTER TABLE [Businesses] ADD [ArViewEnabled] bit NOT NULL DEFAULT 1;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'ArPerViewChargePaise')
+                    ALTER TABLE [Businesses] ADD [ArPerViewChargePaise] int NOT NULL DEFAULT 50;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'ArViewCredits')
+                    ALTER TABLE [Businesses] ADD [ArViewCredits] int NOT NULL DEFAULT 500;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'ArViewsUsed')
+                    ALTER TABLE [Businesses] ADD [ArViewsUsed] int NOT NULL DEFAULT 0;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'GstRate')
+                    ALTER TABLE [Businesses] ADD [GstRate] float NOT NULL DEFAULT 5.0;
             ");
         }
         catch (Exception ex)

@@ -501,6 +501,16 @@ public class SubscriptionService : ISubscriptionService
                 .Where(s => s.BusinessId == businessId || (ownerId.HasValue && s.Business.OwnerId == ownerId.Value))
                 .OrderByDescending(s => s.EndsAt)
                 .FirstOrDefaultAsync(ct);
+
+            // Defensive auto-expire if past end date
+            if (subscription != null && subscription.Status == SubscriptionStatus.Active && subscription.EndsAt <= DateTime.UtcNow)
+            {
+                await _db.Subscriptions
+                    .Where(s => s.Id == subscription.Id)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(x => x.Status, SubscriptionStatus.Expired)
+                        .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
+            }
         }
 
         var hasUsedTrial = await _db.Subscriptions
@@ -522,7 +532,13 @@ public class SubscriptionService : ISubscriptionService
                 DaysRemaining: 0,
                 IsActive: false,
                 IsTrial: false,
-                HasUsedTrial: hasUsedTrial
+                HasUsedTrial: hasUsedTrial,
+                CustomDishLimit: business?.CustomDishLimit,
+                EffectiveDishLimit: business?.CustomDishLimit ?? 0,
+                ArViewEnabled: business?.ArViewEnabled ?? true,
+                ArPerViewChargePaise: business?.ArPerViewChargePaise ?? 50,
+                ArViewCredits: business?.ArViewCredits ?? 500,
+                ArViewsUsed: business?.ArViewsUsed ?? 0
             );
         }
 
@@ -582,9 +598,11 @@ public class SubscriptionService : ISubscriptionService
             sub.UpdatedAt = DateTime.UtcNow;
         }
 
-        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
+        var business = await _db.Businesses.Include(b => b.Owner).FirstOrDefaultAsync(b => b.Id == businessId, ct);
         var startsAt = DateTime.UtcNow;
         var endsAt = startsAt.AddDays(7);
+        var invoiceNum = await GenerateInvoiceNumberAsync(startsAt, ct);
+
         var newSub = new Subscription
         {
             BusinessId = businessId,
@@ -594,17 +612,21 @@ public class SubscriptionService : ISubscriptionService
             StartsAt = startsAt,
             EndsAt = endsAt,
             RazorpaySubscriptionId = "TRIAL_7_DAYS_ACTIVATED",
-            InvoiceNumber = GenerateInvoiceNumber(startsAt),
-            BaseAmountPaise = 0,
+            BasePricePaise = 0,
             GstPaise = 0,
-            TotalAmountPaise = 0,
+            TotalPricePaise = 0,
             PaymentMethod = "Free Trial",
-            PaymentRef = "TRIAL_7_DAYS_ACTIVATED",
-            CustomerGstNumber = business?.GstNumber,
+            TransactionRef = "TRIAL_7_DAYS_ACTIVATED",
+            PaymentStatus = "Completed",
+            InvoiceNumber = invoiceNum,
+            InvoiceDate = startsAt,
             CustomerBusinessName = business?.BusinessName,
-            CustomerAddress = business != null ? $"{business.FullAddress}, {business.City}" : null,
+            CustomerGstNumber = business?.GstNumber,
+            CustomerAddress = business?.FullAddress,
+            CustomerCity = business?.City,
             CustomerState = business?.City,
             SacCode = "998313",
+            GstRatePercent = 18.0m
         };
         _db.Subscriptions.Add(newSub);
 
@@ -662,15 +684,17 @@ public class SubscriptionService : ISubscriptionService
             oldSub.UpdatedAt = DateTime.UtcNow;
         }
 
-        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
+        var business = await _db.Businesses.Include(b => b.Owner).FirstOrDefaultAsync(b => b.Id == businessId, ct);
         var startsAt = DateTime.UtcNow;
         var endsAt = startsAt.AddDays(durationDays);
+        var invoiceNum = await GenerateInvoiceNumberAsync(startsAt, ct);
         var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
-        var basePaise = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
-        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * (double)(dynamicGstRate / 100m));
-        var totalPaise = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePaise + gstPaise);
+
+        var basePrice = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
+        var gstPrice = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePrice * (double)(dynamicGstRate / 100m));
+        var totalPrice = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePrice + gstPrice);
         var payMethod = request.PaymentMethod ?? "UPI";
-        var payRef = request.TransactionRef ?? $"SIM_{payMethod}_{Guid.NewGuid():N}"[..18];
+        var txnRef = request.TransactionRef ?? $"SIM_{payMethod}_{Guid.NewGuid():N}"[..18];
 
         var newSub = new Subscription
         {
@@ -680,19 +704,22 @@ public class SubscriptionService : ISubscriptionService
             Status = SubscriptionStatus.Active,
             StartsAt = startsAt,
             EndsAt = endsAt,
-            RazorpaySubscriptionId = payRef,
-            InvoiceNumber = GenerateInvoiceNumber(startsAt),
-            BaseAmountPaise = basePaise,
-            GstPaise = gstPaise,
-            TotalAmountPaise = totalPaise,
+            RazorpaySubscriptionId = txnRef,
+            BasePricePaise = basePrice,
+            GstPaise = gstPrice,
+            TotalPricePaise = totalPrice,
             PaymentMethod = payMethod,
-            PaymentRef = payRef,
-            CustomerGstNumber = business?.GstNumber,
+            TransactionRef = txnRef,
+            PaymentStatus = "Completed",
+            InvoiceNumber = invoiceNum,
+            InvoiceDate = startsAt,
             CustomerBusinessName = business?.BusinessName,
-            CustomerAddress = business != null ? $"{business.FullAddress}, {business.City}" : null,
+            CustomerGstNumber = business?.GstNumber,
+            CustomerAddress = business?.FullAddress,
+            CustomerCity = business?.City,
             CustomerState = business?.City,
             SacCode = "998313",
-            GstRatePercent = dynamicGstRate,
+            GstRatePercent = dynamicGstRate
         };
         _db.Subscriptions.Add(newSub);
 
@@ -747,14 +774,16 @@ public class SubscriptionService : ISubscriptionService
             oldSub.UpdatedAt = DateTime.UtcNow;
         }
 
-        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
+        var business = await _db.Businesses.Include(b => b.Owner).FirstOrDefaultAsync(b => b.Id == businessId, ct);
         var startsAt = DateTime.UtcNow;
         var endsAt = startsAt.AddDays(durationDays);
+        var invoiceNum = await GenerateInvoiceNumberAsync(startsAt, ct);
         var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
-        var basePaise = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
-        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * (double)(dynamicGstRate / 100m));
-        var totalPaise = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePaise + gstPaise);
-        var payRef = $"ADMIN_GRANT_{request.Notes ?? "Manual"}"[..Math.Min(24, 12 + (request.Notes?.Length ?? 6))];
+
+        var basePrice = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
+        var gstPrice = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePrice * (double)(dynamicGstRate / 100m));
+        var totalPrice = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePrice + gstPrice);
+        var txnRef = $"ADMIN_GRANT_{request.Notes ?? "Manual"}"[..Math.Min(24, 12 + (request.Notes?.Length ?? 6))];
 
         var sub = new Subscription
         {
@@ -764,19 +793,22 @@ public class SubscriptionService : ISubscriptionService
             Status = SubscriptionStatus.Active,
             StartsAt = startsAt,
             EndsAt = endsAt,
-            RazorpaySubscriptionId = payRef,
-            InvoiceNumber = GenerateInvoiceNumber(startsAt),
-            BaseAmountPaise = basePaise,
-            GstPaise = gstPaise,
-            TotalAmountPaise = totalPaise,
+            RazorpaySubscriptionId = txnRef,
+            BasePricePaise = basePrice,
+            GstPaise = gstPrice,
+            TotalPricePaise = totalPrice,
             PaymentMethod = "Admin Grant",
-            PaymentRef = payRef,
-            CustomerGstNumber = business?.GstNumber,
+            TransactionRef = txnRef,
+            PaymentStatus = "Completed",
+            InvoiceNumber = invoiceNum,
+            InvoiceDate = startsAt,
             CustomerBusinessName = business?.BusinessName,
-            CustomerAddress = business != null ? $"{business.FullAddress}, {business.City}" : null,
+            CustomerGstNumber = business?.GstNumber,
+            CustomerAddress = business?.FullAddress,
+            CustomerCity = business?.City,
             CustomerState = business?.City,
             SacCode = "998313",
-            GstRatePercent = dynamicGstRate,
+            GstRatePercent = dynamicGstRate
         };
         _db.Subscriptions.Add(sub);
 
@@ -878,12 +910,15 @@ public class SubscriptionService : ISubscriptionService
             sub.UpdatedAt = DateTime.UtcNow;
         }
 
-        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
+        var business = await _db.Businesses.Include(b => b.Owner).FirstOrDefaultAsync(b => b.Id == businessId, ct);
         var startsAt = DateTime.UtcNow;
+        var endsAt = startsAt.AddMonths(1);
+        var invoiceNum = await GenerateInvoiceNumberAsync(startsAt, ct);
         var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
-        var basePaise = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
-        var gstPaise = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePaise * (double)(dynamicGstRate / 100m));
-        var totalPaise = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePaise + gstPaise);
+
+        var basePrice = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
+        var gstPrice = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePrice * (double)(dynamicGstRate / 100m));
+        var totalPrice = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePrice + gstPrice);
 
         var subscription = new Subscription
         {
@@ -892,20 +927,23 @@ public class SubscriptionService : ISubscriptionService
             BillingCycle = BillingCycle.Monthly,
             Status = SubscriptionStatus.Active,
             StartsAt = startsAt,
-            EndsAt = startsAt.AddMonths(1),
+            EndsAt = endsAt,
             RazorpaySubscriptionId = request.RazorpayPaymentId,
-            InvoiceNumber = GenerateInvoiceNumber(startsAt),
-            BaseAmountPaise = basePaise,
-            GstPaise = gstPaise,
-            TotalAmountPaise = totalPaise,
+            BasePricePaise = basePrice,
+            GstPaise = gstPrice,
+            TotalPricePaise = totalPrice,
             PaymentMethod = "Razorpay",
-            PaymentRef = request.RazorpayPaymentId,
-            CustomerGstNumber = business?.GstNumber,
+            TransactionRef = request.RazorpayPaymentId,
+            PaymentStatus = "Completed",
+            InvoiceNumber = invoiceNum,
+            InvoiceDate = startsAt,
             CustomerBusinessName = business?.BusinessName,
-            CustomerAddress = business != null ? $"{business.FullAddress}, {business.City}" : null,
+            CustomerGstNumber = business?.GstNumber,
+            CustomerAddress = business?.FullAddress,
+            CustomerCity = business?.City,
             CustomerState = business?.City,
             SacCode = "998313",
-            GstRatePercent = dynamicGstRate,
+            GstRatePercent = dynamicGstRate
         };
 
         _db.Subscriptions.Add(subscription);
@@ -1200,13 +1238,23 @@ public class SubscriptionService : ISubscriptionService
             GstRatePercent: dynamicRate);
     }
 
-    internal static SubscriptionDto MapSubscription(Subscription subscription, bool hasUsedTrial)
+    internal static SubscriptionDto MapSubscription(Subscription subscription, bool hasUsedTrial, Business? business = null)
     {
         var now = DateTime.UtcNow;
         var isActive = subscription.Status == SubscriptionStatus.Active && subscription.EndsAt > now;
         var daysRemaining = isActive ? Math.Max(0, (int)Math.Ceiling((subscription.EndsAt - now).TotalDays)) : 0;
         var status = isActive ? subscription.Status : SubscriptionStatus.Expired;
         var isTrial = subscription.Plan?.Slug == "trial-7-days";
+
+        var b = business ?? subscription.Business;
+        int? customLimit = b?.CustomDishLimit;
+        int effectiveLimit = customLimit.HasValue && customLimit.Value > 0
+            ? customLimit.Value
+            : (subscription.Plan?.MaxProducts ?? 50);
+        bool arEnabled = b?.ArViewEnabled ?? true;
+        int arRate = b?.ArPerViewChargePaise ?? 50;
+        int arCredits = b?.ArViewCredits ?? 500;
+        int arUsed = b?.ArViewsUsed ?? 0;
 
         return new SubscriptionDto(
             subscription.Id,
@@ -1221,16 +1269,26 @@ public class SubscriptionService : ISubscriptionService
             DaysRemaining: daysRemaining,
             IsActive: isActive,
             IsTrial: isTrial,
-            HasUsedTrial: hasUsedTrial);
+            HasUsedTrial: hasUsedTrial,
+            CustomDishLimit: customLimit,
+            EffectiveDishLimit: effectiveLimit,
+            ArViewEnabled: arEnabled,
+            ArPerViewChargePaise: arRate,
+            ArViewCredits: arCredits,
+            ArViewsUsed: arUsed);
     }
+
+    // ── History & GST Invoice Services ───────────────────────────────────────
 
     public async Task<IReadOnlyList<SubscriptionHistoryItemDto>> GetSubscriptionHistoryAsync(Guid businessId, CancellationToken ct = default)
     {
+        await EnsureExistingSubscriptionsBackfilledAsync(ct);
         await GetGstRatePercentRawAsync(ct);
         var subs = await _db.Subscriptions
             .AsNoTracking()
             .Include(s => s.Plan)
             .Include(s => s.Business)
+                .ThenInclude(b => b.Owner)
             .Where(s => s.BusinessId == businessId)
             .OrderByDescending(s => s.StartsAt)
             .ThenByDescending(s => s.CreatedAt)
@@ -1239,18 +1297,72 @@ public class SubscriptionService : ISubscriptionService
         return subs.Select(MapHistoryItem).ToList();
     }
 
+    public Task<IReadOnlyList<SubscriptionHistoryItemDto>> GetHistoryAsync(Guid businessId, CancellationToken ct = default)
+        => GetSubscriptionHistoryAsync(businessId, ct);
+
     public async Task<IReadOnlyList<SubscriptionHistoryItemDto>> AdminGetAllSubscriptionHistoryAsync(CancellationToken ct = default)
     {
+        await EnsureExistingSubscriptionsBackfilledAsync(ct);
         await GetGstRatePercentRawAsync(ct);
         var subs = await _db.Subscriptions
             .AsNoTracking()
             .Include(s => s.Plan)
             .Include(s => s.Business)
+                .ThenInclude(b => b.Owner)
             .OrderByDescending(s => s.StartsAt)
             .ThenByDescending(s => s.CreatedAt)
             .ToListAsync(ct);
 
         return subs.Select(MapHistoryItem).ToList();
+    }
+
+    public async Task<IReadOnlyList<SubscriptionHistoryItemDto>> AdminListHistoryAsync(AdminSubscriptionHistoryQuery query, CancellationToken ct = default)
+    {
+        await EnsureExistingSubscriptionsBackfilledAsync(ct);
+        await GetGstRatePercentRawAsync(ct);
+
+        var q = _db.Subscriptions
+            .AsNoTracking()
+            .Include(s => s.Plan)
+            .Include(s => s.Business)
+                .ThenInclude(b => b.Owner)
+            .AsQueryable();
+
+        if (query.BusinessId.HasValue && query.BusinessId.Value != Guid.Empty)
+        {
+            q = q.Where(s => s.BusinessId == query.BusinessId.Value);
+        }
+
+        if (query.Status.HasValue)
+        {
+            q = q.Where(s => s.Status == query.Status.Value);
+        }
+
+        if (query.FromDate.HasValue)
+        {
+            q = q.Where(s => s.StartsAt >= query.FromDate.Value);
+        }
+
+        if (query.ToDate.HasValue)
+        {
+            q = q.Where(s => s.StartsAt <= query.ToDate.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var search = query.Search.Trim().ToLower();
+            q = q.Where(s =>
+                (s.InvoiceNumber != null && s.InvoiceNumber.ToLower().Contains(search)) ||
+                (s.TransactionRef != null && s.TransactionRef.ToLower().Contains(search)) ||
+                (s.RazorpaySubscriptionId != null && s.RazorpaySubscriptionId.ToLower().Contains(search)) ||
+                (s.CustomerBusinessName != null && s.CustomerBusinessName.ToLower().Contains(search)) ||
+                (s.Business != null && s.Business.BusinessName.ToLower().Contains(search)) ||
+                (s.Business != null && s.Business.Owner != null && s.Business.Owner.MobileNumber.Contains(search)) ||
+                (s.Plan != null && s.Plan.Name.ToLower().Contains(search)));
+        }
+
+        var results = await q.OrderByDescending(s => s.StartsAt).ThenByDescending(s => s.CreatedAt).ToListAsync(ct);
+        return results.Select(MapHistoryItem).ToList();
     }
 
     public async Task<SubscriptionInvoiceDto> GetInvoiceAsync(
@@ -1259,6 +1371,8 @@ public class SubscriptionService : ISubscriptionService
         bool isAdmin = false,
         CancellationToken ct = default)
     {
+        await EnsureExistingSubscriptionsBackfilledAsync(ct);
+
         var sub = await _db.Subscriptions
             .AsNoTracking()
             .Include(s => s.Plan)
@@ -1275,7 +1389,7 @@ public class SubscriptionService : ISubscriptionService
         var business = sub.Business;
         var owner = business?.Owner;
         var plan = sub.Plan;
-        var isTrial = plan?.Slug == "trial-7-days" || (sub.BaseAmountPaise == 0 && sub.TotalAmountPaise == 0 && (plan == null || plan.BasePricePaise == 0));
+        var isTrial = plan?.Slug == "trial-7-days" || (sub.BasePricePaise == 0 && sub.TotalPricePaise == 0 && (plan == null || plan.BasePricePaise == 0));
         var dynamicRate = await GetGstRatePercentRawAsync(ct);
         var effectiveGstRate = (double)(sub.GstRatePercent > 0 ? sub.GstRatePercent : dynamicRate);
 
@@ -1283,14 +1397,14 @@ public class SubscriptionService : ISubscriptionService
             ? sub.InvoiceNumber
             : $"INV-{sub.CreatedAt:yyyyMM}-{sub.Id.ToString()[..6].ToUpper()}";
 
-        var basePaise = sub.BaseAmountPaise > 0 
-            ? sub.BaseAmountPaise 
+        var basePaise = sub.BasePricePaise > 0 
+            ? sub.BasePricePaise 
             : (isTrial ? 0 : (plan?.BasePricePaise ?? plan?.MonthlyPricePaise ?? 0));
         var gstPaise = sub.GstPaise > 0 
             ? sub.GstPaise 
             : (isTrial ? 0 : (plan?.GstPaise ?? (int)Math.Round(basePaise * (effectiveGstRate / 100.0))));
-        var totalPaise = sub.TotalAmountPaise > 0 
-            ? sub.TotalAmountPaise 
+        var totalPaise = sub.TotalPricePaise > 0 
+            ? sub.TotalPricePaise 
             : (isTrial ? 0 : (plan?.TotalPricePaise ?? (basePaise + gstPaise)));
 
         var baseRupees = basePaise / 100.0;
@@ -1342,7 +1456,7 @@ public class SubscriptionService : ISubscriptionService
             Id: sub.Id,
             BusinessId: sub.BusinessId,
             InvoiceNumber: invoiceNum,
-            InvoiceDate: sub.CreatedAt != DateTime.MinValue ? sub.CreatedAt : sub.StartsAt,
+            InvoiceDate: sub.InvoiceDate ?? (sub.CreatedAt != DateTime.MinValue ? sub.CreatedAt : sub.StartsAt),
             PlanName: plan?.Name ?? (isTrial ? "7-Day Free Trial" : "Custom Plan"),
             PlanSlug: plan?.Slug ?? "custom",
             BillingCycle: sub.BillingCycle.ToString(),
@@ -1365,7 +1479,7 @@ public class SubscriptionService : ISubscriptionService
             IsInterState: isInterState,
             SacCode: sub.SacCode ?? "998313",
             PaymentMethod: sub.PaymentMethod ?? (isTrial ? "Free Trial" : "Online UPI / Card"),
-            PaymentRef: sub.PaymentRef ?? sub.RazorpaySubscriptionId ?? "N/A",
+            PaymentRef: sub.TransactionRef ?? sub.RazorpaySubscriptionId ?? "N/A",
             SupplierName: "AR Smart Menu Technologies Pvt. Ltd.",
             SupplierAddress: "Floor 4, Tech Park, S.G. Highway, Ahmedabad, Gujarat - 380054",
             SupplierGstNumber: "24AABCA1234F1Z9",
@@ -1386,7 +1500,12 @@ public class SubscriptionService : ISubscriptionService
             IsGstRegistered: !string.IsNullOrWhiteSpace(custGst),
             AmountInWords: amountInWords,
             PlaceOfSupply: $"{custState} ({custStateCode})",
-            GstRatePercent: effectiveGstRate
+            GstRatePercent: effectiveGstRate,
+            SupplierTradeName: "AR Smart Menu",
+            SupplierCity: "Ahmedabad",
+            ServiceDescription: $"AR Smart Menu SaaS Platform Subscription - {plan?.Name ?? "Platform Access"} ({durationDays} Days)",
+            PaymentStatus: sub.PaymentStatus ?? "Completed",
+            PaidAt: sub.InvoiceDate ?? sub.StartsAt
         );
     }
 
@@ -1400,23 +1519,108 @@ public class SubscriptionService : ISubscriptionService
         return RenderInvoiceHtml(inv);
     }
 
+    public Task<string> GetInvoiceHtmlAsync(
+        Guid subscriptionId,
+        Guid? requesterBusinessId = null,
+        bool isAdmin = false,
+        CancellationToken ct = default)
+        => GenerateInvoiceHtmlAsync(subscriptionId, requesterBusinessId, isAdmin, ct);
+
+    private async Task<string> GenerateInvoiceNumberAsync(DateTime date, CancellationToken ct)
+    {
+        var prefix = $"INV-{date:yyyyMM}-";
+        var existingCount = await _db.Subscriptions
+            .Where(s => s.InvoiceNumber != null && s.InvoiceNumber.StartsWith(prefix))
+            .CountAsync(ct);
+        return $"{prefix}{(existingCount + 1):D4}";
+    }
+
+    private static string GenerateInvoiceNumber(DateTime date)
+    {
+        return $"INV-{date:yyyyMM}-{Random.Shared.Next(1000, 9999)}";
+    }
+
+    private async Task EnsureExistingSubscriptionsBackfilledAsync(CancellationToken ct)
+    {
+        var unbackfilled = await _db.Subscriptions
+            .Include(s => s.Plan)
+            .Include(s => s.Business)
+            .Where(s => string.IsNullOrEmpty(s.InvoiceNumber))
+            .OrderBy(s => s.StartsAt)
+            .ToListAsync(ct);
+
+        if (unbackfilled.Count == 0) return;
+
+        int index = 1;
+        foreach (var s in unbackfilled)
+        {
+            var dt = s.StartsAt != DateTime.MinValue ? s.StartsAt : (s.CreatedAt != DateTime.MinValue ? s.CreatedAt : DateTime.UtcNow);
+            s.InvoiceDate = dt;
+            s.InvoiceNumber = $"INV-{dt:yyyyMM}-{index:D4}";
+            index++;
+
+            if (s.Plan != null)
+            {
+                s.BasePricePaise = s.Plan.BasePricePaise;
+                s.GstPaise = s.Plan.GstPaise;
+                s.TotalPricePaise = s.Plan.TotalPricePaise;
+            }
+
+            var refId = s.RazorpaySubscriptionId ?? "";
+            if (refId.StartsWith("ADMIN_GRANT"))
+            {
+                s.PaymentMethod = "Admin Grant";
+                s.TransactionRef = refId;
+            }
+            else if (refId.StartsWith("TRIAL"))
+            {
+                s.PaymentMethod = "Free Trial";
+                s.TransactionRef = "TRIAL_7_DAYS";
+                s.BasePricePaise = 0;
+                s.GstPaise = 0;
+                s.TotalPricePaise = 0;
+            }
+            else
+            {
+                s.PaymentMethod = "UPI";
+                s.TransactionRef = string.IsNullOrEmpty(refId) ? $"SIM_TXN_{Guid.NewGuid():N}"[..18] : refId;
+            }
+
+            s.PaymentStatus = "Completed";
+            if (s.Business != null)
+            {
+                s.CustomerBusinessName = s.Business.BusinessName;
+                s.CustomerGstNumber = s.Business.GstNumber;
+                s.CustomerAddress = s.Business.FullAddress;
+                s.CustomerCity = s.Business.City;
+                s.CustomerState = s.Business.City;
+            }
+            s.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync(ct);
+    }
+
     private static SubscriptionHistoryItemDto MapHistoryItem(Subscription sub)
     {
-        var planName = sub.Plan?.Name ?? (sub.Plan?.Slug == "trial-7-days" ? "7-Day Free Trial" : "Custom Plan");
-        var isTrial = sub.Plan?.Slug == "trial-7-days" || (sub.BaseAmountPaise == 0 && sub.TotalAmountPaise == 0 && (sub.Plan == null || sub.Plan.BasePricePaise == 0));
+        var now = DateTime.UtcNow;
+        var isActive = sub.Status == SubscriptionStatus.Active && sub.EndsAt > now;
+        var planName = sub.Plan?.Name ?? (sub.Plan?.Slug == "trial-7-days" ? "7-Day Free Trial" : (sub.BasePricePaise == 0 ? "7-Day Free Trial" : "Custom Plan"));
+        var planSlug = sub.Plan?.Slug ?? (sub.BasePricePaise == 0 ? "trial-7-days" : "custom");
+        var isTrial = planSlug == "trial-7-days" || (sub.BasePricePaise == 0 && sub.TotalPricePaise == 0 && (sub.Plan == null || sub.Plan.BasePricePaise == 0));
         var invoiceNum = !string.IsNullOrWhiteSpace(sub.InvoiceNumber)
             ? sub.InvoiceNumber
             : $"INV-{sub.CreatedAt:yyyyMM}-{sub.Id.ToString()[..6].ToUpper()}";
 
         var effectiveGstRate = sub.GstRatePercent > 0 ? sub.GstRatePercent : (_cachedGstRate ?? 18.0m);
-        var basePaise = sub.BaseAmountPaise > 0 
-            ? sub.BaseAmountPaise 
+        var basePaise = sub.BasePricePaise > 0 
+            ? sub.BasePricePaise 
             : (isTrial ? 0 : (sub.Plan?.BasePricePaise ?? sub.Plan?.MonthlyPricePaise ?? 0));
         var gstPaise = sub.GstPaise > 0 
             ? sub.GstPaise 
             : (isTrial ? 0 : (sub.Plan?.GstPaise ?? (int)Math.Round(basePaise * (double)(effectiveGstRate / 100m))));
-        var totalPaise = sub.TotalAmountPaise > 0 
-            ? sub.TotalAmountPaise 
+        var totalPaise = sub.TotalPricePaise > 0 
+            ? sub.TotalPricePaise 
             : (isTrial ? 0 : (sub.Plan?.TotalPricePaise ?? (basePaise + gstPaise)));
 
         var durationDays = (sub.EndsAt - sub.StartsAt).Days;
@@ -1426,9 +1630,9 @@ public class SubscriptionService : ISubscriptionService
             Id: sub.Id,
             BusinessId: sub.BusinessId,
             InvoiceNumber: invoiceNum,
-            InvoiceDate: sub.CreatedAt != DateTime.MinValue ? sub.CreatedAt : sub.StartsAt,
+            InvoiceDate: sub.InvoiceDate ?? (sub.CreatedAt != DateTime.MinValue ? sub.CreatedAt : sub.StartsAt),
             PlanName: planName,
-            PlanSlug: sub.Plan?.Slug ?? "custom-plan",
+            PlanSlug: planSlug,
             BillingCycle: sub.BillingCycle.ToString(),
             Status: sub.Status.ToString(),
             StartsAt: sub.StartsAt,
@@ -1441,17 +1645,22 @@ public class SubscriptionService : ISubscriptionService
             GstRupees: gstPaise / 100.0,
             TotalAmountRupees: totalPaise / 100.0,
             PaymentMethod: sub.PaymentMethod ?? (isTrial ? "Free Trial" : "Online UPI / Card"),
-            PaymentRef: sub.PaymentRef ?? sub.RazorpaySubscriptionId,
+            PaymentRef: sub.TransactionRef ?? sub.RazorpaySubscriptionId,
             CustomerGstNumber: sub.CustomerGstNumber ?? sub.Business?.GstNumber,
             IsTrial: isTrial,
             SacCode: sub.SacCode ?? "998313",
-            GstRatePercent: effectiveGstRate
+            GstRatePercent: effectiveGstRate,
+            BusinessName: sub.CustomerBusinessName ?? sub.Business?.BusinessName ?? "Restaurant Partner",
+            OwnerName: sub.Business?.Owner?.FullName,
+            OwnerMobile: sub.Business?.Owner?.MobileNumber,
+            PlanId: sub.PlanId,
+            TransactionRef: sub.TransactionRef ?? sub.RazorpaySubscriptionId,
+            PaymentStatus: sub.PaymentStatus ?? "Completed",
+            CancelledAt: sub.CancelledAt,
+            IsActive: isActive,
+            CustomerAddress: sub.CustomerAddress ?? sub.Business?.FullAddress,
+            CustomerCity: sub.CustomerCity ?? sub.Business?.City
         );
-    }
-
-    private static string GenerateInvoiceNumber(DateTime date)
-    {
-        return $"INV-{date:yyyyMM}-{Random.Shared.Next(1000, 9999)}";
     }
 
     private static string GetStateNameFromCode(string code, string defaultCityOrState)

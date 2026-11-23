@@ -31,6 +31,35 @@ export interface AdminBusiness {
   subscriptionEndsAt?: string | null
   subscriptionDaysRemaining?: number | null
   hasUsedTrial?: boolean
+  customDishLimit?: number | null
+  effectiveDishLimit?: number
+  arViewEnabled?: boolean
+  arPerViewChargePaise?: number
+  arViewCredits?: number
+  arViewsUsed?: number
+  liveProductCount?: number
+  arProductCount?: number
+  totalOrdersCount?: number
+  completedOrdersCount?: number
+  completedSalesPaise?: number
+  totalScans?: number
+  totalViews?: number
+  averageRating?: number | null
+  totalReviews?: number
+}
+
+export interface AdminOperationsSummary {
+  totalRestaurants: number
+  totalDishesListed: number
+  totalLiveDishes: number
+  totalArDishes: number
+  totalOrdersPlaced: number
+  totalOrdersCompleted: number
+  totalCompletedSalesPaise: number
+  totalScans: number
+  totalViews: number
+  averageRating?: number | null
+  totalReviews?: number
 }
 
 export interface AdminUpdateBusinessPayload {
@@ -298,55 +327,90 @@ export interface AdminNotificationsResponse {
 export interface SubscriptionHistoryItem {
   id: string
   businessId: string
+  businessName?: string
+  ownerName?: string
+  ownerMobile?: string
   planId?: string | null
   planName: string
-  planSlug: string
-  status: string
-  billingCycle: string
+  planSlug?: string
+  durationDays?: number
+  basePricePaise?: number
+  gstPaise?: number
+  totalPricePaise?: number
+  baseAmountPaise?: number | null
+  totalAmountPaise?: number | null
+  basePriceRupees: number
+  gstRupees: number
+  totalPriceRupees: number
+  paymentMethod?: string | null
+  transactionRef?: string | null
+  paymentRef?: string | null
+  paymentStatus?: string
+  invoiceNumber?: string | null
+  invoiceDate?: string | null
+  hasInvoice?: boolean
+  status: any
+  billingCycle?: string
   startsAt: string
   endsAt: string
-  createdAt: string
-  hasInvoice: boolean
-  invoiceNumber?: string | null
-  totalAmountPaise?: number | null
-  baseAmountPaise?: number | null
-  gstPaise?: number | null
-  paymentMethod?: string | null
-  paymentRef?: string | null
+  createdAt?: string
+  cancelledAt?: string | null
+  isActive?: boolean
+  customerGstNumber?: string | null
+  customerAddress?: string | null
+  customerCity?: string | null
 }
 
 export interface SubscriptionInvoice {
   subscriptionId: string
   invoiceNumber: string
   invoiceDate: string
-  businessId: string
-  customerBusinessName: string
-  customerGstNumber?: string | null
-  customerAddress?: string | null
-  customerState?: string | null
-  customerStateCode?: string | null
-  customerEmail?: string | null
-  customerPhone?: string | null
-  planName: string
+  placeOfSupply: string
   sacCode: string
-  billingCycle: string
-  periodStart: string
-  periodEnd: string
+  serviceDescription?: string
+  supplierLegalName: string
+  supplierTradeName?: string
+  supplierGstin: string
+  supplierPan: string
+  supplierAddress: string
+  supplierCity?: string
+  supplierState: string
+  supplierStateCode?: string
+  supplierEmail: string
+  supplierPhone?: string
+  businessId: string
+  recipientBusinessName: string
+  recipientOwnerName?: string
+  recipientMobile?: string
+  recipientAddress: string
+  recipientCity?: string
+  recipientState: string
+  recipientStateCode?: string
+  recipientGstin?: string | null
+  planName: string
+  planSlug?: string
+  durationDays?: number
+  startsAt: string
+  endsAt: string
   baseAmountPaise: number
   gstPaise: number
   totalAmountPaise: number
-  isInterState: boolean
-  cgstPaise: number
-  sgstPaise: number
-  igstPaise: number
-  supplierName: string
-  supplierGstNumber: string
-  supplierPan: string
-  supplierAddress: string
-  supplierState: string
+  baseAmountRupees: number
+  gstRupees: number
+  totalAmountRupees: number
+  cgstRate: number
+  cgstRupees: number
+  sgstRate: number
+  sgstRupees: number
+  igstRate: number
+  igstRupees: number
+  amountInWords: string
   paymentMethod: string
-  paymentRef?: string | null
-  status: string
+  transactionRef?: string | null
+  paymentStatus: string
+  paidAt: string
+  isReverseCharge: boolean
+  termsAndConditions?: string
 }
 
 export interface SupportContactSetting {

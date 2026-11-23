@@ -4,9 +4,13 @@ $ErrorActionPreference = "Stop"
 Set-Location "$PSScriptRoot\.."
 
 try {
-    # If flutter is not in the active session's PATH but exists in C:\src\flutter\bin, add it
-    if (-not (Get-Command flutter -ErrorAction SilentlyContinue) -and (Test-Path "C:\src\flutter\bin")) {
-        $env:Path = "C:\src\flutter\bin;$env:Path"
+    # If flutter is not in the active session's PATH, check common installation directories
+    if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
+        if (Test-Path "C:\flutter\bin") {
+            $env:Path = "C:\flutter\bin;$env:Path"
+        } elseif (Test-Path "C:\src\flutter\bin") {
+            $env:Path = "C:\src\flutter\bin;$env:Path"
+        }
     }
 
     # Check if flutter is installed

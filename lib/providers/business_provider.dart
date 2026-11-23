@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -44,10 +43,16 @@ class BusinessProvider extends ChangeNotifier {
   bool get isSuspended => _business?.isSuspended ?? false;
 
   SubscriptionInfoModel? get subscription => _subscription;
-  bool get hasActiveSubscription => _subscription != null && _subscription!.isActive;
+  bool get hasActiveSubscription => _subscription != null && _subscription!.isActuallyActive;
   bool get isTrial => _subscription != null && _subscription!.isTrial;
   int get daysRemaining => _subscription?.daysRemaining ?? 0;
   bool get hasUsedTrial => _subscription?.hasUsedTrial ?? false;
+  int get maxDishesLimit => _subscription?.maxProducts ?? 50;
+  int? get customDishLimit => _subscription?.customDishLimit;
+  bool get isArViewEnabled => _subscription?.arViewEnabled ?? true;
+  double get arPerViewChargeRupees => _subscription?.arPerViewChargeRupees ?? 0.50;
+  int get arViewCredits => _subscription?.arViewCredits ?? 500;
+  int get arViewsUsed => _subscription?.arViewsUsed ?? 0;
 
   /// Instant startup from local storage — no API calls.
   Future<void> hydrateFromCache() async {

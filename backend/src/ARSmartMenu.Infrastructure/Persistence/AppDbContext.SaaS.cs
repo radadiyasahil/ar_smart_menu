@@ -35,6 +35,7 @@ public partial class AppDbContext
         {
             e.HasIndex(s => s.BusinessId);
             e.HasIndex(s => s.Status);
+            e.HasIndex(s => s.InvoiceNumber);
             e.HasOne(s => s.Business)
                 .WithMany(b => b.Subscriptions)
                 .HasForeignKey(s => s.BusinessId)

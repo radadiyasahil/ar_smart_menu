@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     port: 8100,
     strictPort: true,
+    host: true,
   },
   plugins: [react(), tailwindcss()],
   resolve: {

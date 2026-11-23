@@ -14,37 +14,22 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "GeofenceRadiusMeters",
-                table: "Businesses",
-                type: "int",
-                nullable: false,
-                defaultValue: 200);
+            migrationBuilder.Sql(@"
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'GeofenceRadiusMeters')
+                    ALTER TABLE [Businesses] ADD [GeofenceRadiusMeters] int NOT NULL DEFAULT 200;
 
-            migrationBuilder.AddColumn<double>(
-                name: "Latitude",
-                table: "Businesses",
-                type: "float",
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'Latitude')
+                    ALTER TABLE [Businesses] ADD [Latitude] float NULL;
 
-            migrationBuilder.AddColumn<double>(
-                name: "Longitude",
-                table: "Businesses",
-                type: "float",
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'Longitude')
+                    ALTER TABLE [Businesses] ADD [Longitude] float NULL;
 
-            migrationBuilder.AddColumn<bool>(
-                name: "RequireGeofence",
-                table: "Businesses",
-                type: "bit",
-                nullable: false,
-                defaultValue: false);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Businesses]') AND name = 'RequireGeofence')
+                    ALTER TABLE [Businesses] ADD [RequireGeofence] bit NOT NULL DEFAULT 0;
 
-            migrationBuilder.AddColumn<string>(
-                name: "PartyPin",
-                table: "TableOrders",
-                type: "nvarchar(max)",
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[TableOrders]') AND name = 'PartyPin')
+                    ALTER TABLE [TableOrders] ADD [PartyPin] nvarchar(max) NULL;
+            ");
         }
 
         /// <inheritdoc />

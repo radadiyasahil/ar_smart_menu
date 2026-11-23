@@ -35,6 +35,16 @@ public class Business : BaseEntity
     public int GeofenceRadiusMeters { get; set; } = 200;
     public bool RequireGeofence { get; set; } = false;
 
+    // Dynamic Dish Limit & AR View Pricing (Admin Configurable)
+    public int? CustomDishLimit { get; set; }
+    public bool ArViewEnabled { get; set; } = true;
+    public int ArPerViewChargePaise { get; set; } = 50;
+    public int ArViewCredits { get; set; } = 500;
+    public int ArViewsUsed { get; set; } = 0;
+
+    /// <summary>Standard GST / Tax rate in percent (e.g. 5.0 for 5% restaurant GST in India).</summary>
+    public double GstRate { get; set; } = 5.0;
+
     public ICollection<Product> Products { get; set; } = [];
     public ICollection<Subscription> Subscriptions { get; set; } = [];
     public ICollection<QrCode> QrCodes { get; set; } = [];

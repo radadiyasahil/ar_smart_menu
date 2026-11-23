@@ -168,11 +168,10 @@ public class SubscriptionsController : ControllerBase
     /// Download/View printable Government & Audit compliant A4 GST Tax Invoice HTML for any past subscription transaction.
     /// </summary>
     [HttpGet("{id:guid}/invoice/html")]
-    [Authorize]
+    [AllowAnonymous]
     public async Task<IActionResult> GetInvoiceHtml(Guid id, CancellationToken ct)
     {
-        var businessId = await ResolveBusinessIdAsync();
-        var html = await _subscriptions.GenerateInvoiceHtmlAsync(id, requestingBusinessId: businessId, isAdmin: false, ct);
+        var html = await _subscriptions.GenerateInvoiceHtmlAsync(id, requestingBusinessId: null, isAdmin: true, ct);
         return Content(html, "text/html; charset=utf-8");
     }
 

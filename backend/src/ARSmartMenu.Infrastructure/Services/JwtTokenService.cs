@@ -20,7 +20,20 @@ public class JwtTokenService : IJwtTokenService
             ?? throw new InvalidOperationException("Jwt:Secret is not configured.");
         var issuer = _config["Jwt:Issuer"] ?? "ARSmartMenu";
         var audience = _config["Jwt:Audience"] ?? "ARSmartMenuClients";
-        var expiresDays = int.TryParse(_config["Jwt:ExpiresInDays"], out var days) ? days : 7;
+        
+        TimeSpan lifetime;
+        if (int.TryParse(_config["Jwt:ExpiryHours"], out var hours) && hours > 0)
+        {
+            lifetime = TimeSpan.FromHours(hours);
+        }
+        else if (int.TryParse(_config["Jwt:ExpiresInDays"], out var days) && days > 0)
+        {
+            lifetime = TimeSpan.FromDays(days);
+        }
+        else
+        {
+            lifetime = TimeSpan.FromHours(4); // Default 4 hours
+        }
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -43,7 +56,7 @@ public class JwtTokenService : IJwtTokenService
             issuer,
             audience,
             claims,
-            expires: DateTime.UtcNow.AddDays(expiresDays),
+            expires: DateTime.UtcNow.Add(lifetime),
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);

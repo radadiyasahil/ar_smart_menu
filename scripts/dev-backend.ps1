@@ -26,9 +26,12 @@ try {
         Start-Sleep -Milliseconds 500
     }
 
-    # Try starting SQL LocalDB if installed
+    # Check if primary SQL Server service is running; if not, try SQL LocalDB
     try {
-        sqllocaldb start mssqllocaldb 2>$null | Out-Null
+        $sqlSvc = Get-Service -Name "MSSQLSERVER" -ErrorAction SilentlyContinue
+        if (-not ($sqlSvc -and $sqlSvc.Status -eq 'Running')) {
+            sqllocaldb start mssqllocaldb 2>$null | Out-Null
+        }
     } catch {}
 
     Write-Host "Starting API with dotnet watch (auto-reload on .cs changes)..." -ForegroundColor Cyan

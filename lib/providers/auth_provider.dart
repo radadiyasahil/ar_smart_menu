@@ -27,8 +27,8 @@ class AuthProvider extends ChangeNotifier {
 
     if (token != null && savedAt != null) {
       final age = DateTime.now().millisecondsSinceEpoch - savedAt;
-      // Expire session only after 7 days of inactivity
-      if (age > const Duration(days: 7).inMilliseconds) {
+      // Expire session after 4 hours of inactivity
+      if (age > const Duration(hours: 4).inMilliseconds) {
         await clearSession();
         return;
       }

@@ -107,6 +107,12 @@ class SubscriptionInfoModel {
     required this.isTrial,
     required this.hasUsedTrial,
     this.cancelledAt,
+    this.customDishLimit,
+    this.effectiveDishLimit = 50,
+    this.arViewEnabled = true,
+    this.arPerViewChargePaise = 50,
+    this.arViewCredits = 500,
+    this.arViewsUsed = 0,
   });
 
   final String id;
@@ -120,9 +126,19 @@ class SubscriptionInfoModel {
   final bool isTrial;
   final bool hasUsedTrial;
   final DateTime? cancelledAt;
+  final int? customDishLimit;
+  final int effectiveDishLimit;
+  final bool arViewEnabled;
+  final int arPerViewChargePaise;
+  final int arViewCredits;
+  final int arViewsUsed;
+
+  bool get isExpired => DateTime.now().isAfter(endsAt) || status.toLowerCase() == 'expired';
+  bool get isActuallyActive => isActive && !isExpired && status.toLowerCase() == 'active';
+  double get arPerViewChargeRupees => arPerViewChargePaise / 100.0;
 
   String get planName => plan?.name ?? (isTrial ? '7-Day Free Trial' : 'No Active Plan');
-  int get maxProducts => plan?.maxProducts ?? 50;
+  int get maxProducts => customDishLimit ?? plan?.maxProducts ?? effectiveDishLimit;
 
   factory SubscriptionInfoModel.fromJson(Map<String, dynamic> json) {
     final planJson = json['plan'] as Map<String, dynamic>?;
@@ -140,6 +156,12 @@ class SubscriptionInfoModel {
       cancelledAt: json['cancelledAt'] != null
           ? DateTime.tryParse(json['cancelledAt'].toString())
           : null,
+      customDishLimit: json['customDishLimit'] as int?,
+      effectiveDishLimit: json['effectiveDishLimit'] as int? ?? 50,
+      arViewEnabled: json['arViewEnabled'] as bool? ?? true,
+      arPerViewChargePaise: json['arPerViewChargePaise'] as int? ?? 50,
+      arViewCredits: json['arViewCredits'] as int? ?? 500,
+      arViewsUsed: json['arViewsUsed'] as int? ?? 0,
     );
   }
 
@@ -155,6 +177,12 @@ class SubscriptionInfoModel {
     'isTrial': isTrial,
     'hasUsedTrial': hasUsedTrial,
     'cancelledAt': cancelledAt?.toIso8601String(),
+    'customDishLimit': customDishLimit,
+    'effectiveDishLimit': effectiveDishLimit,
+    'arViewEnabled': arViewEnabled,
+    'arPerViewChargePaise': arPerViewChargePaise,
+    'arViewCredits': arViewCredits,
+    'arViewsUsed': arViewsUsed,
   };
 }
 

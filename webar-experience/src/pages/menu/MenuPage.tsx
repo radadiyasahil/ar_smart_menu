@@ -41,6 +41,7 @@ import { DishCustomizationModal } from './components/DishCustomizationModal'
 import { Interactive3dModal } from './components/Interactive3dModal'
 import { CartDrawer, RestaurantInfoModal, TableSelectorModal } from './components/MenuModals'
 import { TableOrderStatusModal } from './components/TableOrderStatusModal'
+import { CustomerFeedbackModal } from './components/CustomerFeedbackModal'
 import { tableOrderService, type LiveTableOrder } from '@/services/tableOrderService'
 import { soundAlerts } from '@/utils/soundAlerts'
 
@@ -178,6 +179,7 @@ export function MenuPage() {
   }, [activeOrders])
   const [isOrderStatusOpen, setIsOrderStatusOpen] = useState(false)
   const [isRefreshingOrders, setIsRefreshingOrders] = useState(false)
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false)
   const [isDeclinedBannerDismissed, setIsDeclinedBannerDismissed] = useState<boolean>(() => {
     return sessionStorage.getItem('ar_declined_dismissed') === 'true'
   })
@@ -367,6 +369,11 @@ export function MenuPage() {
           setIsCartOpen(false)
           showToast('✨ Bill settled & table closed! View is fresh for new orders.')
           soundAlerts.playBillSettled()
+
+          const feedbackSubmitted = sessionStorage.getItem(`ar_feedback_submitted_${table}`) === 'true'
+          if (!feedbackSubmitted) {
+            setIsFeedbackModalOpen(true)
+          }
         }
         knownOrderStatuses.current.clear()
       } else {
@@ -1848,6 +1855,7 @@ export function MenuPage() {
         tableNumber={table}
         slug={slug}
         upiId={menu.upiId}
+        gstRate={menu.gstRate ?? 5.0}
         isRefreshing={isRefreshingOrders}
         onRefresh={() => fetchOrders(false)}
         onOrderMore={() => {
@@ -1998,6 +2006,17 @@ export function MenuPage() {
       )}
 
 
+
+      {/* Customer Experience Feedback Modal */}
+      {slug && (
+        <CustomerFeedbackModal
+          isOpen={isFeedbackModalOpen}
+          onClose={() => setIsFeedbackModalOpen(false)}
+          slug={slug}
+          tableNumber={table}
+          restaurantName={menu.businessName}
+        />
+      )}
 
       {/* Floating Toast Notification - Positioned at Right Top */}
       {toast && (

@@ -19,9 +19,14 @@ export const DishCard = memo(function DishCard({
   const price = dish.pricePaise
     ? `₹${Math.round(dish.pricePaise / 100).toLocaleString('en-IN')}`
     : '—'
+  const isSoldOut = dish.soldOutToday
 
   return (
-    <div className="menu-dish-card rounded-2xl p-2.5 sm:p-3 flex items-center gap-3 sm:gap-3.5 transition-all">
+    <div
+      className={`menu-dish-card rounded-2xl p-2.5 sm:p-3 flex items-center gap-3 sm:gap-3.5 transition-all ${
+        isSoldOut ? 'opacity-75 bg-[#171821]/80 border-dashed border-rose-500/25' : ''
+      }`}
+    >
       {/* Left: Compact Dish Thumbnail */}
       <div
         onClick={() => dish.has3dModel && onOpen3d(dish)}
@@ -34,7 +39,9 @@ export const DishCard = memo(function DishCard({
           <img
             src={dish.thumbnailUrl}
             alt={dish.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            className={`w-full h-full object-cover transition-transform duration-300 ${
+              isSoldOut ? 'grayscale contrast-75' : 'group-hover:scale-105'
+            }`}
             loading="lazy"
             onError={(e) => {
               ;(e.target as HTMLElement).style.display = 'none'
@@ -44,18 +51,25 @@ export const DishCard = memo(function DishCard({
           <div className="text-xl sm:text-2xl">🍽️</div>
         )}
 
-        {/* 3D AR Pill badge on thumbnail */}
-        {dish.has3dModel && (
+        {/* Sold out overlay tag on thumbnail */}
+        {isSoldOut ? (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] flex items-center justify-center">
+            <span className="text-[8px] font-black text-rose-300 uppercase tracking-tight bg-rose-950/80 border border-rose-500/40 px-1 py-0.2 rounded">
+              86
+            </span>
+          </div>
+        ) : dish.has3dModel ? (
+          /* 3D AR Pill badge on thumbnail */
           <div className="ar-shimmer-badge absolute bottom-0 inset-x-0 text-white py-0.2 text-[8px] font-black flex items-center justify-center gap-0.5">
             <Sparkles size={8} />
             <span>3D</span>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Middle: Dish Details (Veg Dot, Name, Price, Category) */}
       <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
-        {/* Row 1: Veg indicator + Dish Name + Popular Badge */}
+        {/* Row 1: Veg indicator + Dish Name + Popular / Sold Out Badge */}
         <div className="flex items-center gap-1.5 min-w-0">
           <span
             className={`w-3 h-3 border-[1.5px] rounded-[2px] shrink-0 inline-flex items-center justify-center ${
@@ -66,26 +80,45 @@ export const DishCard = memo(function DishCard({
             <span className={`w-1.5 h-1.5 rounded-full ${isVeg ? 'bg-[#20BF6B]' : 'bg-[#FF5353]'}`} />
           </span>
 
-          <h3 className="text-sm sm:text-base font-bold text-white truncate leading-snug">
+          <h3
+            className={`text-sm sm:text-base font-bold truncate leading-snug ${
+              isSoldOut ? 'text-gray-400 line-through decoration-rose-500/50' : 'text-white'
+            }`}
+          >
             {dish.name}
           </h3>
 
-          {dish.isBestseller && (
+          {isSoldOut ? (
+            <span
+              className="text-[9px] font-black tracking-wide text-rose-300 bg-rose-500/15 border border-rose-500/35 px-1.5 py-0.2 rounded-full shrink-0 uppercase"
+              title="Sold out for today"
+            >
+              Sold Out
+            </span>
+          ) : dish.isBestseller ? (
             <span
               className="text-[9px] font-extrabold text-amber-400 bg-amber-400/10 border border-amber-400/25 px-1.5 py-0.2 rounded-full shrink-0 flex items-center gap-0.5"
               title="Chef Special / Popular"
             >
               <Flame size={9} />
             </span>
-          )}
+          ) : null}
         </div>
 
-        {/* Row 2: Price (Green like revenue screen) + Category / Tag */}
+        {/* Row 2: Price + Category / Tag */}
         <div className="flex items-center gap-1.5 text-xs">
-          <span className="font-extrabold text-emerald-400 text-sm tracking-tight shrink-0">
+          <span
+            className={`font-extrabold text-sm tracking-tight shrink-0 ${
+              isSoldOut ? 'text-gray-500' : 'text-emerald-400'
+            }`}
+          >
             {price}
           </span>
-          {dish.description ? (
+          {isSoldOut ? (
+            <span className="text-[10px] font-semibold text-rose-400/90 shrink-0">
+              • Sold Out for Today
+            </span>
+          ) : dish.description ? (
             <span className="text-[11px] text-gray-400 truncate max-w-[120px] sm:max-w-[200px]">
               • {dish.description}
             </span>
@@ -97,7 +130,7 @@ export const DishCard = memo(function DishCard({
         </div>
       </div>
 
-      {/* Right: Compact Action Buttons (Matching Revenue Photo trailing actions style) */}
+      {/* Right: Compact Action Buttons */}
       <div className="flex items-center gap-1.5 shrink-0 ml-auto">
         {dish.has3dModel && (
           <button
@@ -111,49 +144,63 @@ export const DishCard = memo(function DishCard({
           </button>
         )}
 
-        {onCustomize && !isNonCustomizableDish(dish) && (
+        {isSoldOut ? (
+          /* Disabled Order Button for Sold Out Products */
           <button
             type="button"
-            onClick={() => onCustomize(dish)}
-            className="text-[11px] font-bold text-gray-300 hover:text-white px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center gap-1 cursor-pointer transition active:scale-95"
-            title="Customize spice, add-ons, or notes"
+            disabled
+            className="px-2.5 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-bold bg-[#27272A]/90 text-rose-300/80 border border-rose-500/30 cursor-not-allowed select-none flex items-center gap-1 shadow-inner opacity-90"
+            title="This product is sold out for today and cannot be added to cart"
           >
-            <SlidersHorizontal size={11} className="text-[#FF7043]" />
-            <span className="hidden xs:inline">Custom</span>
-          </button>
-        )}
-
-        {quantity === 0 ? (
-          <button
-            type="button"
-            onClick={() => onQuantityChange(dish, 1)}
-            className="btn-order-coral text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1 cursor-pointer active:scale-95 transition shadow-sm"
-          >
-            <span>Order</span>
-            <Plus size={12} />
+            <span>Sold Out</span>
           </button>
         ) : (
-          <div className="qty-counter-pill rounded-full px-2 py-1 gap-2 flex items-center">
-            <button
-              type="button"
-              onClick={() => onQuantityChange(dish, quantity - 1)}
-              className="text-white hover:opacity-80 cursor-pointer p-0.5 transition active:scale-90"
-              aria-label="Decrease"
-            >
-              <Minus size={11} />
-            </button>
-            <span className="text-xs font-black text-white min-w-[12px] text-center">
-              {quantity}
-            </span>
-            <button
-              type="button"
-              onClick={() => onQuantityChange(dish, quantity + 1)}
-              className="text-white hover:opacity-80 cursor-pointer p-0.5 transition active:scale-90"
-              aria-label="Increase"
-            >
-              <Plus size={11} />
-            </button>
-          </div>
+          <>
+            {onCustomize && !isNonCustomizableDish(dish) && (
+              <button
+                type="button"
+                onClick={() => onCustomize(dish)}
+                className="text-[11px] font-bold text-gray-300 hover:text-white px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center gap-1 cursor-pointer transition active:scale-95"
+                title="Customize spice, add-ons, or notes"
+              >
+                <SlidersHorizontal size={11} className="text-[#FF7043]" />
+                <span className="hidden xs:inline">Custom</span>
+              </button>
+            )}
+
+            {quantity === 0 ? (
+              <button
+                type="button"
+                onClick={() => onQuantityChange(dish, 1)}
+                className="btn-order-coral text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1 cursor-pointer active:scale-95 transition shadow-sm"
+              >
+                <span>Order</span>
+                <Plus size={12} />
+              </button>
+            ) : (
+              <div className="qty-counter-pill rounded-full px-2 py-1 gap-2 flex items-center">
+                <button
+                  type="button"
+                  onClick={() => onQuantityChange(dish, quantity - 1)}
+                  className="text-white hover:opacity-80 cursor-pointer p-0.5 transition active:scale-90"
+                  aria-label="Decrease"
+                >
+                  <Minus size={11} />
+                </button>
+                <span className="text-xs font-black text-white min-w-[12px] text-center">
+                  {quantity}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onQuantityChange(dish, quantity + 1)}
+                  className="text-white hover:opacity-80 cursor-pointer p-0.5 transition active:scale-90"
+                  aria-label="Increase"
+                >
+                  <Plus size={11} />
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

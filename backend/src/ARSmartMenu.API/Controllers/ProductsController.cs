@@ -160,6 +160,26 @@ public class ProductsController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<ProductDto>>.Ok(result, $"{result.Count} products updated to {request.Status}"));
     }
 
+    [HttpPut("reorder")]
+    public async Task<ActionResult<ApiResponse<object>>> Reorder(
+        [FromBody] ReorderProductsRequest request,
+        CancellationToken ct)
+    {
+        var businessId = RequireBusinessId();
+        await _products.ReorderAsync(businessId, request, ct);
+        return Ok(ApiResponse<object>.Ok(new { updated = request.Items.Count }, "Product order updated"));
+    }
+
+    [HttpPatch("bulk-sold-out")]
+    public async Task<ActionResult<ApiResponse<object>>> BulkSetSoldOut(
+        [FromBody] BulkSetSoldOutRequest request,
+        CancellationToken ct)
+    {
+        var businessId = RequireBusinessId();
+        await _products.BulkSetSoldOutAsync(businessId, request, ct);
+        return Ok(ApiResponse<object>.Ok(new { updated = request.ProductIds.Count }, "Stock availability updated"));
+    }
+
 
 
 

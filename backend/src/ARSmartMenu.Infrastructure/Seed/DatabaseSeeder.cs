@@ -17,7 +17,14 @@ public static class DatabaseSeeder
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
             .CreateLogger("DatabaseSeeder");
 
-        await db.Database.MigrateAsync();
+        try
+        {
+            await db.Database.MigrateAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Database migration notice: {Message}. Continuing to self-healing schema checks...", ex.Message);
+        }
 
         // Defensive column verification: ensures runtime resilience across branches/migrations
         try
@@ -36,7 +43,7 @@ public static class DatabaseSeeder
                     ALTER TABLE [Businesses] ADD [RequireGeofence] bit NOT NULL DEFAULT 0;
 
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[TableOrders]') AND name = 'PartyPin')
-                    ALTER TABLE [TableOrders] ADD [PartyPin] nvarchar(max) NULL;
+                    ALTER TABLE [TableOrders] ADD [PartyPin] nvarchar(10) NULL;
 
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[TableOrders]') AND name = 'Rating')
                     ALTER TABLE [TableOrders] ADD [Rating] int NULL;
@@ -56,20 +63,26 @@ public static class DatabaseSeeder
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'InvoiceNumber')
                     ALTER TABLE [Subscriptions] ADD [InvoiceNumber] nvarchar(50) NULL;
 
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'BaseAmountPaise')
-                    ALTER TABLE [Subscriptions] ADD [BaseAmountPaise] int NOT NULL DEFAULT 0;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'BasePricePaise')
+                    ALTER TABLE [Subscriptions] ADD [BasePricePaise] int NOT NULL DEFAULT 0;
 
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'GstPaise')
                     ALTER TABLE [Subscriptions] ADD [GstPaise] int NOT NULL DEFAULT 0;
 
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'TotalAmountPaise')
-                    ALTER TABLE [Subscriptions] ADD [TotalAmountPaise] int NOT NULL DEFAULT 0;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'TotalPricePaise')
+                    ALTER TABLE [Subscriptions] ADD [TotalPricePaise] int NOT NULL DEFAULT 0;
 
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'PaymentMethod')
                     ALTER TABLE [Subscriptions] ADD [PaymentMethod] nvarchar(50) NULL;
 
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'PaymentRef')
-                    ALTER TABLE [Subscriptions] ADD [PaymentRef] nvarchar(100) NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'TransactionRef')
+                    ALTER TABLE [Subscriptions] ADD [TransactionRef] nvarchar(120) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'PaymentStatus')
+                    ALTER TABLE [Subscriptions] ADD [PaymentStatus] nvarchar(50) NOT NULL DEFAULT 'Completed';
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'InvoiceDate')
+                    ALTER TABLE [Subscriptions] ADD [InvoiceDate] datetime2 NULL;
 
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerGstNumber')
                     ALTER TABLE [Subscriptions] ADD [CustomerGstNumber] nvarchar(50) NULL;
@@ -79,6 +92,9 @@ public static class DatabaseSeeder
 
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerAddress')
                     ALTER TABLE [Subscriptions] ADD [CustomerAddress] nvarchar(500) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerCity')
+                    ALTER TABLE [Subscriptions] ADD [CustomerCity] nvarchar(100) NULL;
 
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerState')
                     ALTER TABLE [Subscriptions] ADD [CustomerState] nvarchar(100) NULL;

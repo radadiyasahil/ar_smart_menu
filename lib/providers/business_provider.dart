@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/services/api_client.dart';
 import '../core/services/auth_service.dart';
 import '../core/services/business_service.dart';
 import '../core/services/local_cache_service.dart';
@@ -157,6 +158,7 @@ class BusinessProvider extends ChangeNotifier {
       );
 
       final newToken = await _authService.refreshToken();
+      ApiClient.setCachedToken(newToken);
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_token', newToken);
 
@@ -185,6 +187,7 @@ class BusinessProvider extends ChangeNotifier {
 
       if (_business?.isActive == true) {
         final newToken = await _authService.refreshToken();
+        ApiClient.setCachedToken(newToken);
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('auth_token', newToken);
       }

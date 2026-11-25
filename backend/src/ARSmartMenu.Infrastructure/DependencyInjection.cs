@@ -25,6 +25,8 @@ public static class DependencyInjection
         });
 
         services.AddHttpContextAccessor();
+        services.AddMemoryCache();
+        services.AddSingleton<AppLookupCacheService>();
 
         // Auth
         services.AddScoped<IAuthService, AuthService>();

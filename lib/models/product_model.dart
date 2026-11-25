@@ -422,6 +422,31 @@ class ProductModel {
     );
   }
 
+  ProductModel copyWith({
+    bool? soldOutToday,
+    int? displayOrder,
+  }) {
+    return ProductModel(
+      id: id,
+      businessId: businessId,
+      name: name,
+      description: description,
+      pricePaise: pricePaise,
+      category: category,
+      vegStatus: vegStatus,
+      isSpicy: isSpicy,
+      isBestseller: isBestseller,
+      isNew: isNew,
+      status: status,
+      rejectionReason: rejectionReason,
+      soldOutToday: soldOutToday ?? this.soldOutToday,
+      displayOrder: displayOrder ?? this.displayOrder,
+      photos: photos,
+      createdAt: createdAt,
+      customizationJson: customizationJson,
+    );
+  }
+
   /// Lightweight JSON for local cache (list views — no photo blobs).
   Map<String, dynamic> toJson() => {
         'id': id,

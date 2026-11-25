@@ -14,99 +14,61 @@ namespace ARSmartMenu.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "InvoiceNumber",
-                table: "Subscriptions",
-                type: "nvarchar(50)",
-                maxLength: 50,
-                nullable: true);
+            migrationBuilder.Sql(@"
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'InvoiceNumber')
+                    ALTER TABLE [Subscriptions] ADD [InvoiceNumber] nvarchar(50) NULL;
 
-            migrationBuilder.AddColumn<int>(
-                name: "BaseAmountPaise",
-                table: "Subscriptions",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'BasePricePaise')
+                    ALTER TABLE [Subscriptions] ADD [BasePricePaise] int NOT NULL DEFAULT 0;
 
-            migrationBuilder.AddColumn<int>(
-                name: "GstPaise",
-                table: "Subscriptions",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'GstPaise')
+                    ALTER TABLE [Subscriptions] ADD [GstPaise] int NOT NULL DEFAULT 0;
 
-            migrationBuilder.AddColumn<int>(
-                name: "TotalAmountPaise",
-                table: "Subscriptions",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'TotalPricePaise')
+                    ALTER TABLE [Subscriptions] ADD [TotalPricePaise] int NOT NULL DEFAULT 0;
 
-            migrationBuilder.AddColumn<string>(
-                name: "PaymentMethod",
-                table: "Subscriptions",
-                type: "nvarchar(50)",
-                maxLength: 50,
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'PaymentMethod')
+                    ALTER TABLE [Subscriptions] ADD [PaymentMethod] nvarchar(50) NULL;
 
-            migrationBuilder.AddColumn<string>(
-                name: "PaymentRef",
-                table: "Subscriptions",
-                type: "nvarchar(100)",
-                maxLength: 100,
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'TransactionRef')
+                    ALTER TABLE [Subscriptions] ADD [TransactionRef] nvarchar(100) NULL;
 
-            migrationBuilder.AddColumn<string>(
-                name: "CustomerGstNumber",
-                table: "Subscriptions",
-                type: "nvarchar(50)",
-                maxLength: 50,
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'PaymentStatus')
+                    ALTER TABLE [Subscriptions] ADD [PaymentStatus] nvarchar(50) NOT NULL DEFAULT 'Completed';
 
-            migrationBuilder.AddColumn<string>(
-                name: "CustomerBusinessName",
-                table: "Subscriptions",
-                type: "nvarchar(200)",
-                maxLength: 200,
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'InvoiceDate')
+                    ALTER TABLE [Subscriptions] ADD [InvoiceDate] datetime2 NULL;
 
-            migrationBuilder.AddColumn<string>(
-                name: "CustomerAddress",
-                table: "Subscriptions",
-                type: "nvarchar(500)",
-                maxLength: 500,
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerGstNumber')
+                    ALTER TABLE [Subscriptions] ADD [CustomerGstNumber] nvarchar(50) NULL;
 
-            migrationBuilder.AddColumn<string>(
-                name: "CustomerState",
-                table: "Subscriptions",
-                type: "nvarchar(100)",
-                maxLength: 100,
-                nullable: true);
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerBusinessName')
+                    ALTER TABLE [Subscriptions] ADD [CustomerBusinessName] nvarchar(200) NULL;
 
-            migrationBuilder.AddColumn<string>(
-                name: "SacCode",
-                table: "Subscriptions",
-                type: "nvarchar(20)",
-                maxLength: 20,
-                nullable: true,
-                defaultValue: "998313");
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerAddress')
+                    ALTER TABLE [Subscriptions] ADD [CustomerAddress] nvarchar(500) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerCity')
+                    ALTER TABLE [Subscriptions] ADD [CustomerCity] nvarchar(100) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'CustomerState')
+                    ALTER TABLE [Subscriptions] ADD [CustomerState] nvarchar(100) NULL;
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'SacCode')
+                    ALTER TABLE [Subscriptions] ADD [SacCode] nvarchar(20) NULL DEFAULT '998313';
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Subscriptions]') AND name = 'GstRatePercent')
+                    ALTER TABLE [Subscriptions] ADD [GstRatePercent] decimal(5, 2) NOT NULL DEFAULT 18.0;
+
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Subscriptions_InvoiceNumber' AND object_id = OBJECT_ID(N'[Subscriptions]'))
+                    CREATE INDEX [IX_Subscriptions_InvoiceNumber] ON [Subscriptions] ([InvoiceNumber]);
+            ");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(name: "InvoiceNumber", table: "Subscriptions");
-            migrationBuilder.DropColumn(name: "BaseAmountPaise", table: "Subscriptions");
-            migrationBuilder.DropColumn(name: "GstPaise", table: "Subscriptions");
-            migrationBuilder.DropColumn(name: "TotalAmountPaise", table: "Subscriptions");
-            migrationBuilder.DropColumn(name: "PaymentMethod", table: "Subscriptions");
-            migrationBuilder.DropColumn(name: "PaymentRef", table: "Subscriptions");
-            migrationBuilder.DropColumn(name: "CustomerGstNumber", table: "Subscriptions");
-            migrationBuilder.DropColumn(name: "CustomerBusinessName", table: "Subscriptions");
-            migrationBuilder.DropColumn(name: "CustomerAddress", table: "Subscriptions");
-            migrationBuilder.DropColumn(name: "CustomerState", table: "Subscriptions");
-            migrationBuilder.DropColumn(name: "SacCode", table: "Subscriptions");
+            // Defensive no-op down to preserve invoice audit integrity across historical records
         }
     }
 }

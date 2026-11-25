@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/services/api_client.dart';
 import '../core/services/auth_service.dart';
 import '../core/services/local_cache_service.dart';
 import '../core/services/product_service.dart';
@@ -226,14 +227,17 @@ class ProductProvider extends ChangeNotifier {
   }
 
   Future<void> reorderProducts(List<String> orderedIds) async {
-    for (var i = 0; i < orderedIds.length; i++) {
-      final updated = await _productService.update(
-        id: orderedIds[i],
-        displayOrder: i,
-      );
-      _replaceLocal(updated);
-    }
-    _products.sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+    if (orderedIds.isEmpty) return;
+    await _productService.reorder(orderedIds);
+    final orderIndex = <String, int>{
+      for (var i = 0; i < orderedIds.length; i++) orderedIds[i]: i,
+    };
+    _products = _products
+        .map((p) => orderIndex.containsKey(p.id)
+            ? p.copyWith(displayOrder: orderIndex[p.id])
+            : p)
+        .toList()
+      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
     await _persistProducts();
     notifyListeners();
   }
@@ -242,15 +246,15 @@ class ProductProvider extends ChangeNotifier {
     Iterable<String> ids, {
     required bool soldOut,
   }) async {
-    var count = 0;
-    for (final id in ids) {
-      final updated = await _productService.setSoldOut(id, soldOut: soldOut);
-      _replaceLocal(updated);
-      count++;
-    }
+    final idSet = ids.toSet();
+    if (idSet.isEmpty) return 0;
+    await _productService.bulkSetSoldOut(idSet, soldOut: soldOut);
+    _products = _products
+        .map((p) => idSet.contains(p.id) ? p.copyWith(soldOutToday: soldOut) : p)
+        .toList();
     await _persistProducts();
     notifyListeners();
-    return count;
+    return idSet.length;
   }
 
   List<ProductModel> sortedByMenuOrder() {
@@ -339,6 +343,7 @@ class ProductProvider extends ChangeNotifier {
 
   Future<void> _refreshAuthToken() async {
     final token = await _authService.refreshToken();
+    ApiClient.setCachedToken(token);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_token', token);
   }

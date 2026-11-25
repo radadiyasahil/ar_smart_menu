@@ -129,9 +129,11 @@ public partial class AppDbContext
 
         modelBuilder.Entity<ArViewEvent>(e =>
         {
+            e.ToTable("ArViewEvents", tb => tb.HasTrigger("tr_ArViewEvents_TrackUsage"));
             e.HasIndex(v => v.BusinessId);
             e.HasIndex(v => v.ProductId);
             e.HasIndex(v => v.CreatedAt);
+            e.HasIndex(v => new { v.BusinessId, v.CreatedAt });
             e.HasOne(v => v.QrCode)
                 .WithMany()
                 .HasForeignKey(v => v.QrCodeId)

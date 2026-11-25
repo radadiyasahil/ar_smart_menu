@@ -112,9 +112,28 @@ class TableOrdersProvider extends ChangeNotifier {
 
     _isPolling = true;
     try {
-      final all = await _billingService.getPendingOrders(bId);
+      final delta = await _billingService.getPendingOrdersDelta(bId);
+      final all = delta.orders;
       final calls = await _billingService.getWaiterCalls(bId);
-      final bills = await _billingService.fetchActiveBills(bId);
+
+      // Skip redundant work and widget rebuilds if neither orders nor waiter calls changed
+      if (delta.unchanged && !_isFirstLoad && calls.length == _waiterCalls.length) {
+        bool callsMatch = true;
+        for (var i = 0; i < calls.length; i++) {
+          if (calls[i].tableNumber != _waiterCalls[i].tableNumber ||
+              calls[i].createdAt != _waiterCalls[i].createdAt) {
+            callsMatch = false;
+            break;
+          }
+        }
+        if (callsMatch) return;
+      }
+
+      final gstRate = await _billingService.getDynamicGstRate(bId);
+      final bills = _billingService.buildBillsFromOrders(all, gstRate);
+      if (bills.isNotEmpty) {
+        await _billingService.saveActiveBills(bills, bId);
+      }
 
       final newPending = all.where((o) => o.isPending).toList();
       final newKitchen = all.where((o) => o.isAccepted).toList();

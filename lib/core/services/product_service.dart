@@ -190,6 +190,31 @@ class ProductService {
     return _parseOne(response.data!);
   }
 
+  /// Bulk reorder all menu products in a single SQL stored procedure roundtrip.
+  Future<void> reorder(List<String> orderedIds) async {
+    if (orderedIds.isEmpty) return;
+    final items = [
+      for (var i = 0; i < orderedIds.length; i++)
+        {'id': orderedIds[i], 'displayOrder': i},
+    ];
+    final response = await _dio.put<Map<String, dynamic>>(
+      '/products/reorder',
+      data: {'items': items},
+    );
+    _ensureSuccess(response.data!);
+  }
+
+  /// Bulk toggle sold-out availability in a single SQL stored procedure roundtrip.
+  Future<void> bulkSetSoldOut(Iterable<String> ids, {required bool soldOut}) async {
+    final idList = ids.toList(growable: false);
+    if (idList.isEmpty) return;
+    final response = await _dio.patch<Map<String, dynamic>>(
+      '/products/bulk-sold-out',
+      data: {'productIds': idList, 'soldOut': soldOut},
+    );
+    _ensureSuccess(response.data!);
+  }
+
   /// POST /api/products/{id}/photos — multipart upload; 4 photos auto-submit draft.
   Future<UploadPhotoResult> uploadPhoto({
     required String productId,

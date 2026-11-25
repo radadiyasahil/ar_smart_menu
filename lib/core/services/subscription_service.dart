@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import 'api_client.dart';
+import 'local_cache_service.dart';
 
 class SubscriptionPlanModel {
   const SubscriptionPlanModel({
@@ -191,14 +192,20 @@ class SubscriptionService {
 
   final Dio _dio;
 
-  Future<List<SubscriptionPlanModel>> getPlans() async {
+  Future<List<SubscriptionPlanModel>> getPlans({bool forceRefresh = false}) async {
+    if (!forceRefresh) {
+      final cached = await LocalCacheService.loadFreshPlans();
+      if (cached != null) return cached;
+    }
     try {
       final response = await _dio.get<Map<String, dynamic>>('/subscriptions/plans');
-      final envelope = response.data!;
-      final list = envelope['data'] as List<dynamic>? ?? [];
-      return list
-          .map((e) => SubscriptionPlanModel.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final list = ApiClient.parseList(
+        response.data!,
+        SubscriptionPlanModel.fromJson,
+        fallbackError: 'Failed to load plans',
+      );
+      await LocalCacheService.savePlans(list);
+      return list;
     } catch (e) {
       return [];
     }
@@ -267,28 +274,41 @@ class SubscriptionService {
     return SubscriptionInvoiceModel.fromJson(envelope['data'] as Map<String, dynamic>);
   }
 
-  Future<SupportContactModel> getSupportContact() async {
+  Future<SupportContactModel> getSupportContact({bool forceRefresh = false}) async {
+    if (!forceRefresh) {
+      final cached = await LocalCacheService.loadFreshSupportContact();
+      if (cached != null) return cached;
+    }
     try {
       final response = await _dio.get<Map<String, dynamic>>('/subscriptions/support-contact');
       final envelope = response.data;
       if (envelope != null && envelope['data'] != null) {
-        return SupportContactModel.fromJson(envelope['data'] as Map<String, dynamic>);
+        final contact = SupportContactModel.fromJson(envelope['data'] as Map<String, dynamic>);
+        await LocalCacheService.saveSupportContact(contact);
+        return contact;
       }
     } catch (_) {}
-    return SupportContactModel.defaultContact;
+    return await LocalCacheService.loadFreshSupportContact() ?? SupportContactModel.defaultContact;
   }
 
-  /// Fetches the dynamic GST rate percent configured by platform admin
-  Future<double> getGstRate() async {
+  /// Fetches the dynamic GST rate percent configured by platform admin (10-min cached)
+  Future<double> getGstRate({bool forceRefresh = false}) async {
+    if (!forceRefresh) {
+      final cached = await LocalCacheService.loadFreshGstRate();
+      if (cached != null) return cached;
+    }
     try {
       final response = await _dio.get<Map<String, dynamic>>('/subscriptions/gst-rate');
       final envelope = response.data;
       if (envelope != null && envelope['data'] != null) {
         final rate = (envelope['data']['gstRatePercent'] as num?)?.toDouble();
-        if (rate != null && rate >= 0) return rate;
+        if (rate != null && rate >= 0) {
+          await LocalCacheService.saveGstRate(rate);
+          return rate;
+        }
       }
     } catch (_) {}
-    return 18.0;
+    return await LocalCacheService.loadAnyCachedGstRate() ?? 18.0;
   }
 }
 

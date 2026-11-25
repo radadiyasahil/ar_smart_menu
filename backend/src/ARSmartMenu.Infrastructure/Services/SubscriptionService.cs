@@ -12,12 +12,16 @@ namespace ARSmartMenu.Infrastructure.Services;
 public class SubscriptionService : ISubscriptionService
 {
     private readonly AppDbContext _db;
+    private readonly AppLookupCacheService _lookupCache;
     private readonly string _razorpayKeyId;
     private static decimal? _cachedGstRate;
+    private static volatile bool _plansSeeded;
+    private static volatile bool _backfillDone;
 
-    public SubscriptionService(AppDbContext db, IConfiguration config)
+    public SubscriptionService(AppDbContext db, IConfiguration config, AppLookupCacheService lookupCache)
     {
         _db = db;
+        _lookupCache = lookupCache;
         _razorpayKeyId = config["Razorpay:KeyId"] ?? "rzp_test_mock";
     }
 
@@ -133,6 +137,8 @@ public class SubscriptionService : ISubscriptionService
 
     private async Task EnsurePlansSeededAsync(CancellationToken ct)
     {
+        if (_plansSeeded) return;
+
         var plans = await _db.SubscriptionPlans.ToListAsync(ct);
         var existingBySlug = plans.ToDictionary(p => p.Slug, p => p);
         bool modified = false;
@@ -300,42 +306,23 @@ public class SubscriptionService : ISubscriptionService
         if (modified)
         {
             await _db.SaveChangesAsync(ct);
+            _lookupCache.InvalidatePlans();
         }
+        _plansSeeded = true;
     }
 
     public async Task<decimal> GetGstRatePercentRawAsync(CancellationToken ct = default)
     {
-        if (_cachedGstRate.HasValue)
-            return _cachedGstRate.Value;
-
-        var setting = await _db.SystemSettings
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Key == "Billing.GstRatePercent", ct);
-
-        _cachedGstRate = (setting != null && decimal.TryParse(setting.Value, out var parsedRate) && parsedRate >= 0)
-            ? parsedRate
-            : 18.0m;
-
-        return _cachedGstRate.Value;
+        var rate = await _lookupCache.GetGstRatePercentRawAsync(_db, ct);
+        _cachedGstRate = rate;
+        return rate;
     }
 
     public async Task<GstRateSettingDto> GetGstRateSettingAsync(CancellationToken ct = default)
     {
-        var rate = await GetGstRatePercentRawAsync(ct);
-        var setting = await _db.SystemSettings
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Key == "Billing.GstRatePercent", ct);
-
-        var halfRate = Math.Round(rate / 2m, 2);
-
-        return new GstRateSettingDto(
-            GstRatePercent: rate,
-            CgstRatePercent: halfRate,
-            SgstRatePercent: halfRate,
-            IgstRatePercent: rate,
-            LastUpdated: setting?.UpdatedAt ?? setting?.CreatedAt,
-            Description: setting?.Description ?? "GST percentage applied to subscription plans and customer invoices"
-        );
+        var dto = await _lookupCache.GetGstRateSettingAsync(_db, ct);
+        _cachedGstRate = dto.GstRatePercent;
+        return dto;
     }
 
     public async Task<GstRateSettingDto> UpdateGstRateSettingAsync(decimal newRatePercent, CancellationToken ct = default)
@@ -360,18 +347,11 @@ public class SubscriptionService : ISubscriptionService
             p.TotalPricePaise = basePaise + p.GstPaise;
         }
 
-        await _db.SaveChangesAsync(ct);
-        // Keep businesses on default GST rate synced to new platform rate
-        var businessesToSync = await _db.Businesses
-            .Where(b => b.GstRate <= 0 || b.GstRate == 5.0)
-            .ToListAsync(ct);
-        foreach (var b in businessesToSync)
-        {
-            b.GstRate = (double)newRatePercent;
-        }
+        // tr_SystemSettings_SyncBusinessGstRate trigger atomically syncs default Businesses.GstRate in SQL
         await _db.SaveChangesAsync(ct);
 
         _cachedGstRate = newRatePercent;
+        _lookupCache.InvalidateGstRate();
 
         var halfRate = Math.Round(newRatePercent / 2m, 2);
         return new GstRateSettingDto(
@@ -384,31 +364,8 @@ public class SubscriptionService : ISubscriptionService
         );
     }
 
-    public async Task<SupportContactSettingDto> GetSupportContactSettingAsync(CancellationToken ct = default)
-    {
-        var settings = await _db.SystemSettings
-            .AsNoTracking()
-            .Where(s => s.Key.StartsWith("Platform.Support"))
-            .ToListAsync(ct);
-
-        var whatsapp = settings.FirstOrDefault(s => s.Key == "Platform.SupportWhatsApp")?.Value ?? "+91 98765 43210";
-        var email = settings.FirstOrDefault(s => s.Key == "Platform.SupportEmail")?.Value ?? "support@arsmartmenu.com";
-        var phone = settings.FirstOrDefault(s => s.Key == "Platform.SupportPhone")?.Value ?? "+91 98765 43210";
-        var helpMsg = settings.FirstOrDefault(s => s.Key == "Platform.SupportHelpMessage")?.Value ?? "For assistance, queries, or account updates, reach out via:";
-
-        var latestUpdate = settings
-            .Select(s => s.UpdatedAt ?? s.CreatedAt)
-            .DefaultIfEmpty(DateTime.UtcNow)
-            .Max();
-
-        return new SupportContactSettingDto(
-            WhatsAppNumber: whatsapp,
-            Email: email,
-            PhoneNumber: phone,
-            HelpMessage: helpMsg,
-            LastUpdated: latestUpdate
-        );
-    }
+    public Task<SupportContactSettingDto> GetSupportContactSettingAsync(CancellationToken ct = default) =>
+        _lookupCache.GetSupportContactSettingAsync(_db, ct);
 
     public async Task<SupportContactSettingDto> UpdateSupportContactSettingAsync(UpdateSupportContactSettingRequest request, CancellationToken ct = default)
     {
@@ -436,6 +393,7 @@ public class SubscriptionService : ISubscriptionService
         }
 
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateSupportContact();
 
         return new SupportContactSettingDto(
             WhatsAppNumber: keysToUpdate["Platform.SupportWhatsApp"].Value,
@@ -471,6 +429,10 @@ public class SubscriptionService : ISubscriptionService
 
     public async Task<IReadOnlyList<SubscriptionPlanDto>> ListPlansAsync(CancellationToken ct = default)
     {
+        var cached = _lookupCache.GetCachedPlans();
+        if (cached != null)
+            return cached;
+
         await EnsurePlansSeededAsync(ct);
         await GetGstRatePercentRawAsync(ct);
 
@@ -480,50 +442,54 @@ public class SubscriptionService : ISubscriptionService
             .OrderBy(p => p.DisplayOrder)
             .ToListAsync(ct);
 
-        return plans.Select(MapPlan).ToList();
+        var result = plans.Select(p => MapPlan(p)).ToList();
+        _lookupCache.SetCachedPlans(result);
+        return result;
     }
 
     public async Task<SubscriptionDto?> GetMeAsync(Guid businessId, Guid? userId = null, CancellationToken ct = default)
     {
         await EnsurePlansSeededAsync(ct);
 
-        var business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == businessId, ct);
-        var ownerId = userId ?? business?.OwnerId;
+        var business = await _db.Businesses
+            .AsNoTracking()
+            .Where(b => b.Id == businessId)
+            .Select(b => new
+            {
+                b.OwnerId,
+                b.CustomDishLimit,
+                b.ArViewEnabled,
+                b.ArPerViewChargePaise,
+                b.ArViewCredits,
+                b.ArViewsUsed
+            })
+            .FirstOrDefaultAsync(ct);
 
-        // 1. Prioritize active, unexpired subscription for this business OR for any business owned by the same user account
+        var ownerId = userId ?? business?.OwnerId;
+        var now = DateTime.UtcNow;
+
+        // Single query prioritizes active unexpired subscription first, falling back to latest subscription
         var subscription = await _db.Subscriptions
             .AsNoTracking()
             .Include(s => s.Plan)
             .Include(s => s.Business)
-            .Where(s => (s.BusinessId == businessId || (ownerId.HasValue && s.Business.OwnerId == ownerId.Value))
-                        && s.Status == SubscriptionStatus.Active
-                        && s.EndsAt > DateTime.UtcNow)
-            .OrderByDescending(s => s.EndsAt)
+            .Where(s => s.BusinessId == businessId || (ownerId.HasValue && s.Business.OwnerId == ownerId.Value))
+            .OrderByDescending(s => s.Status == SubscriptionStatus.Active && s.EndsAt > now)
+            .ThenByDescending(s => s.EndsAt)
             .FirstOrDefaultAsync(ct);
 
-        // 2. If no active, find the most recent one (trial or expired)
-        if (subscription is null)
+        // Defensive auto-expire if past end date
+        if (subscription != null && subscription.Status == SubscriptionStatus.Active && subscription.EndsAt <= now)
         {
-            subscription = await _db.Subscriptions
-                .AsNoTracking()
-                .Include(s => s.Plan)
-                .Include(s => s.Business)
-                .Where(s => s.BusinessId == businessId || (ownerId.HasValue && s.Business.OwnerId == ownerId.Value))
-                .OrderByDescending(s => s.EndsAt)
-                .FirstOrDefaultAsync(ct);
-
-            // Defensive auto-expire if past end date
-            if (subscription != null && subscription.Status == SubscriptionStatus.Active && subscription.EndsAt <= DateTime.UtcNow)
-            {
-                await _db.Subscriptions
-                    .Where(s => s.Id == subscription.Id)
-                    .ExecuteUpdateAsync(s => s
-                        .SetProperty(x => x.Status, SubscriptionStatus.Expired)
-                        .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
-            }
+            await _db.Subscriptions
+                .Where(s => s.Id == subscription.Id)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.Status, SubscriptionStatus.Expired)
+                    .SetProperty(x => x.UpdatedAt, now), ct);
         }
 
-        var hasUsedTrial = await _db.Subscriptions
+        var hasUsedTrial = subscription?.Plan?.Slug == "trial-7-days" || await _db.Subscriptions
+            .AsNoTracking()
             .AnyAsync(s => (s.BusinessId == businessId || (ownerId.HasValue && s.Business.OwnerId == ownerId.Value))
                            && s.Plan.Slug == "trial-7-days", ct);
 
@@ -559,30 +525,112 @@ public class SubscriptionService : ISubscriptionService
     {
         await EnsurePlansSeededAsync(ct);
 
+        var now = DateTime.UtcNow;
         var subscription = await _db.Subscriptions
             .AsNoTracking()
             .Include(s => s.Plan)
             .Include(s => s.Business)
-            .Where(s => s.Business.OwnerId == ownerId && s.Status == SubscriptionStatus.Active && s.EndsAt > DateTime.UtcNow)
-            .OrderByDescending(s => s.EndsAt)
+            .Where(s => s.Business.OwnerId == ownerId)
+            .OrderByDescending(s => s.Status == SubscriptionStatus.Active && s.EndsAt > now)
+            .ThenByDescending(s => s.EndsAt)
             .FirstOrDefaultAsync(ct);
 
-        if (subscription is null)
-        {
-            subscription = await _db.Subscriptions
-                .AsNoTracking()
-                .Include(s => s.Plan)
-                .Include(s => s.Business)
-                .Where(s => s.Business.OwnerId == ownerId)
-                .OrderByDescending(s => s.EndsAt)
-                .FirstOrDefaultAsync(ct);
-        }
+        if (subscription is null) return null;
 
-        var hasUsedTrial = await _db.Subscriptions
+        var hasUsedTrial = subscription.Plan?.Slug == "trial-7-days" || await _db.Subscriptions
+            .AsNoTracking()
             .AnyAsync(s => s.Business.OwnerId == ownerId && s.Plan.Slug == "trial-7-days", ct);
 
-        if (subscription is null) return null;
         return MapSubscription(subscription, hasUsedTrial);
+    }
+
+    private async Task<SubscriptionDto> CreateActivatedSubscriptionAsync(
+        Guid businessId,
+        SubscriptionPlan plan,
+        int durationDays,
+        bool isTrial,
+        string paymentMethod,
+        string transactionRef,
+        bool forceActivateBusiness,
+        bool activateOtherOwnerBusinesses,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        await _db.Subscriptions
+            .Where(s => s.BusinessId == businessId && s.Status == SubscriptionStatus.Active)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Status, SubscriptionStatus.Cancelled)
+                .SetProperty(x => x.CancelledAt, now)
+                .SetProperty(x => x.UpdatedAt, now), ct);
+
+        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct);
+        var endsAt = durationDays >= 30 && isTrial == false && paymentMethod == "Razorpay" && durationDays == 30
+            ? now.AddMonths(1)
+            : now.AddDays(durationDays);
+        var invoiceNum = await GenerateInvoiceNumberAsync(now, ct);
+        var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
+
+        int basePrice = 0, gstPrice = 0, totalPrice = 0;
+        if (!isTrial)
+        {
+            basePrice = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
+            gstPrice = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePrice * (double)(dynamicGstRate / 100m));
+            totalPrice = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePrice + gstPrice);
+        }
+
+        var sub = new Subscription
+        {
+            BusinessId = businessId,
+            PlanId = plan.Id,
+            BillingCycle = durationDays >= 365 ? BillingCycle.Yearly : BillingCycle.Monthly,
+            Status = SubscriptionStatus.Active,
+            StartsAt = now,
+            EndsAt = endsAt,
+            RazorpaySubscriptionId = transactionRef,
+            BasePricePaise = basePrice,
+            GstPaise = gstPrice,
+            TotalPricePaise = totalPrice,
+            PaymentMethod = paymentMethod,
+            TransactionRef = transactionRef,
+            PaymentStatus = "Completed",
+            InvoiceNumber = invoiceNum,
+            InvoiceDate = now,
+            CustomerBusinessName = business?.BusinessName,
+            CustomerGstNumber = business?.GstNumber,
+            CustomerAddress = business?.FullAddress,
+            CustomerCity = business?.City,
+            CustomerState = business?.City,
+            SacCode = "998313",
+            GstRatePercent = dynamicGstRate
+        };
+        _db.Subscriptions.Add(sub);
+
+        if (business != null && (forceActivateBusiness || business.Status is BusinessStatus.PendingApproval or BusinessStatus.Deactivated))
+        {
+            business.Status = BusinessStatus.Active;
+            if (!forceActivateBusiness)
+                business.ApprovedAt ??= now;
+        }
+
+        if (activateOtherOwnerBusinesses && business?.OwnerId is Guid ownerId)
+        {
+            await _db.Businesses
+                .Where(b => b.OwnerId == ownerId && b.Id != businessId && (b.Status == BusinessStatus.PendingApproval || b.Status == BusinessStatus.Deactivated))
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(b => b.Status, BusinessStatus.Active)
+                    .SetProperty(b => b.ApprovedAt, b => b.ApprovedAt ?? now)
+                    .SetProperty(b => b.UpdatedAt, now), ct);
+        }
+
+        await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
+        sub.Plan = plan;
+        if (business != null) sub.Business = business;
+
+        var hasUsedTrial = isTrial || await _db.Subscriptions
+            .AsNoTracking()
+            .AnyAsync(s => s.BusinessId == businessId && s.Plan.Slug == "trial-7-days", ct);
+        return MapSubscription(sub, hasUsedTrial: hasUsedTrial);
     }
 
     public async Task<SubscriptionDto> ActivateTrialAsync(Guid businessId, CancellationToken ct = default)
@@ -590,78 +638,20 @@ public class SubscriptionService : ISubscriptionService
         await EnsurePlansSeededAsync(ct);
 
         var hasUsedTrial = await _db.Subscriptions
+            .AsNoTracking()
             .AnyAsync(s => s.BusinessId == businessId && s.Plan.Slug == "trial-7-days", ct);
         if (hasUsedTrial)
             throw new ValidationException("7-Day Free Trial has already been used by this business. Please select an affordable paid plan to continue.");
 
         var trialPlan = await _db.SubscriptionPlans
+            .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Slug == "trial-7-days" && p.IsActive, ct)
             ?? throw new NotFoundException("Trial plan configuration not found.");
 
-        var existing = await _db.Subscriptions
-            .Where(s => s.BusinessId == businessId && s.Status == SubscriptionStatus.Active)
-            .ToListAsync(ct);
-        foreach (var sub in existing)
-        {
-            sub.Status = SubscriptionStatus.Cancelled;
-            sub.CancelledAt = DateTime.UtcNow;
-            sub.UpdatedAt = DateTime.UtcNow;
-        }
-
-        var business = await _db.Businesses.Include(b => b.Owner).FirstOrDefaultAsync(b => b.Id == businessId, ct);
-        var startsAt = DateTime.UtcNow;
-        var endsAt = startsAt.AddDays(7);
-        var invoiceNum = await GenerateInvoiceNumberAsync(startsAt, ct);
-
-        var newSub = new Subscription
-        {
-            BusinessId = businessId,
-            PlanId = trialPlan.Id,
-            BillingCycle = BillingCycle.Monthly,
-            Status = SubscriptionStatus.Active,
-            StartsAt = startsAt,
-            EndsAt = endsAt,
-            RazorpaySubscriptionId = "TRIAL_7_DAYS_ACTIVATED",
-            BasePricePaise = 0,
-            GstPaise = 0,
-            TotalPricePaise = 0,
-            PaymentMethod = "Free Trial",
-            TransactionRef = "TRIAL_7_DAYS_ACTIVATED",
-            PaymentStatus = "Completed",
-            InvoiceNumber = invoiceNum,
-            InvoiceDate = startsAt,
-            CustomerBusinessName = business?.BusinessName,
-            CustomerGstNumber = business?.GstNumber,
-            CustomerAddress = business?.FullAddress,
-            CustomerCity = business?.City,
-            CustomerState = business?.City,
-            SacCode = "998313",
-            GstRatePercent = 18.0m
-        };
-        _db.Subscriptions.Add(newSub);
-
-        if (business != null && (business.Status == BusinessStatus.PendingApproval || business.Status == BusinessStatus.Deactivated))
-        {
-            business.Status = BusinessStatus.Active;
-            business.ApprovedAt ??= DateTime.UtcNow;
-        }
-
-        var ownerId = business?.OwnerId;
-        if (ownerId.HasValue)
-        {
-            var otherBusinesses = await _db.Businesses
-                .Where(b => b.OwnerId == ownerId.Value && (b.Status == BusinessStatus.PendingApproval || b.Status == BusinessStatus.Deactivated))
-                .ToListAsync(ct);
-            foreach (var ob in otherBusinesses)
-            {
-                ob.Status = BusinessStatus.Active;
-                ob.ApprovedAt ??= DateTime.UtcNow;
-            }
-        }
-
-        await _db.SaveChangesAsync(ct);
-        await _db.Entry(newSub).Reference(s => s.Plan).LoadAsync(ct);
-        return MapSubscription(newSub, hasUsedTrial: true);
+        return await CreateActivatedSubscriptionAsync(
+            businessId, trialPlan, durationDays: 7, isTrial: true,
+            paymentMethod: "Free Trial", transactionRef: "TRIAL_7_DAYS_ACTIVATED",
+            forceActivateBusiness: false, activateOtherOwnerBusinesses: true, ct: ct);
     }
 
     public async Task<SubscriptionDto> ActivatePlanAsync(
@@ -672,78 +662,21 @@ public class SubscriptionService : ISubscriptionService
         await EnsurePlansSeededAsync(ct);
 
         var plan = await _db.SubscriptionPlans
+            .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == request.PlanId && p.IsActive, ct)
             ?? throw new NotFoundException("Selected subscription plan not found.");
 
-        int durationDays = 30;
-        if (PlanMetadata.TryGetValue(plan.Slug, out var meta))
-            durationDays = meta.DurationDays;
-        else if (plan.Slug == "trial-7-days") durationDays = 7;
-        else if (plan.Slug == "plan-1-month") durationDays = 30;
-        else if (plan.Slug == "plan-3-months") durationDays = 90;
-        else if (plan.Slug == "plan-6-months") durationDays = 180;
-        else if (plan.Slug == "plan-1-year") durationDays = 365;
+        var durationDays = plan.DurationDays > 0
+            ? plan.DurationDays
+            : PlanMetadata.TryGetValue(plan.Slug, out var meta) ? meta.DurationDays : 30;
 
-        var existing = await _db.Subscriptions
-            .Where(s => s.BusinessId == businessId && s.Status == SubscriptionStatus.Active)
-            .ToListAsync(ct);
-        foreach (var oldSub in existing)
-        {
-            oldSub.Status = SubscriptionStatus.Cancelled;
-            oldSub.CancelledAt = DateTime.UtcNow;
-            oldSub.UpdatedAt = DateTime.UtcNow;
-        }
-
-        var business = await _db.Businesses.Include(b => b.Owner).FirstOrDefaultAsync(b => b.Id == businessId, ct);
-        var startsAt = DateTime.UtcNow;
-        var endsAt = startsAt.AddDays(durationDays);
-        var invoiceNum = await GenerateInvoiceNumberAsync(startsAt, ct);
-        var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
-
-        var basePrice = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
-        var gstPrice = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePrice * (double)(dynamicGstRate / 100m));
-        var totalPrice = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePrice + gstPrice);
         var payMethod = request.PaymentMethod ?? "UPI";
         var txnRef = request.TransactionRef ?? $"SIM_{payMethod}_{Guid.NewGuid():N}"[..18];
 
-        var newSub = new Subscription
-        {
-            BusinessId = businessId,
-            PlanId = plan.Id,
-            BillingCycle = durationDays >= 365 ? BillingCycle.Yearly : BillingCycle.Monthly,
-            Status = SubscriptionStatus.Active,
-            StartsAt = startsAt,
-            EndsAt = endsAt,
-            RazorpaySubscriptionId = txnRef,
-            BasePricePaise = basePrice,
-            GstPaise = gstPrice,
-            TotalPricePaise = totalPrice,
-            PaymentMethod = payMethod,
-            TransactionRef = txnRef,
-            PaymentStatus = "Completed",
-            InvoiceNumber = invoiceNum,
-            InvoiceDate = startsAt,
-            CustomerBusinessName = business?.BusinessName,
-            CustomerGstNumber = business?.GstNumber,
-            CustomerAddress = business?.FullAddress,
-            CustomerCity = business?.City,
-            CustomerState = business?.City,
-            SacCode = "998313",
-            GstRatePercent = dynamicGstRate
-        };
-        _db.Subscriptions.Add(newSub);
-
-        if (business != null && (business.Status == BusinessStatus.PendingApproval || business.Status == BusinessStatus.Deactivated))
-        {
-            business.Status = BusinessStatus.Active;
-            business.ApprovedAt ??= DateTime.UtcNow;
-        }
-
-        await _db.SaveChangesAsync(ct);
-        await _db.Entry(newSub).Reference(s => s.Plan).LoadAsync(ct);
-
-        var hasUsedTrial = await _db.Subscriptions.AnyAsync(s => s.BusinessId == businessId && s.Plan.Slug == "trial-7-days", ct);
-        return MapSubscription(newSub, hasUsedTrial: hasUsedTrial);
+        return await CreateActivatedSubscriptionAsync(
+            businessId, plan, durationDays, isTrial: plan.Slug == "trial-7-days",
+            paymentMethod: payMethod, transactionRef: txnRef,
+            forceActivateBusiness: false, activateOtherOwnerBusinesses: false, ct: ct);
     }
 
     public async Task<SubscriptionDto> AdminGrantPlanAsync(
@@ -766,72 +699,18 @@ public class SubscriptionService : ISubscriptionService
             normalizedSlug = "trial-7-days";
 
         var plan = await _db.SubscriptionPlans
-            .FirstOrDefaultAsync(p => p.Slug.ToLower() == normalizedSlug && p.IsActive, ct)
-            ?? await _db.SubscriptionPlans.FirstOrDefaultAsync(p => p.IsActive, ct)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Slug == normalizedSlug && p.IsActive, ct)
+            ?? await _db.SubscriptionPlans.AsNoTracking().FirstOrDefaultAsync(p => p.IsActive, ct)
             ?? throw new NotFoundException("Plan not found.");
 
-        int durationDays = request.CustomDays ?? 30;
-        if (request.CustomDays == null && PlanMetadata.TryGetValue(plan.Slug, out var meta))
-            durationDays = meta.DurationDays;
-
-        var existing = await _db.Subscriptions
-            .Where(s => s.BusinessId == businessId && s.Status == SubscriptionStatus.Active)
-            .ToListAsync(ct);
-        foreach (var oldSub in existing)
-        {
-            oldSub.Status = SubscriptionStatus.Cancelled;
-            oldSub.CancelledAt = DateTime.UtcNow;
-            oldSub.UpdatedAt = DateTime.UtcNow;
-        }
-
-        var business = await _db.Businesses.Include(b => b.Owner).FirstOrDefaultAsync(b => b.Id == businessId, ct);
-        var startsAt = DateTime.UtcNow;
-        var endsAt = startsAt.AddDays(durationDays);
-        var invoiceNum = await GenerateInvoiceNumberAsync(startsAt, ct);
-        var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
-
-        var basePrice = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
-        var gstPrice = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePrice * (double)(dynamicGstRate / 100m));
-        var totalPrice = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePrice + gstPrice);
+        int durationDays = request.CustomDays ?? (PlanMetadata.TryGetValue(plan.Slug, out var meta) ? meta.DurationDays : (plan.DurationDays > 0 ? plan.DurationDays : 30));
         var txnRef = $"ADMIN_GRANT_{request.Notes ?? "Manual"}"[..Math.Min(24, 12 + (request.Notes?.Length ?? 6))];
 
-        var sub = new Subscription
-        {
-            BusinessId = businessId,
-            PlanId = plan.Id,
-            BillingCycle = durationDays >= 365 ? BillingCycle.Yearly : BillingCycle.Monthly,
-            Status = SubscriptionStatus.Active,
-            StartsAt = startsAt,
-            EndsAt = endsAt,
-            RazorpaySubscriptionId = txnRef,
-            BasePricePaise = basePrice,
-            GstPaise = gstPrice,
-            TotalPricePaise = totalPrice,
-            PaymentMethod = "Admin Grant",
-            TransactionRef = txnRef,
-            PaymentStatus = "Completed",
-            InvoiceNumber = invoiceNum,
-            InvoiceDate = startsAt,
-            CustomerBusinessName = business?.BusinessName,
-            CustomerGstNumber = business?.GstNumber,
-            CustomerAddress = business?.FullAddress,
-            CustomerCity = business?.City,
-            CustomerState = business?.City,
-            SacCode = "998313",
-            GstRatePercent = dynamicGstRate
-        };
-        _db.Subscriptions.Add(sub);
-
-        if (business != null)
-        {
-            business.Status = BusinessStatus.Active;
-        }
-
-        await _db.SaveChangesAsync(ct);
-        await _db.Entry(sub).Reference(s => s.Plan).LoadAsync(ct);
-
-        var hasUsedTrial = await _db.Subscriptions.AnyAsync(s => s.BusinessId == businessId && s.Plan.Slug == "trial-7-days", ct);
-        return MapSubscription(sub, hasUsedTrial: hasUsedTrial);
+        return await CreateActivatedSubscriptionAsync(
+            businessId, plan, durationDays, isTrial: false,
+            paymentMethod: "Admin Grant", transactionRef: txnRef,
+            forceActivateBusiness: true, activateOtherOwnerBusinesses: false, ct: ct);
     }
 
     public async Task<SubscriptionDto> AdminCancelPlanAsync(Guid businessId, CancellationToken ct = default)
@@ -908,63 +787,18 @@ public class SubscriptionService : ISubscriptionService
             .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("No subscription plans configured.");
 
-        var existing = await _db.Subscriptions
-            .Include(s => s.Plan)
-            .Where(s => s.BusinessId == businessId && s.Status == SubscriptionStatus.Active)
-            .ToListAsync(ct);
+        var dto = await CreateActivatedSubscriptionAsync(
+            businessId,
+            plan,
+            durationDays: 30,
+            isTrial: false,
+            paymentMethod: "Razorpay",
+            transactionRef: request.RazorpayPaymentId,
+            forceActivateBusiness: false,
+            activateOtherOwnerBusinesses: false,
+            ct: ct);
 
-        foreach (var sub in existing)
-        {
-            sub.Status = SubscriptionStatus.Cancelled;
-            sub.CancelledAt = DateTime.UtcNow;
-            sub.UpdatedAt = DateTime.UtcNow;
-        }
-
-        var business = await _db.Businesses.Include(b => b.Owner).FirstOrDefaultAsync(b => b.Id == businessId, ct);
-        var startsAt = DateTime.UtcNow;
-        var endsAt = startsAt.AddMonths(1);
-        var invoiceNum = await GenerateInvoiceNumberAsync(startsAt, ct);
-        var dynamicGstRate = await GetGstRatePercentRawAsync(ct);
-
-        var basePrice = plan.BasePricePaise > 0 ? plan.BasePricePaise : plan.MonthlyPricePaise;
-        var gstPrice = plan.GstPaise > 0 ? plan.GstPaise : (int)Math.Round(basePrice * (double)(dynamicGstRate / 100m));
-        var totalPrice = plan.TotalPricePaise > 0 ? plan.TotalPricePaise : (basePrice + gstPrice);
-
-        var subscription = new Subscription
-        {
-            BusinessId = businessId,
-            PlanId = plan.Id,
-            BillingCycle = BillingCycle.Monthly,
-            Status = SubscriptionStatus.Active,
-            StartsAt = startsAt,
-            EndsAt = endsAt,
-            RazorpaySubscriptionId = request.RazorpayPaymentId,
-            BasePricePaise = basePrice,
-            GstPaise = gstPrice,
-            TotalPricePaise = totalPrice,
-            PaymentMethod = "Razorpay",
-            TransactionRef = request.RazorpayPaymentId,
-            PaymentStatus = "Completed",
-            InvoiceNumber = invoiceNum,
-            InvoiceDate = startsAt,
-            CustomerBusinessName = business?.BusinessName,
-            CustomerGstNumber = business?.GstNumber,
-            CustomerAddress = business?.FullAddress,
-            CustomerCity = business?.City,
-            CustomerState = business?.City,
-            SacCode = "998313",
-            GstRatePercent = dynamicGstRate
-        };
-
-        _db.Subscriptions.Add(subscription);
-        await _db.SaveChangesAsync(ct);
-
-        await _db.Entry(subscription).Reference(s => s.Plan).LoadAsync(ct);
-
-        var hasUsedTrial = await _db.Subscriptions.AnyAsync(s => s.BusinessId == businessId && s.Plan.Slug == "trial-7-days", ct);
-        return new VerifyPaymentResponse(
-            MapSubscription(subscription, hasUsedTrial),
-            "Payment verified (mock Razorpay).");
+        return new VerifyPaymentResponse(dto, "Payment verified (mock Razorpay).");
     }
 
 
@@ -1048,6 +882,7 @@ public class SubscriptionService : ISubscriptionService
 
         _db.SubscriptionPlans.Add(plan);
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidatePlans();
 
         return MapPlan(plan, 0);
     }
@@ -1116,6 +951,7 @@ public class SubscriptionService : ISubscriptionService
         // Note: Existing business active subscriptions are left untouched to guarantee
         // that businesses currently on this plan remain running seamlessly with their purchased terms.
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidatePlans();
 
         var subscriberCount = await _db.Subscriptions
             .CountAsync(s => s.PlanId == id && s.Status == SubscriptionStatus.Active && s.EndsAt > DateTime.UtcNow, ct);
@@ -1142,6 +978,7 @@ public class SubscriptionService : ISubscriptionService
             plan.IsActive = false;
             plan.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(ct);
+            _lookupCache.InvalidatePlans();
             return true;
         }
         else
@@ -1149,6 +986,7 @@ public class SubscriptionService : ISubscriptionService
             // Zero businesses have ever used this plan — can safely remove it completely
             _db.SubscriptionPlans.Remove(plan);
             await _db.SaveChangesAsync(ct);
+            _lookupCache.InvalidatePlans();
             return true;
         }
     }
@@ -1162,6 +1000,7 @@ public class SubscriptionService : ISubscriptionService
         plan.IsActive = !plan.IsActive;
         plan.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidatePlans();
 
         var subscriberCount = await _db.Subscriptions
             .CountAsync(s => s.PlanId == id && s.Status == SubscriptionStatus.Active && s.EndsAt > DateTime.UtcNow, ct);
@@ -1290,90 +1129,164 @@ public class SubscriptionService : ISubscriptionService
 
     // ── History & GST Invoice Services ───────────────────────────────────────
 
-    public async Task<IReadOnlyList<SubscriptionHistoryItemDto>> GetSubscriptionHistoryAsync(Guid businessId, CancellationToken ct = default)
+    private sealed class SubscriptionHistoryViewRow
     {
-        await EnsureExistingSubscriptionsBackfilledAsync(ct);
-        await GetGstRatePercentRawAsync(ct);
-        var subs = await _db.Subscriptions
-            .AsNoTracking()
-            .Include(s => s.Plan)
-            .Include(s => s.Business)
-                .ThenInclude(b => b.Owner)
-            .Where(s => s.BusinessId == businessId)
-            .OrderByDescending(s => s.StartsAt)
-            .ThenByDescending(s => s.CreatedAt)
-            .ToListAsync(ct);
-
-        return subs.Select(MapHistoryItem).ToList();
+        public Guid Id { get; set; }
+        public Guid BusinessId { get; set; }
+        public Guid PlanId { get; set; }
+        public string? InvoiceNumber { get; set; }
+        public DateTime InvoiceDate { get; set; }
+        public int BillingCycle { get; set; }
+        public int Status { get; set; }
+        public DateTime StartsAt { get; set; }
+        public DateTime EndsAt { get; set; }
+        public DateTime? CancelledAt { get; set; }
+        public int BasePricePaise { get; set; }
+        public int GstPaise { get; set; }
+        public int TotalPricePaise { get; set; }
+        public string? PaymentMethod { get; set; }
+        public string? TransactionRef { get; set; }
+        public string? RazorpaySubscriptionId { get; set; }
+        public string? PaymentStatus { get; set; }
+        public string? SacCode { get; set; }
+        public decimal GstRatePercent { get; set; }
+        public string? BusinessName { get; set; }
+        public string? CustomerGstNumber { get; set; }
+        public string? CustomerAddress { get; set; }
+        public string? CustomerCity { get; set; }
+        public string? PlanName { get; set; }
+        public string? PlanSlug { get; set; }
+        public int? PlanDurationDays { get; set; }
+        public int? PlanBasePricePaise { get; set; }
+        public int? PlanGstPaise { get; set; }
+        public int? PlanTotalPricePaise { get; set; }
+        public string? OwnerName { get; set; }
+        public string? OwnerMobile { get; set; }
     }
 
-    public Task<IReadOnlyList<SubscriptionHistoryItemDto>> GetHistoryAsync(Guid businessId, CancellationToken ct = default)
-        => GetSubscriptionHistoryAsync(businessId, ct);
-
-    public async Task<IReadOnlyList<SubscriptionHistoryItemDto>> AdminGetAllSubscriptionHistoryAsync(CancellationToken ct = default)
+    private async Task<IReadOnlyList<SubscriptionHistoryItemDto>> QueryHistoryFromViewAsync(
+        Guid? businessId,
+        SubscriptionStatus? status,
+        DateTime? fromDate,
+        DateTime? toDate,
+        string? search,
+        CancellationToken ct)
     {
         await EnsureExistingSubscriptionsBackfilledAsync(ct);
-        await GetGstRatePercentRawAsync(ct);
-        var subs = await _db.Subscriptions
-            .AsNoTracking()
-            .Include(s => s.Plan)
-            .Include(s => s.Business)
-                .ThenInclude(b => b.Owner)
-            .OrderByDescending(s => s.StartsAt)
-            .ThenByDescending(s => s.CreatedAt)
-            .ToListAsync(ct);
+        var defaultGstRate = await GetGstRatePercentRawAsync(ct);
 
-        return subs.Select(MapHistoryItem).ToList();
-    }
+        var q = _db.Database.SqlQueryRaw<SubscriptionHistoryViewRow>(
+            "SELECT * FROM [dbo].[vw_SubscriptionHistoryDetails]");
 
-    public async Task<IReadOnlyList<SubscriptionHistoryItemDto>> AdminListHistoryAsync(AdminSubscriptionHistoryQuery query, CancellationToken ct = default)
-    {
-        await EnsureExistingSubscriptionsBackfilledAsync(ct);
-        await GetGstRatePercentRawAsync(ct);
+        if (businessId.HasValue && businessId.Value != Guid.Empty)
+            q = q.Where(s => s.BusinessId == businessId.Value);
 
-        var q = _db.Subscriptions
-            .AsNoTracking()
-            .Include(s => s.Plan)
-            .Include(s => s.Business)
-                .ThenInclude(b => b.Owner)
-            .AsQueryable();
-
-        if (query.BusinessId.HasValue && query.BusinessId.Value != Guid.Empty)
+        if (status.HasValue)
         {
-            q = q.Where(s => s.BusinessId == query.BusinessId.Value);
+            var statusInt = (int)status.Value;
+            q = q.Where(s => s.Status == statusInt);
         }
 
-        if (query.Status.HasValue)
-        {
-            q = q.Where(s => s.Status == query.Status.Value);
-        }
+        if (fromDate.HasValue)
+            q = q.Where(s => s.StartsAt >= fromDate.Value);
 
-        if (query.FromDate.HasValue)
-        {
-            q = q.Where(s => s.StartsAt >= query.FromDate.Value);
-        }
+        if (toDate.HasValue)
+            q = q.Where(s => s.StartsAt <= toDate.Value);
 
-        if (query.ToDate.HasValue)
+        if (!string.IsNullOrWhiteSpace(search))
         {
-            q = q.Where(s => s.StartsAt <= query.ToDate.Value);
-        }
-
-        if (!string.IsNullOrWhiteSpace(query.Search))
-        {
-            var search = query.Search.Trim().ToLower();
+            var term = search.Trim();
             q = q.Where(s =>
-                (s.InvoiceNumber != null && s.InvoiceNumber.ToLower().Contains(search)) ||
-                (s.TransactionRef != null && s.TransactionRef.ToLower().Contains(search)) ||
-                (s.RazorpaySubscriptionId != null && s.RazorpaySubscriptionId.ToLower().Contains(search)) ||
-                (s.CustomerBusinessName != null && s.CustomerBusinessName.ToLower().Contains(search)) ||
-                (s.Business != null && s.Business.BusinessName.ToLower().Contains(search)) ||
-                (s.Business != null && s.Business.Owner != null && s.Business.Owner.MobileNumber.Contains(search)) ||
-                (s.Plan != null && s.Plan.Name.ToLower().Contains(search)));
+                (s.InvoiceNumber != null && s.InvoiceNumber.Contains(term)) ||
+                (s.TransactionRef != null && s.TransactionRef.Contains(term)) ||
+                (s.RazorpaySubscriptionId != null && s.RazorpaySubscriptionId.Contains(term)) ||
+                (s.BusinessName != null && s.BusinessName.Contains(term)) ||
+                (s.OwnerMobile != null && s.OwnerMobile.Contains(term)) ||
+                (s.PlanName != null && s.PlanName.Contains(term)));
         }
 
-        var results = await q.OrderByDescending(s => s.StartsAt).ThenByDescending(s => s.CreatedAt).ToListAsync(ct);
-        return results.Select(MapHistoryItem).ToList();
+        var rows = await q
+            .OrderByDescending(s => s.StartsAt)
+            .ThenByDescending(s => s.InvoiceDate)
+            .ToListAsync(ct);
+
+        var now = DateTime.UtcNow;
+        return rows.Select(row => MapHistoryRow(row, now, defaultGstRate)).ToList();
     }
+
+    private static SubscriptionHistoryItemDto MapHistoryRow(SubscriptionHistoryViewRow row, DateTime now, decimal defaultGstRate)
+    {
+        var statusEnum = (SubscriptionStatus)row.Status;
+        var cycleEnum = (BillingCycle)row.BillingCycle;
+        var isActive = statusEnum == SubscriptionStatus.Active && row.EndsAt > now;
+        var planName = row.PlanName ?? (row.PlanSlug == "trial-7-days" ? "7-Day Free Trial" : (row.BasePricePaise == 0 ? "7-Day Free Trial" : "Custom Plan"));
+        var planSlug = row.PlanSlug ?? (row.BasePricePaise == 0 ? "trial-7-days" : "custom");
+        var isTrial = planSlug == "trial-7-days" || (row.BasePricePaise == 0 && row.TotalPricePaise == 0 && (row.PlanBasePricePaise ?? 0) == 0);
+        var invoiceNum = !string.IsNullOrWhiteSpace(row.InvoiceNumber)
+            ? row.InvoiceNumber
+            : $"INV-{row.InvoiceDate:yyyyMM}-{row.Id.ToString()[..6].ToUpper()}";
+
+        var effectiveGstRate = row.GstRatePercent > 0 ? row.GstRatePercent : defaultGstRate;
+        var basePaise = row.BasePricePaise > 0
+            ? row.BasePricePaise
+            : (isTrial ? 0 : (row.PlanBasePricePaise ?? 0));
+        var gstPaise = row.GstPaise > 0
+            ? row.GstPaise
+            : (isTrial ? 0 : (row.PlanGstPaise ?? (int)Math.Round(basePaise * (double)(effectiveGstRate / 100m))));
+        var totalPaise = row.TotalPricePaise > 0
+            ? row.TotalPricePaise
+            : (isTrial ? 0 : (row.PlanTotalPricePaise ?? (basePaise + gstPaise)));
+
+        var durationDays = (row.EndsAt - row.StartsAt).Days;
+        if (durationDays <= 0) durationDays = row.PlanDurationDays ?? 30;
+
+        return new SubscriptionHistoryItemDto(
+            Id: row.Id,
+            BusinessId: row.BusinessId,
+            InvoiceNumber: invoiceNum,
+            InvoiceDate: row.InvoiceDate,
+            PlanName: planName,
+            PlanSlug: planSlug,
+            BillingCycle: cycleEnum.ToString(),
+            Status: statusEnum.ToString(),
+            StartsAt: row.StartsAt,
+            EndsAt: row.EndsAt,
+            DurationDays: durationDays,
+            BaseAmountPaise: basePaise,
+            GstPaise: gstPaise,
+            TotalAmountPaise: totalPaise,
+            BaseAmountRupees: basePaise / 100.0,
+            GstRupees: gstPaise / 100.0,
+            TotalAmountRupees: totalPaise / 100.0,
+            PaymentMethod: row.PaymentMethod ?? (isTrial ? "Free Trial" : "Online UPI / Card"),
+            PaymentRef: row.TransactionRef ?? row.RazorpaySubscriptionId,
+            CustomerGstNumber: row.CustomerGstNumber,
+            IsTrial: isTrial,
+            SacCode: row.SacCode ?? "998313",
+            GstRatePercent: effectiveGstRate,
+            BusinessName: row.BusinessName ?? "Restaurant Partner",
+            OwnerName: row.OwnerName,
+            OwnerMobile: row.OwnerMobile,
+            PlanId: row.PlanId,
+            TransactionRef: row.TransactionRef ?? row.RazorpaySubscriptionId,
+            PaymentStatus: row.PaymentStatus ?? "Completed",
+            CancelledAt: row.CancelledAt,
+            IsActive: isActive,
+            CustomerAddress: row.CustomerAddress,
+            CustomerCity: row.CustomerCity);
+    }
+
+    public Task<IReadOnlyList<SubscriptionHistoryItemDto>> GetSubscriptionHistoryAsync(Guid businessId, CancellationToken ct = default) =>
+        QueryHistoryFromViewAsync(businessId, null, null, null, null, ct);
+
+    public Task<IReadOnlyList<SubscriptionHistoryItemDto>> GetHistoryAsync(Guid businessId, CancellationToken ct = default) =>
+        GetSubscriptionHistoryAsync(businessId, ct);
+
+    public Task<IReadOnlyList<SubscriptionHistoryItemDto>> AdminGetAllSubscriptionHistoryAsync(CancellationToken ct = default) =>
+        QueryHistoryFromViewAsync(null, null, null, null, null, ct);
+
+    public Task<IReadOnlyList<SubscriptionHistoryItemDto>> AdminListHistoryAsync(AdminSubscriptionHistoryQuery query, CancellationToken ct = default) =>
+        QueryHistoryFromViewAsync(query.BusinessId, query.Status, query.FromDate, query.ToDate, query.Search, ct);
 
     public async Task<SubscriptionInvoiceDto> GetInvoiceAsync(
         Guid subscriptionId,
@@ -1552,6 +1465,8 @@ public class SubscriptionService : ISubscriptionService
 
     private async Task EnsureExistingSubscriptionsBackfilledAsync(CancellationToken ct)
     {
+        if (_backfillDone) return;
+
         var unbackfilled = await _db.Subscriptions
             .Include(s => s.Plan)
             .Include(s => s.Business)
@@ -1559,7 +1474,11 @@ public class SubscriptionService : ISubscriptionService
             .OrderBy(s => s.StartsAt)
             .ToListAsync(ct);
 
-        if (unbackfilled.Count == 0) return;
+        if (unbackfilled.Count == 0)
+        {
+            _backfillDone = true;
+            return;
+        }
 
         int index = 1;
         foreach (var s in unbackfilled)
@@ -1609,6 +1528,7 @@ public class SubscriptionService : ISubscriptionService
         }
 
         await _db.SaveChangesAsync(ct);
+        _backfillDone = true;
     }
 
     private static SubscriptionHistoryItemDto MapHistoryItem(Subscription sub)

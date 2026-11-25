@@ -26,30 +26,31 @@ public class NotificationService : INotificationService
 
     public async Task MarkReadAsync(Guid businessId, Guid notificationId, CancellationToken ct = default)
     {
-        var n = await _db.Notifications.FirstOrDefaultAsync(x => x.Id == notificationId && x.BusinessId == businessId, ct);
-        if (n is { IsRead: false })
-        {
-            n.IsRead = true;
-            n.ReadAt = n.UpdatedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync(ct);
-        }
+        var now = DateTime.UtcNow;
+        await _db.Notifications
+            .Where(x => x.Id == notificationId && x.BusinessId == businessId && !x.IsRead)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(n => n.IsRead, true)
+                .SetProperty(n => n.ReadAt, now)
+                .SetProperty(n => n.UpdatedAt, now), ct);
     }
 
     public async Task MarkAllReadAsync(Guid businessId, CancellationToken ct = default)
     {
-        var unread = await _db.Notifications.Where(n => n.BusinessId == businessId && !n.IsRead).ToListAsync(ct);
-        if (unread.Count > 0)
-        {
-            var now = DateTime.UtcNow;
-            foreach (var n in unread) { n.IsRead = true; n.ReadAt = n.UpdatedAt = now; }
-            await _db.SaveChangesAsync(ct);
-        }
+        var now = DateTime.UtcNow;
+        await _db.Notifications
+            .Where(n => n.BusinessId == businessId && !n.IsRead)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(n => n.IsRead, true)
+                .SetProperty(n => n.ReadAt, now)
+                .SetProperty(n => n.UpdatedAt, now), ct);
     }
 
     public async Task DeleteNotificationAsync(Guid businessId, Guid notificationId, CancellationToken ct = default)
     {
-        var n = await _db.Notifications.FirstOrDefaultAsync(x => x.Id == notificationId && x.BusinessId == businessId, ct);
-        if (n is not null) { _db.Notifications.Remove(n); await _db.SaveChangesAsync(ct); }
+        await _db.Notifications
+            .Where(x => x.Id == notificationId && x.BusinessId == businessId)
+            .ExecuteDeleteAsync(ct);
     }
 
     public async Task<NotificationDto> CreateNotificationAsync(

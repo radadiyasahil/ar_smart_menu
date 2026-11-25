@@ -1,114 +1,203 @@
 using System.Data;
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
-
 using System.Text.Json;
-
+using System.Text.Json.Serialization;
 using ARSmartMenu.Application.Common;
-
 using ARSmartMenu.Domain.Entities;
-
 using ARSmartMenu.Infrastructure.Persistence;
-
+using ARSmartMenu.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
-
 using Microsoft.AspNetCore.Mvc;
-
 using Microsoft.EntityFrameworkCore;
-
-
+using Microsoft.Extensions.Caching.Memory;
 
 namespace ARSmartMenu.API.Controllers;
 
-
-
 [ApiController]
-
 public class TableOrdersController : ControllerBase
-
 {
-
     private static readonly ConcurrentDictionary<string, List<TableChatMessageDto>> _tableChatStore = new();
     private static readonly ConcurrentDictionary<string, TableWaiterCallDto> _waiterCallsStore = new();
     private static readonly ConcurrentDictionary<string, string> _activeTableSessionTokens = new();
     private static readonly ConcurrentDictionary<string, SharedCartState> _tableSharedCartStore = new(StringComparer.OrdinalIgnoreCase);
 
-
+    private static readonly JsonSerializerOptions CompactJsonOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     private static string GetChatKey(Guid businessId, string? tableNumber)
-
     {
-
         var clean = (tableNumber ?? string.Empty).Trim().ToLowerInvariant().Replace("table", "").Trim();
-
         return $"{businessId}:{clean}";
-
     }
 
-
-
     private readonly AppDbContext _db;
+    private readonly AppLookupCacheService _lookupCache;
+    private readonly IMemoryCache _cache;
 
-
-
-    public TableOrdersController(AppDbContext db) => _db = db;
-
-
-
-    /// <summary>Public endpoint for WebAR customer to submit a table order ticket.</summary>
-
-    [HttpPost("api/public/orders/{slug}")]
-
-    [AllowAnonymous]
-
-    public async Task<ActionResult<ApiResponse<TableOrderResponse>>> PlaceOrder(
-
-        string slug,
-
-        [FromBody] PlaceTableOrderRequest request,
-
-        CancellationToken ct)
-
+    public TableOrdersController(AppDbContext db, AppLookupCacheService lookupCache, IMemoryCache cache)
     {
+        _db = db;
+        _lookupCache = lookupCache;
+        _cache = cache;
+    }
 
-        // Resolve business by QR code slug, business ID, or business name
+    private async Task<Guid?> ResolveBusinessIdAsync(
+        string slug,
+        bool requireActiveQr = false,
+        bool fallbackToAnyBusiness = false,
+        CancellationToken ct = default)
+    {
+        var target = await _lookupCache.ResolveSlugAsync(_db, slug, requireActiveQr, fallbackToAnyBusiness, ct);
+        return target?.BusinessId;
+    }
 
-        var qr = await _db.QrCodes
+    private static (string CleanTable, string AltTable, string TableDigits, string AltTableNum) BuildTableVariants(string? tableNumber)
+    {
+        var cleanTable = (tableNumber ?? "dine-in").Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(cleanTable)) cleanTable = "dine-in";
+        var altTable = cleanTable.StartsWith("table")
+            ? cleanTable.Replace("table", "").Trim()
+            : ("table " + cleanTable);
+        var tableDigits = Regex.Match(cleanTable, @"\d+").Value;
+        var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
+        return (cleanTable, altTable, tableDigits, altTableNum);
+    }
 
-            .AsNoTracking()
-
-            .Include(q => q.Business)
-
-            .FirstOrDefaultAsync(q => q.Slug == slug && q.IsActive, ct);
-
-
-
-        Business? business = qr?.Business;
-
-        if (business is null)
-
+    private static IQueryable<TableOrder> FilterByTable(IQueryable<TableOrder> query, string? tableNumber)
+    {
+        var (cleanTable, altTable, tableDigits, altTableNum) = BuildTableVariants(tableNumber);
+        if (!string.IsNullOrEmpty(tableDigits))
         {
-
-            if (Guid.TryParse(slug, out var bId))
-
-            {
-
-                business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bId, ct);
-
-            }
-
-            business ??= await _db.Businesses.AsNoTracking()
-
-                .FirstOrDefaultAsync(b => b.BusinessName.ToLower() == slug.ToLower(), ct)
-
-                ?? await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(ct);
-
+            return query.Where(o =>
+                o.TableNumber == cleanTable ||
+                o.TableNumber == altTable ||
+                o.TableNumber == tableDigits ||
+                o.TableNumber == altTableNum);
         }
 
+        return query.Where(o => o.TableNumber == cleanTable || o.TableNumber == altTable);
+    }
 
+    private async Task<List<TableOrder>> LoadActiveTableOrdersAsync(
+        Guid businessId,
+        string tableNumber,
+        CancellationToken ct)
+    {
+        var ver = TableSyncManager.GetTableVersion(businessId, tableNumber);
+        var chatKey = GetChatKey(businessId, tableNumber);
+        var cacheKey = $"tbl-active:{businessId:N}:{chatKey}:{ver}";
+        if (_cache.TryGetValue(cacheKey, out List<TableOrder>? cached) && cached != null)
+            return cached;
+
+        var cutoff = DateTime.UtcNow.AddHours(-12);
+        var latestSettlement = await FilterByTable(
+                _db.TableOrders.AsNoTracking().Where(o =>
+                    o.BusinessId == businessId &&
+                    o.CreatedAt >= cutoff &&
+                    (o.Status == "PAID" || o.Status == "SETTLED")),
+                tableNumber)
+            .OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt)
+            .Select(o => (DateTime?)(o.UpdatedAt ?? o.CreatedAt))
+            .FirstOrDefaultAsync(ct);
+
+        var query = FilterByTable(
+            _db.TableOrders.AsNoTracking().Where(o =>
+                o.BusinessId == businessId &&
+                o.CreatedAt >= cutoff &&
+                o.Status != "PAID" &&
+                o.Status != "SETTLED"),
+            tableNumber);
+
+        if (latestSettlement != null)
+            query = query.Where(o => o.CreatedAt > latestSettlement.Value);
+
+        var result = await query
+            .OrderBy(o => o.Round)
+            .ThenBy(o => o.CreatedAt)
+            .ToListAsync(ct);
+
+        _cache.Set(cacheKey, result, TimeSpan.FromSeconds(15));
+        return result;
+    }
+
+    private async Task<SharedCartResponse> BuildSharedCartResponseAsync(
+        Guid businessId,
+        string tableNumber,
+        string? sessionToken,
+        bool? knownHasActiveOrders = null,
+        CancellationToken ct = default)
+    {
+        var key = GetChatKey(businessId, tableNumber);
+        var state = _tableSharedCartStore.TryGetValue(key, out var s) ? s : new SharedCartState();
+        var hasActiveOrders = knownHasActiveOrders ?? await HasActiveOrdersForTableAsync(businessId, tableNumber, ct);
+
+        if (hasActiveOrders)
+        {
+            var isDinerSession = !string.IsNullOrWhiteSpace(sessionToken) &&
+                                 _activeTableSessionTokens.TryGetValue(key, out var activeToken) &&
+                                 activeToken == sessionToken.Trim();
+
+            if (!isDinerSession)
+            {
+                return new SharedCartResponse
+                {
+                    TableNumber = tableNumber,
+                    Items = new List<SharedCartItemDto>(),
+                    TotalItems = 0,
+                    TotalAmount = 0,
+                    UpdatedAt = DateTime.UtcNow,
+                };
+            }
+        }
+        else if (state.Items.Count > 0)
+        {
+            var isExpired = (DateTime.UtcNow - state.UpdatedAt).TotalMinutes > 15;
+            var isDifferentSession = !string.IsNullOrWhiteSpace(sessionToken) &&
+                                     !string.IsNullOrWhiteSpace(state.SessionToken) &&
+                                     !string.Equals(state.SessionToken, sessionToken.Trim(), StringComparison.OrdinalIgnoreCase);
+
+            if (isExpired || isDifferentSession)
+            {
+                _tableSharedCartStore.TryRemove(key, out _);
+                state = new SharedCartState();
+            }
+        }
+
+        return new SharedCartResponse
+        {
+            TableNumber = tableNumber,
+            Items = state.Items.ToList(),
+            TotalItems = state.Items.Sum(i => i.Quantity),
+            TotalAmount = state.Items.Sum(i => i.UnitPrice * i.Quantity),
+            LastUpdatedBy = state.LastUpdatedBy,
+            LastClientId = state.LastClientId,
+            UpdatedAt = state.UpdatedAt,
+        };
+    }
+
+    /// <summary>Public endpoint for WebAR customer to submit a table order ticket.</summary>
+    [HttpPost("api/public/orders/{slug}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<TableOrderResponse>>> PlaceOrder(
+        string slug,
+        [FromBody] PlaceTableOrderRequest request,
+        CancellationToken ct)
+    {
+        var resolvedTarget = await _lookupCache.ResolveSlugAsync(
+            _db,
+            slug,
+            requireActiveQr: true,
+            fallbackToAnyBusiness: true,
+            ct);
+
+        var business = resolvedTarget != null
+            ? await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == resolvedTarget.BusinessId, ct)
+            : null;
 
         if (business == null)
-
             return NotFound(ApiResponse<TableOrderResponse>.Fail("Restaurant not found"));
 
 
@@ -304,7 +393,37 @@ public class TableOrdersController : ControllerBase
             ? activeOrders.FirstOrDefault(o => !string.IsNullOrEmpty(o.PartyPin))?.PartyPin
             : null) ?? Random.Shared.Next(100, 1000).ToString();
 
-        var itemsJson = JsonSerializer.Serialize(request.Items ?? new List<TableOrderItemDto>());
+        if (request.Items == null || request.Items.Count == 0)
+        {
+            return BadRequest(ApiResponse<TableOrderResponse>.Fail("Order cannot be empty. Please select dishes from the menu."));
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var productGuids = request.Items
+            .Where(i => Guid.TryParse(i.Id, out _))
+            .Select(i => Guid.Parse(i.Id))
+            .ToList();
+        var productNames = request.Items
+            .Select(i => i.Name)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .ToList();
+
+        var soldOutList = await _db.Products
+            .AsNoTracking()
+            .Where(p => p.BusinessId == business.Id &&
+                        p.SoldOutToday &&
+                        (p.SoldOutDate == null || p.SoldOutDate == today) &&
+                        (productGuids.Contains(p.Id) || productNames.Contains(p.Name)))
+            .Select(p => p.Name)
+            .ToListAsync(ct);
+
+        if (soldOutList.Count > 0)
+        {
+            return BadRequest(ApiResponse<TableOrderResponse>.Fail(
+                $"The following item(s) are sold out for today and cannot be ordered: {string.Join(", ", soldOutList.Distinct())}. Please remove them from your cart."));
+        }
+
+        var itemsJson = JsonSerializer.Serialize(request.Items ?? new List<TableOrderItemDto>(), CompactJsonOptions);
 
         var totalAmount = (request.Items ?? new List<TableOrderItemDto>()).Sum(i => i.UnitPrice * i.Quantity);
 
@@ -363,34 +482,28 @@ public class TableOrdersController : ControllerBase
 
     private async Task<bool> HasActiveOrdersForTableAsync(Guid businessId, string tableNumber, CancellationToken ct = default)
     {
-        var cleanTable = tableNumber.Trim().ToLowerInvariant();
-        var altTable = cleanTable.StartsWith("table") ? cleanTable.Replace("table", "").Trim() : ("table " + cleanTable);
-        var tableDigits = Regex.Match(cleanTable, @"\d+").Value;
-        var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
-
         var cutoff = DateTime.UtcNow.AddHours(-12);
-        var latestSettlement = await _db.TableOrders
-            .AsNoTracking()
-            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
-                        (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
-                         (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum))) &&
-                        (o.Status == "PAID" || o.Status == "SETTLED"))
+        var latestSettlement = await FilterByTable(
+                _db.TableOrders.AsNoTracking().Where(o =>
+                    o.BusinessId == businessId &&
+                    o.CreatedAt >= cutoff &&
+                    (o.Status == "PAID" || o.Status == "SETTLED")),
+                tableNumber)
             .OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt)
             .Select(o => (DateTime?)(o.UpdatedAt ?? o.CreatedAt))
             .FirstOrDefaultAsync(ct);
 
-        var query = _db.TableOrders
-            .AsNoTracking()
-            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
-                        o.Status != "PAID" && o.Status != "SETTLED" && o.Status != "CANCELLED");
+        var query = FilterByTable(
+            _db.TableOrders.AsNoTracking().Where(o =>
+                o.BusinessId == businessId &&
+                o.CreatedAt >= cutoff &&
+                o.Status != "PAID" &&
+                o.Status != "SETTLED" &&
+                o.Status != "CANCELLED"),
+            tableNumber);
 
         if (latestSettlement != null)
-        {
             query = query.Where(o => o.CreatedAt > latestSettlement.Value);
-        }
-
-        query = query.Where(o => o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
-                                 (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum)));
 
         return await query.AnyAsync(ct);
     }
@@ -407,80 +520,11 @@ public class TableOrdersController : ControllerBase
         [FromQuery] string? sessionToken = null,
         CancellationToken ct = default)
     {
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.AsNoTracking().Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
-        if (businessId == Guid.Empty)
-        {
-            var b = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-            if (b != null) businessId = b.Id;
-        }
-
-        if (businessId == Guid.Empty)
-        {
+        var businessId = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!businessId.HasValue)
             return NotFound(ApiResponse<SharedCartResponse>.Fail("Restaurant not found"));
-        }
 
-        var key = GetChatKey(businessId, tableNumber);
-        var state = _tableSharedCartStore.TryGetValue(key, out var s) ? s : new SharedCartState();
-
-        // Check if there are active submitted orders for this table in the kitchen/POS
-        var hasActiveOrders = await HasActiveOrdersForTableAsync(businessId, tableNumber, ct);
-
-        // If active orders exist for this table, verify if caller belongs to this table's party
-        if (hasActiveOrders)
-        {
-            var isDinerSession = false;
-            if (!string.IsNullOrWhiteSpace(sessionToken) &&
-                _activeTableSessionTokens.TryGetValue(key, out var activeToken) &&
-                activeToken == sessionToken.Trim())
-            {
-                isDinerSession = true;
-            }
-
-            if (!isDinerSession)
-            {
-                // A stranger is scanning an occupied table: do NOT share the active diner's cart
-                return Ok(ApiResponse<SharedCartResponse>.Ok(new SharedCartResponse
-                {
-                    TableNumber = tableNumber,
-                    Items = new List<SharedCartItemDto>(),
-                    TotalItems = 0,
-                    TotalAmount = 0,
-                    UpdatedAt = DateTime.UtcNow,
-                }));
-            }
-        }
-
-        // If no active orders have been placed on this table:
-        // Any draft cart belongs strictly to the active tab session that created it.
-        // If a new customer connects, or if the customer closed/reopened their tab (different sessionToken),
-        // or if it was abandoned for > 15 minutes, clear the old unplaced cart!
-        if (!hasActiveOrders && state.Items.Count > 0)
-        {
-            var isExpired = (DateTime.UtcNow - state.UpdatedAt).TotalMinutes > 15;
-            var isDifferentSession = !string.IsNullOrWhiteSpace(sessionToken) &&
-                                     !string.IsNullOrWhiteSpace(state.SessionToken) &&
-                                     !string.Equals(state.SessionToken, sessionToken.Trim(), StringComparison.OrdinalIgnoreCase);
-
-            if (isExpired || isDifferentSession)
-            {
-                _tableSharedCartStore.TryRemove(key, out _);
-                state = new SharedCartState();
-            }
-        }
-
-        var response = new SharedCartResponse
-        {
-            TableNumber = tableNumber,
-            Items = state.Items,
-            TotalItems = state.Items.Sum(i => i.Quantity),
-            TotalAmount = state.Items.Sum(i => i.UnitPrice * i.Quantity),
-            LastUpdatedBy = state.LastUpdatedBy,
-            LastClientId = state.LastClientId,
-            UpdatedAt = state.UpdatedAt,
-        };
-
+        var response = await BuildSharedCartResponseAsync(businessId.Value, tableNumber, sessionToken, ct: ct);
         return Ok(ApiResponse<SharedCartResponse>.Ok(response));
     }
 
@@ -495,18 +539,40 @@ public class TableOrdersController : ControllerBase
         [FromBody] SetSharedCartItemRequest request,
         CancellationToken ct = default)
     {
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.AsNoTracking().Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
-        if (businessId == Guid.Empty)
-        {
-            var b = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-            if (b != null) businessId = b.Id;
-        }
-
-        if (businessId == Guid.Empty)
-        {
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue)
             return NotFound(ApiResponse<SharedCartResponse>.Fail("Restaurant not found"));
+        var businessId = resolved.Value;
+
+        if (request.TargetQuantity > 0)
+        {
+            var itemDishId = request.Item?.DishId;
+            var itemName = request.Item?.Name;
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+            var isSoldOut = false;
+            if (Guid.TryParse(itemDishId, out var parsedDishGuid))
+            {
+                isSoldOut = await _db.Products.AsNoTracking().AnyAsync(p =>
+                    p.BusinessId == businessId &&
+                    p.Id == parsedDishGuid &&
+                    p.SoldOutToday &&
+                    (p.SoldOutDate == null || p.SoldOutDate == today), ct);
+            }
+            else if (!string.IsNullOrWhiteSpace(itemName))
+            {
+                isSoldOut = await _db.Products.AsNoTracking().AnyAsync(p =>
+                    p.BusinessId == businessId &&
+                    p.Name == itemName.Trim() &&
+                    p.SoldOutToday &&
+                    (p.SoldOutDate == null || p.SoldOutDate == today), ct);
+            }
+
+            if (isSoldOut)
+            {
+                return BadRequest(ApiResponse<SharedCartResponse>.Fail(
+                    $"\"{request.Item?.Name ?? "This item"}\" is marked as sold out for today and cannot be added."));
+            }
         }
 
         using var tableLock = await TableSyncManager.AcquireTableLockAsync(businessId, tableNumber, ct);
@@ -608,18 +674,36 @@ public class TableOrdersController : ControllerBase
         [FromBody] UpdateSharedCartRequest request,
         CancellationToken ct = default)
     {
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.AsNoTracking().Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
-        if (businessId == Guid.Empty)
-        {
-            var b = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-            if (b != null) businessId = b.Id;
-        }
-
-        if (businessId == Guid.Empty)
-        {
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue)
             return NotFound(ApiResponse<SharedCartResponse>.Fail("Restaurant not found"));
+        var businessId = resolved.Value;
+
+        if (request.Items != null && request.Items.Count > 0)
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var itemDishGuids = request.Items
+                .Where(i => Guid.TryParse(i.DishId, out _))
+                .Select(i => Guid.Parse(i.DishId))
+                .ToList();
+            var incomingNames = request.Items
+                .Select(i => i.Name)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .ToList();
+
+            var soldOutNames = await _db.Products.AsNoTracking()
+                .Where(p => p.BusinessId == businessId &&
+                            p.SoldOutToday &&
+                            (p.SoldOutDate == null || p.SoldOutDate == today) &&
+                            (itemDishGuids.Contains(p.Id) || incomingNames.Contains(p.Name)))
+                .Select(p => p.Name)
+                .ToListAsync(ct);
+
+            if (soldOutNames.Count > 0)
+            {
+                return BadRequest(ApiResponse<SharedCartResponse>.Fail(
+                    $"The following dish(es) are sold out for today: {string.Join(", ", soldOutNames.Distinct())}."));
+            }
         }
 
         using var tableLock = await TableSyncManager.AcquireTableLockAsync(businessId, tableNumber, ct);
@@ -706,24 +790,12 @@ public class TableOrdersController : ControllerBase
         string tableNumber,
         CancellationToken ct = default)
     {
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.AsNoTracking().Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
-        if (businessId == Guid.Empty)
-        {
-            var b = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-            if (b != null) businessId = b.Id;
-        }
-
-        if (businessId == Guid.Empty)
-        {
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue)
             return NotFound(ApiResponse<bool>.Fail("Restaurant not found"));
-        }
+        var businessId = resolved.Value;
 
-        var cleanTable = tableNumber.Trim().ToLowerInvariant();
-        var altTable = cleanTable.StartsWith("table") ? cleanTable.Replace("table", "").Trim() : ("table " + cleanTable);
-        var tableDigits = Regex.Match(cleanTable, @"\d+").Value;
-        var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
+        var (cleanTable, altTable, _, altTableNum) = BuildTableVariants(tableNumber);
 
         var key = GetChatKey(businessId, tableNumber);
         _tableSharedCartStore.TryRemove(key, out _);
@@ -749,21 +821,13 @@ public class TableOrdersController : ControllerBase
         [FromQuery] string? sessionToken = null,
         CancellationToken ct = default)
     {
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.AsNoTracking().FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
-        if (businessId == Guid.Empty)
+        var businessId = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (businessId.HasValue)
         {
-            var b = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-            if (b != null) businessId = b.Id;
-        }
-
-        if (businessId != Guid.Empty)
-        {
-            var key = GetChatKey(businessId, tableNumber);
+            var key = GetChatKey(businessId.Value, tableNumber);
             if (_tableSharedCartStore.TryGetValue(key, out var state))
             {
-                var hasActiveOrders = await HasActiveOrdersForTableAsync(businessId, tableNumber, ct);
+                var hasActiveOrders = await HasActiveOrdersForTableAsync(businessId.Value, tableNumber, ct);
                 if (!hasActiveOrders)
                 {
                     if (string.IsNullOrWhiteSpace(sessionToken) ||
@@ -771,7 +835,7 @@ public class TableOrdersController : ControllerBase
                         string.Equals(state.SessionToken, sessionToken.Trim(), StringComparison.OrdinalIgnoreCase))
                     {
                         _tableSharedCartStore.TryRemove(key, out _);
-                        TableSyncManager.Broadcast(businessId, tableNumber, "shared_cart_cleared", new { table = tableNumber });
+                        TableSyncManager.Broadcast(businessId.Value, tableNumber, "shared_cart_cleared", new { table = tableNumber });
                     }
                 }
             }
@@ -780,122 +844,19 @@ public class TableOrdersController : ControllerBase
         return Ok(ApiResponse<bool>.Ok(true, "Draft cart abandoned"));
     }
 
-    /// <summary>Public live order status for diner tracking on their table.</summary>
-
-    [HttpGet("api/public/orders/{slug}/table/{tableNumber}")]
-
-    [AllowAnonymous]
-
-    public async Task<ActionResult<ApiResponse<List<TableOrderResponse>>>> GetTableOrdersPublic(
-
-        string slug,
-
+    private async Task<(bool TableInvalid, bool IsPartyBlocked, bool HasNonCancelledOrders, List<TableOrderResponse> Orders)> EvaluatePublicTableOrdersAsync(
+        Guid businessId,
         string tableNumber,
-
-        [FromQuery] string? orderIds = null,
-
-        [FromQuery] string? sessionToken = null,
-
-        CancellationToken ct = default)
-
+        string? orderIds,
+        string? sessionToken,
+        CancellationToken ct)
     {
-
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-
-        var qr = await _db.QrCodes
-
-            .Include(q => q.Business)
-
-            .FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-
-
-
-        Guid businessId;
-
-        if (qr != null)
-
-        {
-
-            businessId = qr.BusinessId;
-
-        }
-
-        else if (Guid.TryParse(cleanSlug, out var bId))
-
-        {
-
-            businessId = bId;
-
-        }
-
-        else
-
-        {
-
-            var business = await _db.Businesses
-
-                .FirstOrDefaultAsync(b => b.BusinessName.ToLower() == cleanSlug, ct)
-
-                ?? throw new NotFoundException("Restaurant not found.");
-
-            businessId = business.Id;
-
-        }
-
-
-
-        var (isValidPublicTable, _) = await ValidateTableForBusinessAsync(businessId, tableNumber, ct);
-
+        var (isValidPublicTable, _) = await _lookupCache.ValidateTableForBusinessAsync(_db, businessId, tableNumber, ct);
         if (!isValidPublicTable)
+            return (true, false, false, new List<TableOrderResponse>());
 
-        {
-
-            return Ok(ApiResponse<List<TableOrderResponse>>.Ok(new List<TableOrderResponse>()));
-
-        }
-
-
-
-        var cleanTable = tableNumber.Trim().ToLowerInvariant();
-
-        var altTable = cleanTable.StartsWith("table")
-
-            ? cleanTable.Replace("table", "").Trim()
-
-            : ("table " + cleanTable);
-
-        var tableDigits = Regex.Match(cleanTable, @"\d+").Value;
-        var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
-
-        var cutoff = DateTime.UtcNow.AddHours(-12);
-
-
-
-        var latestSettlement = await _db.TableOrders
-            .AsNoTracking()
-            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
-                        (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
-                         (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum))) &&
-                        (o.Status == "PAID" || o.Status == "SETTLED"))
-            .OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt)
-            .Select(o => (DateTime?)(o.UpdatedAt ?? o.CreatedAt))
-            .FirstOrDefaultAsync(ct);
-
-        var query = _db.TableOrders
-            .AsNoTracking()
-            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
-                        o.Status != "PAID" && o.Status != "SETTLED");
-
-        if (latestSettlement != null)
-        {
-            query = query.Where(o => o.CreatedAt > latestSettlement.Value);
-        }
-
-
-
-        // Strictly enforce table constraint: Never leak orders from other tables!
-        query = query.Where(o => o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
-                                 (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum)));
+        var activeOrders = await LoadActiveTableOrdersAsync(businessId, tableNumber, ct);
+        var (cleanTable, _, _, _) = BuildTableVariants(tableNumber);
 
         List<Guid> parsedIds = new();
         if (!string.IsNullOrWhiteSpace(orderIds))
@@ -906,11 +867,6 @@ public class TableOrdersController : ControllerBase
                     parsedIds.Add(parsedId);
             }
         }
-
-        var activeOrders = await query
-            .OrderBy(o => o.Round)
-            .ThenBy(o => o.CreatedAt)
-            .ToListAsync(ct);
 
         var nonCancelledOrders = activeOrders.Where(o => o.Status != "CANCELLED").ToList();
         if (nonCancelledOrders.Count > 0)
@@ -931,33 +887,126 @@ public class TableOrdersController : ControllerBase
             }
 
             if (!isDinerSession)
-            {
-                // Return TABLE_OCCUPIED with empty orders list so strangers cannot view or track existing diner orders
-                return Ok(new ApiResponse<List<TableOrderResponse>>
-                {
-                    Success = false,
-                    Code = "TABLE_OCCUPIED",
-                    Error = $"Table '{tableNumber}' has an active order.",
-                    Message = $"Table '{tableNumber}' currently has an active order. If you are sitting with friends, please enter the 3-digit Table PIN to join.",
-                    Data = new List<TableOrderResponse>()
-                });
-            }
+                return (false, true, true, new List<TableOrderResponse>());
 
             if (!string.IsNullOrWhiteSpace(sessionToken))
-            {
                 _activeTableSessionTokens[chatKey] = sessionToken;
-            }
         }
         else if (parsedIds.Count == 0)
         {
-            // Only cancelled orders exist and diner has no stored IDs: return empty so diner starts fresh
-            return Ok(ApiResponse<List<TableOrderResponse>>.Ok(new List<TableOrderResponse>()));
+            return (false, false, false, new List<TableOrderResponse>());
         }
 
-        var list = activeOrders.Select(ToResponse).ToList();
+        return (false, false, nonCancelledOrders.Count > 0, activeOrders.Select(ToResponse).ToList());
+    }
 
-        return Ok(ApiResponse<List<TableOrderResponse>>.Ok(list));
+    /// <summary>Public live order status for diner tracking on their table.</summary>
+    [HttpGet("api/public/orders/{slug}/table/{tableNumber}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<List<TableOrderResponse>>>> GetTableOrdersPublic(
+        string slug,
+        string tableNumber,
+        [FromQuery] string? orderIds = null,
+        [FromQuery] string? sessionToken = null,
+        [FromQuery] long? sinceVersion = null,
+        CancellationToken ct = default)
+    {
+        var businessId = await ResolveBusinessIdAsync(slug, ct: ct)
+            ?? throw new NotFoundException("Restaurant not found.");
 
+        var currentTableVersion = TableSyncManager.GetTableVersion(businessId, tableNumber);
+        Response.Headers["X-Table-Version"] = currentTableVersion.ToString();
+
+        if (sinceVersion.HasValue && sinceVersion.Value == currentTableVersion)
+        {
+            return Ok(new ApiResponse<List<TableOrderResponse>>
+            {
+                Success = true,
+                Code = "UNCHANGED",
+                Message = currentTableVersion.ToString(),
+                Data = new List<TableOrderResponse>()
+            });
+        }
+
+        var (_, isPartyBlocked, _, orders) = await EvaluatePublicTableOrdersAsync(businessId, tableNumber, orderIds, sessionToken, ct);
+        if (isPartyBlocked)
+        {
+            return Ok(new ApiResponse<List<TableOrderResponse>>
+            {
+                Success = false,
+                Code = "TABLE_OCCUPIED",
+                Error = $"Table '{tableNumber}' has an active order.",
+                Message = $"Table '{tableNumber}' currently has an active order. If you are sitting with friends, please enter the 3-digit Table PIN to join.",
+                Data = new List<TableOrderResponse>()
+            });
+        }
+
+        return Ok(ApiResponse<List<TableOrderResponse>>.Ok(orders));
+    }
+
+    /// <summary>
+    /// Combined single-roundtrip WebAR polling endpoint returning BOTH table orders and shared cart.
+    /// Returns immediately with zero DB queries when sinceVersion matches the in-memory table version.
+    /// </summary>
+    [HttpGet("api/public/orders/{slug}/table/{tableNumber}/poll")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object>>> PollTableStatePublic(
+        string slug,
+        string tableNumber,
+        [FromQuery] string? orderIds = null,
+        [FromQuery] string? sessionToken = null,
+        [FromQuery] long? sinceVersion = null,
+        CancellationToken ct = default)
+    {
+        var businessId = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!businessId.HasValue)
+            return NotFound(ApiResponse<object>.Fail("Restaurant not found."));
+
+        var currentTableVersion = TableSyncManager.GetTableVersion(businessId.Value, tableNumber);
+        Response.Headers["X-Table-Version"] = currentTableVersion.ToString();
+
+        if (sinceVersion.HasValue && sinceVersion.Value == currentTableVersion)
+        {
+            return Ok(ApiResponse<object>.Ok(new
+            {
+                version = currentTableVersion,
+                unchanged = true
+            }));
+        }
+
+        var (_, isPartyBlocked, hasNonCancelledOrders, orders) = await EvaluatePublicTableOrdersAsync(businessId.Value, tableNumber, orderIds, sessionToken, ct);
+        if (isPartyBlocked)
+        {
+            return Ok(new ApiResponse<object>
+            {
+                Success = false,
+                Code = "TABLE_OCCUPIED",
+                Error = $"Table '{tableNumber}' has an active order.",
+                Message = $"Table '{tableNumber}' currently has an active order. If you are sitting with friends, please enter the 3-digit Table PIN to join.",
+                Data = new
+                {
+                    version = currentTableVersion,
+                    unchanged = false,
+                    orders = Array.Empty<TableOrderResponse>(),
+                    sharedCart = (SharedCartResponse?)null
+                }
+            });
+        }
+
+        var sharedCart = await BuildSharedCartResponseAsync(
+            businessId.Value,
+            tableNumber,
+            sessionToken,
+            knownHasActiveOrders: hasNonCancelledOrders,
+            ct: ct);
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            version = currentTableVersion,
+            unchanged = false,
+            orders,
+            sharedCart
+        }));
     }
 
     [HttpPost("api/public/orders/{slug}/table/{tableNumber}/join")]
@@ -968,29 +1017,21 @@ public class TableOrdersController : ControllerBase
         [FromBody] JoinTablePartyRequest? request,
         CancellationToken ct)
     {
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-        Guid businessId;
-        if (qr != null) businessId = qr.BusinessId;
-        else if (Guid.TryParse(cleanSlug, out var bId)) businessId = bId;
-        else
-        {
-            var b = await _db.Businesses.FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-            if (b == null) return NotFound(ApiResponse<List<TableOrderResponse>>.Fail("Restaurant not found"));
-            businessId = b.Id;
-        }
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue)
+            return NotFound(ApiResponse<List<TableOrderResponse>>.Fail("Restaurant not found"));
+        var businessId = resolved.Value;
 
-        var cleanTable = tableNumber.Trim().ToLowerInvariant();
-        var altTable = cleanTable.StartsWith("table") ? cleanTable.Replace("table", "").Trim() : ("table " + cleanTable);
-        var tableDigits = Regex.Match(cleanTable, @"\d+").Value;
-        var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
-
+        var (cleanTable, _, _, _) = BuildTableVariants(tableNumber);
         var cutoff = DateTime.UtcNow.AddHours(-12);
-        var activeOrders = await _db.TableOrders
-            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
-                        (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
-                         (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum))) &&
-                        o.Status != "PAID" && o.Status != "SETTLED" && o.Status != "CANCELLED")
+        var activeOrders = await FilterByTable(
+                _db.TableOrders.AsNoTracking().Where(o =>
+                    o.BusinessId == businessId &&
+                    o.CreatedAt >= cutoff &&
+                    o.Status != "PAID" &&
+                    o.Status != "SETTLED" &&
+                    o.Status != "CANCELLED"),
+                tableNumber)
             .OrderBy(o => o.Round)
             .ThenBy(o => o.CreatedAt)
             .ToListAsync(ct);
@@ -1025,17 +1066,10 @@ public class TableOrdersController : ControllerBase
         [FromBody] ClaimNewPartyRequest? request,
         CancellationToken ct)
     {
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-        Guid businessId;
-        if (qr != null) businessId = qr.BusinessId;
-        else if (Guid.TryParse(cleanSlug, out var bId)) businessId = bId;
-        else
-        {
-            var b = await _db.Businesses.FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-            if (b == null) return NotFound(ApiResponse<object>.Fail("Restaurant not found"));
-            businessId = b.Id;
-        }
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue)
+            return NotFound(ApiResponse<object>.Fail("Restaurant not found"));
+        var businessId = resolved.Value;
 
         var (isValid, _) = await ValidateTableForBusinessAsync(businessId, tableNumber, ct);
         if (!isValid)
@@ -1068,69 +1102,61 @@ public class TableOrdersController : ControllerBase
     /// <summary>Get table orders for a business (owner portal).</summary>
 
     [HttpGet("api/businesses/{businessId}/table-orders")]
-
     [AllowAnonymous]
-
     public async Task<ActionResult<ApiResponse<List<TableOrderResponse>>>> GetOrders(
-
         Guid businessId,
-
         [FromQuery] string? status,
-
-        CancellationToken ct)
-
+        [FromQuery] long? sinceVersion = null,
+        CancellationToken ct = default)
     {
+        var bizVersion = TableSyncManager.GetBusinessVersion(businessId);
+        Response.Headers["X-Business-Version"] = bizVersion.ToString();
 
-        var cutoff = DateTime.UtcNow.AddHours(-18);
-
-        var query = _db.TableOrders
-
-            .AsNoTracking()
-
-            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff);
-
-
-
-        if (!string.IsNullOrWhiteSpace(status))
-
+        if (sinceVersion.HasValue && sinceVersion.Value == bizVersion)
         {
-
-            var st = status.Trim().ToUpperInvariant();
-
-            if (st == "ACTIVE" || st == "LIVE")
+            return Ok(new ApiResponse<List<TableOrderResponse>>
             {
-                query = query.Where(o => o.Status != "CANCELLED" && o.Status != "PAID" && o.Status != "SETTLED");
-            }
-            else if (st == "TODAY" || st == "HISTORY")
-            {
-                var startOfToday = DateTime.UtcNow.Date;
-                query = _db.TableOrders
-                    .AsNoTracking()
-                    .Where(o => o.BusinessId == businessId && o.CreatedAt >= startOfToday.AddHours(-6) && o.Status != "CANCELLED");
-            }
-            else
-            {
-                query = query.Where(o => o.Status == st);
-            }
-
+                Success = true,
+                Code = "UNCHANGED",
+                Message = bizVersion.ToString(),
+                Data = new List<TableOrderResponse>()
+            });
         }
 
+        var st = string.IsNullOrWhiteSpace(status) ? "ALL" : status.Trim().ToUpperInvariant();
+        var cacheKey = $"biz-orders:{businessId:N}:{st}:{bizVersion}";
+        if (_cache.TryGetValue(cacheKey, out List<TableOrderResponse>? cached) && cached != null)
+            return Ok(ApiResponse<List<TableOrderResponse>>.Ok(cached));
 
+        var cutoff = DateTime.UtcNow.AddHours(-18);
+        var query = _db.TableOrders
+            .AsNoTracking()
+            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff);
+
+        if (st == "ACTIVE" || st == "LIVE")
+        {
+            query = query.Where(o => o.Status != "CANCELLED" && o.Status != "PAID" && o.Status != "SETTLED");
+        }
+        else if (st == "TODAY" || st == "HISTORY")
+        {
+            var startOfToday = DateTime.UtcNow.Date;
+            query = _db.TableOrders
+                .AsNoTracking()
+                .Where(o => o.BusinessId == businessId && o.CreatedAt >= startOfToday.AddHours(-6) && o.Status != "CANCELLED");
+        }
+        else if (st != "ALL")
+        {
+            query = query.Where(o => o.Status == st);
+        }
 
         var list = await query
-
             .OrderByDescending(o => o.CreatedAt)
-
             .Take(80)
-
             .ToListAsync(ct);
 
-
-
         var responses = list.Select(ToResponse).ToList();
-
+        _cache.Set(cacheKey, responses, TimeSpan.FromSeconds(15));
         return Ok(ApiResponse<List<TableOrderResponse>>.Ok(responses));
-
     }
 
 
@@ -1161,16 +1187,9 @@ public class TableOrdersController : ControllerBase
         [FromQuery] string? orderIds = null,
         CancellationToken ct = default)
     {
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
-        if (businessId == Guid.Empty)
-        {
-            var b = await _db.Businesses.FirstOrDefaultAsync(b => b.BusinessName.ToLower() == cleanSlug, ct);
-            if (b != null) businessId = b.Id;
-        }
-
-        if (businessId == Guid.Empty) return NotFound(ApiResponse<int>.Fail("Restaurant not found"));
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue) return NotFound(ApiResponse<int>.Fail("Restaurant not found"));
+        var businessId = resolved.Value;
 
         var tNum = string.IsNullOrWhiteSpace(tableNumber) ? "dine-in" : tableNumber.Trim().ToLowerInvariant();
         var cutoff = DateTime.UtcNow.AddHours(-12);
@@ -1190,164 +1209,64 @@ public class TableOrdersController : ControllerBase
         }
         else
         {
-            var tableDigits = Regex.Match(tNum, @"\d+").Value;
-            var altTable = tNum.StartsWith("table") ? tNum.Replace("table", "").Trim() : ("table " + tNum);
-            var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
-
-            query = query.Where(o => o.TableNumber.ToLower() == tNum || o.TableNumber.ToLower() == altTable ||
-                                    (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum)));
+            query = FilterByTable(query, tNum);
         }
 
-        var cancelledOrders = await query.ToListAsync(ct);
-        foreach (var ord in cancelledOrders)
-        {
-            ord.Status = "SETTLED";
-            ord.UpdatedAt = DateTime.UtcNow;
-        }
+        var now = DateTime.UtcNow;
+        var clearedCount = await query.ExecuteUpdateAsync(s => s
+            .SetProperty(o => o.Status, "SETTLED")
+            .SetProperty(o => o.UpdatedAt, now), ct);
 
-        await _db.SaveChangesAsync(ct);
-        return Ok(ApiResponse<int>.Ok(cancelledOrders.Count, $"{cancelledOrders.Count} cancelled order(s) cleared."));
+        if (clearedCount > 0)
+            TableSyncManager.Broadcast(businessId, tNum, "cancelled_cleared", new { table = tNum, clearedCount });
+
+        return Ok(ApiResponse<int>.Ok(clearedCount, $"{clearedCount} cancelled order(s) cleared."));
     }
-
-
 
     [HttpPost("api/orders/{id}/complete")]
-
     [HttpPost("api/orders/{id}/serve")]
-
     [AllowAnonymous]
-
     public Task<ActionResult<ApiResponse<TableOrderResponse>>> CompleteOrder(Guid id, CancellationToken ct) =>
-
         UpdateStatusAsync(id, "COMPLETED", ct);
 
-
-
     /// <summary>Marks all accepted orders for a table as served/completed.</summary>
-
     [HttpPost("api/businesses/{businessId}/table/{tableNumber}/serve-all")]
-
     [AllowAnonymous]
-
     public async Task<ActionResult<ApiResponse<int>>> ServeAllForTable(Guid businessId, string tableNumber, CancellationToken ct)
-
     {
-
-        var cleanTable = tableNumber.Trim().ToLowerInvariant();
-
-        var altTable = cleanTable.StartsWith("table")
-
-            ? cleanTable.Replace("table", "").Trim()
-
-            : ("table " + cleanTable);
-
         var cutoff = DateTime.UtcNow.AddHours(-12);
+        var now = DateTime.UtcNow;
 
+        var updatedCount = await FilterByTable(
+                _db.TableOrders.Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff && o.Status == "ACCEPTED"),
+                tableNumber)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(o => o.Status, "COMPLETED")
+                .SetProperty(o => o.CompletedAt, now)
+                .SetProperty(o => o.UpdatedAt, now), ct);
 
+        if (updatedCount > 0)
+            TableSyncManager.Broadcast(businessId, tableNumber, "table_served", new { tableNumber, servedCount = updatedCount });
 
-        var orders = await _db.TableOrders
-
-            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
-
-                        (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable) &&
-
-                        o.Status == "ACCEPTED")
-
-            .ToListAsync(ct);
-
-
-
-        foreach (var o in orders)
-
-        {
-
-            o.Status = "COMPLETED";
-
-            o.CompletedAt = DateTime.UtcNow;
-
-            o.UpdatedAt = DateTime.UtcNow;
-
-        }
-
-
-
-        await _db.SaveChangesAsync(ct);
-
-        return Ok(ApiResponse<int>.Ok(orders.Count, $"{orders.Count} items marked as served."));
-
+        return Ok(ApiResponse<int>.Ok(updatedCount, $"{updatedCount} items marked as served."));
     }
 
-
-
     /// <summary>Customer requests final bill from WebAR without needing WhatsApp.</summary>
-
     [HttpPost("api/public/orders/{slug}/table/{tableNumber}/request-bill")]
-
     [HttpPost("api/public/orders/{slug}/request-bill")]
-
     [AllowAnonymous]
-
     public async Task<ActionResult<ApiResponse<TableOrderResponse>>> RequestBill(
-
         string slug,
-
         string? tableNumber,
-
         [FromBody] RequestBillDto? body,
-
         CancellationToken ct)
-
     {
-
         var targetTable = !string.IsNullOrWhiteSpace(tableNumber) ? tableNumber : body?.TableNumber;
-
         if (string.IsNullOrWhiteSpace(targetTable))
-
             targetTable = "Dine-in";
 
-
-
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-
-        var qr = await _db.QrCodes
-
-            .Include(q => q.Business)
-
-            .FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-
-
-
-        Guid businessId;
-
-        if (qr != null)
-
-        {
-
-            businessId = qr.BusinessId;
-
-        }
-
-        else if (Guid.TryParse(cleanSlug, out var bId))
-
-        {
-
-            businessId = bId;
-
-        }
-
-        else
-
-        {
-
-            var business = await _db.Businesses
-
-                .FirstOrDefaultAsync(b => b.BusinessName.ToLower() == cleanSlug, ct)
-
-                ?? throw new NotFoundException("Restaurant not found.");
-
-            businessId = business.Id;
-
-        }
+        var businessId = await ResolveBusinessIdAsync(slug, ct: ct)
+            ?? throw new NotFoundException("Restaurant not found.");
 
 
 
@@ -1588,36 +1507,13 @@ public class TableOrdersController : ControllerBase
     [AllowAnonymous]
 
     public async Task<ActionResult<ApiResponse<List<TableChatMessageDto>>>> GetTableChatPublic(
-
         string slug,
-
         string tableNumber,
-
         CancellationToken ct)
-
     {
-
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-
-        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-
-        Guid businessId;
-
-        if (qr != null) businessId = qr.BusinessId;
-
-        else if (Guid.TryParse(cleanSlug, out var bId)) businessId = bId;
-
-        else
-
-        {
-
-            var b = await _db.Businesses.FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-
-            if (b == null) return NotFound(ApiResponse<List<TableChatMessageDto>>.Fail("Restaurant not found"));
-
-            businessId = b.Id;
-
-        }
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue) return NotFound(ApiResponse<List<TableChatMessageDto>>.Fail("Restaurant not found"));
+        var businessId = resolved.Value;
 
 
 
@@ -1667,27 +1563,9 @@ public class TableOrdersController : ControllerBase
 
 
 
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-
-        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-
-        Guid businessId;
-
-        if (qr != null) businessId = qr.BusinessId;
-
-        else if (Guid.TryParse(cleanSlug, out var bId)) businessId = bId;
-
-        else
-
-        {
-
-            var b = await _db.Businesses.FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-
-            if (b == null) return NotFound(ApiResponse<TableChatMessageDto>.Fail("Restaurant not found"));
-
-            businessId = b.Id;
-
-        }
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue) return NotFound(ApiResponse<TableChatMessageDto>.Fail("Restaurant not found"));
+        var businessId = resolved.Value;
 
 
 
@@ -1869,18 +1747,9 @@ public class TableOrdersController : ControllerBase
         if (string.IsNullOrWhiteSpace(targetTable))
             targetTable = "Dine-in";
 
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-
-        Guid businessId;
-        if (qr != null) businessId = qr.BusinessId;
-        else if (Guid.TryParse(cleanSlug, out var bId)) businessId = bId;
-        else
-        {
-            var b = await _db.Businesses.FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-            if (b == null) return NotFound(ApiResponse<TableWaiterCallDto>.Fail("Restaurant not found"));
-            businessId = b.Id;
-        }
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue) return NotFound(ApiResponse<TableWaiterCallDto>.Fail("Restaurant not found"));
+        var businessId = resolved.Value;
 
         var (isValidTable, validTables) = await ValidateTableForBusinessAsync(businessId, targetTable, ct);
         if (!isValidTable)
@@ -1995,18 +1864,9 @@ public class TableOrdersController : ControllerBase
         CancellationToken ct)
     {
         var targetTable = !string.IsNullOrWhiteSpace(tableNumber) ? tableNumber : "Dine-in";
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-
-        Guid businessId;
-        if (qr != null) businessId = qr.BusinessId;
-        else if (Guid.TryParse(cleanSlug, out var bId)) businessId = bId;
-        else
-        {
-            var b = await _db.Businesses.FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-            if (b == null) return NotFound(ApiResponse<object>.Fail("Restaurant not found"));
-            businessId = b.Id;
-        }
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue) return NotFound(ApiResponse<object>.Fail("Restaurant not found"));
+        var businessId = resolved.Value;
 
         var amount = request?.Amount ?? 0;
         var app = string.IsNullOrWhiteSpace(request?.UpiApp) ? "UPI" : request.UpiApp.Trim();
@@ -2061,18 +1921,9 @@ public class TableOrdersController : ControllerBase
         CancellationToken ct)
     {
         var targetTable = !string.IsNullOrWhiteSpace(tableNumber) ? tableNumber : "Dine-in";
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-
-        Guid businessId;
-        if (qr != null) businessId = qr.BusinessId;
-        else if (Guid.TryParse(cleanSlug, out var bId)) businessId = bId;
-        else
-        {
-            var b = await _db.Businesses.FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-            if (b == null) return NotFound(ApiResponse<object>.Fail("Restaurant not found"));
-            businessId = b.Id;
-        }
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue) return NotFound(ApiResponse<object>.Fail("Restaurant not found"));
+        var businessId = resolved.Value;
 
         var rating = Math.Clamp(request?.Rating ?? 5, 1, 5);
         var comment = request?.Comment?.Trim();
@@ -2266,64 +2117,11 @@ public class TableOrdersController : ControllerBase
 
 
 
-        private async Task<(bool IsValid, List<string> ValidTables)> ValidateTableForBusinessAsync(
+    private Task<(bool IsValid, List<string> ValidTables)> ValidateTableForBusinessAsync(
         Guid businessId,
         string? tableNumber,
-        CancellationToken ct)
-    {
-        var tableQrs = await _db.QrCodes
-            .AsNoTracking()
-            .Where(q => q.BusinessId == businessId && q.QrType == ARSmartMenu.Domain.Enums.QrType.Table && q.IsActive)
-            .ToListAsync(ct);
-
-        if (tableQrs.Count == 0)
-        {
-            // Business has not generated specific table QR codes; any table name is accepted
-            return (true, new List<string>());
-        }
-
-        var validTables = new List<string>();
-        foreach (var qr in tableQrs)
-        {
-            var mSlug = Regex.Match(qr.Slug, @"-t(\d+)$", RegexOptions.IgnoreCase);
-            if (mSlug.Success)
-            {
-                validTables.Add(mSlug.Groups[1].Value);
-            }
-            else if (!string.IsNullOrEmpty(qr.WebUrl))
-            {
-                var mUrl = Regex.Match(qr.WebUrl, @"[?&]table(?:Number)?=(\d+)", RegexOptions.IgnoreCase);
-                if (mUrl.Success)
-                    validTables.Add(mUrl.Groups[1].Value);
-            }
-            else
-            {
-                var mDigits = Regex.Match(qr.Slug, @"(\d+)", RegexOptions.IgnoreCase);
-                if (mDigits.Success)
-                    validTables.Add(mDigits.Groups[1].Value);
-            }
-        }
-
-        validTables = validTables.Distinct().OrderBy(t => int.TryParse(t, out var n) ? n : 999).ToList();
-
-        if (string.IsNullOrWhiteSpace(tableNumber))
-            return (false, validTables);
-
-        var clean = tableNumber.Trim();
-        var digitMatch = Regex.Match(clean, @"\d+");
-        var digit = digitMatch.Success ? digitMatch.Value : null;
-
-        var matches = validTables.Any(t =>
-            clean.Equals(t, StringComparison.OrdinalIgnoreCase) ||
-            clean.Equals($"Table {t}", StringComparison.OrdinalIgnoreCase) ||
-            clean.Equals($"Table{t}", StringComparison.OrdinalIgnoreCase) ||
-            clean.Equals($"T-{t}", StringComparison.OrdinalIgnoreCase) ||
-            clean.Equals($"T{t}", StringComparison.OrdinalIgnoreCase) ||
-            (digit != null && digit == t)
-        );
-
-        return (matches, validTables);
-    }
+        CancellationToken ct) =>
+        _lookupCache.ValidateTableForBusinessAsync(_db, businessId, tableNumber, ct);
 
     private static TableOrderResponse ToResponse(TableOrder o)
 
@@ -2420,55 +2218,23 @@ public class TableOrdersController : ControllerBase
         [FromQuery] int timeoutSeconds = 8,
         CancellationToken ct = default)
     {
-        var cleanSlug = slug.Trim().ToLowerInvariant();
-        var qr = await _db.QrCodes.AsNoTracking().Include(q => q.Business).FirstOrDefaultAsync(q => q.Slug.ToLower() == cleanSlug, ct);
-        Guid businessId = qr?.BusinessId ?? (Guid.TryParse(cleanSlug, out var bId) ? bId : Guid.Empty);
-        if (businessId == Guid.Empty)
-        {
-            var b = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(x => x.BusinessName.ToLower() == cleanSlug, ct);
-            if (b != null) businessId = b.Id;
-        }
-
-        if (businessId == Guid.Empty)
-        {
+        var resolved = await ResolveBusinessIdAsync(slug, ct: ct);
+        if (!resolved.HasValue)
             return NotFound(ApiResponse<object>.Fail("Restaurant not found"));
-        }
+        var businessId = resolved.Value;
 
         var clampedTimeout = Math.Clamp(timeoutSeconds, 1, 15);
         var syncEvent = await TableSyncManager.WaitForTableUpdateAsync(
             businessId, tableNumber, version, TimeSpan.FromSeconds(clampedTimeout), ct);
 
         var currentTableVersion = TableSyncManager.GetTableVersion(businessId, tableNumber);
+        var (cleanTable, _, _, _) = BuildTableVariants(tableNumber);
 
-        var cleanTable = tableNumber.Trim().ToLowerInvariant();
-        var altTable = cleanTable.StartsWith("table") ? cleanTable.Replace("table", "").Trim() : ("table " + cleanTable);
-        var tableDigits = Regex.Match(cleanTable, @"\d+").Value;
-        var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
-        var cutoff = DateTime.UtcNow.AddHours(-12);
+        var allActive = await LoadActiveTableOrdersAsync(businessId, tableNumber, ct);
+        var orders = allActive
+            .Where(o => o.Status == "PENDING" || o.Status == "ACCEPTED" || o.Status == "COMPLETED" || o.BillRequested)
+            .ToList();
 
-        var latestSettlement = await _db.TableOrders
-            .AsNoTracking()
-            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
-                        (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
-                         (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum))) &&
-                        (o.Status == "PAID" || o.Status == "SETTLED"))
-            .OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt)
-            .Select(o => (DateTime?)(o.UpdatedAt ?? o.CreatedAt))
-            .FirstOrDefaultAsync(ct);
-
-        var activeOrdersQuery = _db.TableOrders
-            .AsNoTracking()
-            .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
-                        (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
-                         (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum))) &&
-                        (o.Status == "PENDING" || o.Status == "ACCEPTED" || o.Status == "COMPLETED" || o.BillRequested));
-
-        if (latestSettlement != null)
-        {
-            activeOrdersQuery = activeOrdersQuery.Where(o => o.CreatedAt > latestSettlement.Value);
-        }
-
-        var orders = await activeOrdersQuery.OrderBy(o => o.CreatedAt).ToListAsync(ct);
         var chatKey = GetChatKey(businessId, cleanTable);
         var chatMessages = _tableChatStore.TryGetValue(chatKey, out var msgs) ? msgs.ToList() : new List<TableChatMessageDto>();
         var sharedCart = _tableSharedCartStore.TryGetValue(chatKey, out var sc) ? sc : null;
@@ -2554,27 +2320,24 @@ public class TableOrdersController : ControllerBase
         using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         try
         {
-            var cleanTable = tableNumber.Trim().ToLowerInvariant();
-            var altTable = cleanTable.StartsWith("table") ? cleanTable.Replace("table", "").Trim() : ("table " + cleanTable);
-            var tableDigits = Regex.Match(cleanTable, @"\d+").Value;
-            var altTableNum = !string.IsNullOrEmpty(tableDigits) ? ("table " + tableDigits) : altTable;
             var cutoff = DateTime.UtcNow.AddHours(-12);
 
-            var latestSettlement = await _db.TableOrders
-                .AsNoTracking()
-                .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
-                            (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
-                             (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum))) &&
-                            (o.Status == "PAID" || o.Status == "SETTLED"))
+            var latestSettlement = await FilterByTable(
+                    _db.TableOrders.AsNoTracking().Where(o =>
+                        o.BusinessId == businessId &&
+                        o.CreatedAt >= cutoff &&
+                        (o.Status == "PAID" || o.Status == "SETTLED")),
+                    tableNumber)
                 .OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt)
                 .Select(o => (DateTime?)(o.UpdatedAt ?? o.CreatedAt))
                 .FirstOrDefaultAsync(ct);
 
-            var activeOrdersQuery = _db.TableOrders
-                .Where(o => o.BusinessId == businessId && o.CreatedAt >= cutoff &&
-                            (o.TableNumber.ToLower() == cleanTable || o.TableNumber.ToLower() == altTable ||
-                             (!string.IsNullOrEmpty(tableDigits) && (o.TableNumber.ToLower() == tableDigits || o.TableNumber.ToLower() == altTableNum))) &&
-                            (o.Status == "PENDING" || o.Status == "ACCEPTED" || o.Status == "COMPLETED" || o.BillRequested));
+            var activeOrdersQuery = FilterByTable(
+                _db.TableOrders.Where(o =>
+                    o.BusinessId == businessId &&
+                    o.CreatedAt >= cutoff &&
+                    (o.Status == "PENDING" || o.Status == "ACCEPTED" || o.Status == "COMPLETED" || o.BillRequested)),
+                tableNumber);
 
             if (latestSettlement != null)
             {
@@ -2584,7 +2347,7 @@ public class TableOrdersController : ControllerBase
             var activeOrders = await activeOrdersQuery.OrderBy(o => o.CreatedAt).ToListAsync(ct);
             var nextRound = activeOrders.Count > 0 ? activeOrders.Max(o => o.Round) + 1 : 1;
 
-            var itemsJson = JsonSerializer.Serialize(request.Items);
+            var itemsJson = JsonSerializer.Serialize(request.Items, CompactJsonOptions);
             var totalAmount = request.Items.Sum(i => i.UnitPrice * i.Quantity);
 
             var order = new TableOrder

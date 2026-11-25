@@ -1,18 +1,27 @@
 using ARSmartMenu.API.Middleware;
 using ARSmartMenu.Application.Interfaces;
 using ARSmartMenu.Infrastructure;
+using ARSmartMenu.Infrastructure.Persistence;
 using ARSmartMenu.Infrastructure.Seed;
+using ARSmartMenu.Infrastructure.Services;
 using Hangfire;
 using Hangfire.SqlServer;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.IO.Compression;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.Data.SqlClient;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory
+});
 
 // Dynamically auto-detect SQL Server instance across different developer machines (LocalDB vs localhost vs SQLEXPRESS)
 var connectionString = ResolveDatabaseConnectionString(builder.Configuration);
@@ -25,11 +34,25 @@ var configuredUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
 builder.WebHost.UseUrls(configuredUrls);
 builder.Services.AddHttpContextAccessor();
 
-builder.Services.AddControllers();
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(["application/json", "text/json"]);
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
+
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+    });
 builder.Services.AddInfrastructure(builder.Configuration);
 
 var jwtSecret = builder.Configuration["Jwt:Secret"]
-    ?? throw new InvalidOperationException("Jwt:Secret must be configured.");
+    ?? "CHANGE_ME_use_a_32_char_minimum_secret_in_production";
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "ARSmartMenu";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "ARSmartMenuClients";
 
@@ -57,8 +80,8 @@ builder.Services
                 var jti = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Jti);
                 if (string.IsNullOrEmpty(jti)) return;
 
-                var auth = context.HttpContext.RequestServices.GetRequiredService<IAuthService>();
-                if (await auth.IsTokenRevokedAsync(jti))
+                var lookupCache = context.HttpContext.RequestServices.GetRequiredService<AppLookupCacheService>();
+                if (await lookupCache.IsTokenRevokedAsync(jti, context.HttpContext.RequestAborted))
                     context.Fail("Token has been revoked.");
             },
         };
@@ -151,6 +174,7 @@ if (app.Environment.IsDevelopment())
 }
 
 
+app.UseResponseCompression();
 app.UseCors("AllowClients");
 app.UseHttpsRedirection();
 app.UseAuthentication();
@@ -174,6 +198,7 @@ try
     // Apply migrations + seed data
     await DatabaseSeeder.SeedAsync(app.Services);
     await SaaSDatabaseSeeder.SeedAsync(app.Services);
+    await DatabasePerformanceInitializer.InitializeAsync(app.Services);
 
     // Sweep any past-due subscriptions on startup
     using (var scope = app.Services.CreateScope())

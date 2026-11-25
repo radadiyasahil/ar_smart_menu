@@ -34,12 +34,32 @@ public class AnalyticsController : ControllerBase
         var userId = _currentUser.GetUserId();
         var business = await _db.Businesses
             .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.OwnerId == userId, ct);
+            .Where(b => b.OwnerId == userId)
+            .Select(b => new { b.Id, b.Status })
+            .FirstOrDefaultAsync(ct);
 
         if (business == null || business.Status != BusinessStatus.Active)
             return null;
 
         return business.Id;
+    }
+
+    [HttpGet("dashboard")]
+    public async Task<ActionResult<ApiResponse<AnalyticsDashboardDto>>> Dashboard(
+        [FromQuery] string range = "7d",
+        [FromQuery] int limit = 10,
+        CancellationToken ct = default)
+    {
+        var businessId = await GetActiveUserBusinessIdAsync(ct);
+        if (!businessId.HasValue)
+        {
+            return Ok(ApiResponse<AnalyticsDashboardDto>.Ok(new AnalyticsDashboardDto(
+                new AnalyticsOverviewDto(0, 0, 0, 0m, 0, 0, 0m),
+                Array.Empty<AnalyticsChartPointDto>(),
+                Array.Empty<TopProductAnalyticsDto>())));
+        }
+        var result = await _analytics.GetDashboardAsync(businessId.Value, range, limit, ct);
+        return Ok(ApiResponse<AnalyticsDashboardDto>.Ok(result));
     }
 
     [HttpGet("overview")]

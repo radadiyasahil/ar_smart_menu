@@ -1,11 +1,13 @@
 import {
   AlertCircle,
+  Box,
   Check,
-  ExternalLink,
+  Download,
   Flame,
   Layers,
   PauseCircle,
   Play,
+  RotateCw,
   Sparkles,
   Upload,
   X,
@@ -50,6 +52,41 @@ export function ProductDetailModal({
   onSetStatus,
 }: ProductDetailModalProps) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null)
+  const [show3DViewer, setShow3DViewer] = useState(false)
+  const [autoRotate3D, setAutoRotate3D] = useState(true)
+  const [is3DLoading, setIs3DLoading] = useState(true)
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  const handleDownloadGlb = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault()
+    if (!item.glbUrl) return
+    setIsDownloading(true)
+    try {
+      const response = await fetch(item.glbUrl)
+      if (!response.ok) throw new Error('Download request failed')
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${item.productName.replace(/[^\w\s-]/g, '').trim() || 'dish-3d-model'}.glb`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch {
+      // Fallback direct link download
+      const a = document.createElement('a')
+      a.href = item.glbUrl
+      a.target = '_blank'
+      a.rel = 'noreferrer'
+      a.download = `${item.productName.replace(/[^\w\s-]/g, '').trim() || 'dish-3d-model'}.glb`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   const vegInfo = VEG_STATUS_LABELS[item.vegStatus ?? 0] ?? VEG_STATUS_LABELS[0]
   const categoryLabel =
@@ -221,19 +258,40 @@ export function ProductDetailModal({
             </div>
 
             {item.glbUrl ? (
-              <div className="flex items-center justify-between rounded-md bg-success/10 p-3 text-sm text-success border border-success/30">
+              <div className="rounded-md bg-success/10 p-3 text-sm text-success border border-success/30 space-y-2.5 sm:space-y-0 sm:flex sm:items-center sm:justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4" />
-                  <span>3D GLB Model generated and ready!</span>
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span className="font-semibold">3D GLB Model generated and ready!</span>
                 </div>
-                <a
-                  href={item.glbUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1 font-semibold underline text-xs"
-                >
-                  View 3D Asset <ExternalLink className="h-3 w-3" />
-                </a>
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Option 1: Interactive 3D View */}
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 gap-1.5 bg-primary text-white hover:bg-primary/90 text-xs font-semibold shadow-xs"
+                    onClick={() => {
+                      setIs3DLoading(true)
+                      setShow3DViewer(true)
+                    }}
+                  >
+                    <Box className="h-3.5 w-3.5" />
+                    <span>See 3D View</span>
+                  </Button>
+
+                  {/* Option 2: Download .GLB File */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 border-border bg-card text-foreground hover:bg-muted text-xs font-semibold shadow-xs"
+                    onClick={handleDownloadGlb}
+                    disabled={isDownloading}
+                    title="Download .glb 3D model file directly"
+                  >
+                    <Download className={`h-3.5 w-3.5 ${isDownloading ? 'animate-bounce' : 'text-muted-foreground'}`} />
+                    <span>{isDownloading ? 'Downloading...' : 'Download GLB'}</span>
+                  </Button>
+                </div>
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">
@@ -380,6 +438,139 @@ export function ProductDetailModal({
             >
               <X className="h-4 w-4" />
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive 3D Model Viewer Modal */}
+      {show3DViewer && item.glbUrl && (
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center bg-black/85 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in-0"
+          onClick={() => setShow3DViewer(false)}
+        >
+          <div
+            className="relative flex flex-col w-full max-w-2xl max-h-[92vh] overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-border bg-muted/40 px-5 py-3.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Box className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-foreground truncate">
+                      {item.productName}
+                    </h3>
+                    <span className="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-bold text-success border border-success/30">
+                      3D Model
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    Offered by <span className="font-medium text-foreground">{item.businessName}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Download button in modal header */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 border-border bg-card text-foreground hover:bg-muted text-xs font-semibold"
+                  onClick={handleDownloadGlb}
+                  disabled={isDownloading}
+                  title="Download .glb 3D asset file"
+                >
+                  <Download className={`h-3.5 w-3.5 ${isDownloading ? 'animate-bounce' : 'text-muted-foreground'}`} />
+                  <span className="hidden sm:inline">{isDownloading ? 'Downloading...' : 'Download GLB'}</span>
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+                  onClick={() => setShow3DViewer(false)}
+                  aria-label="Close 3D viewer"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* 3D Model Viewer Canvas */}
+            <div className="relative h-[380px] sm:h-[460px] w-full bg-gradient-to-b from-[#141d2e] via-[#0b0f19] to-[#06080e] flex items-center justify-center overflow-hidden">
+              {is3DLoading && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2.5 bg-card/75 backdrop-blur-xs">
+                  <div className="h-9 w-9 animate-spin rounded-full border-3 border-primary/20 border-t-primary" />
+                  <span className="text-xs font-semibold text-foreground">Rendering 3D Model...</span>
+                  <span className="text-[11px] text-muted-foreground">Interactive 360° GLB viewport</span>
+                </div>
+              )}
+
+              <model-viewer
+                src={item.glbUrl}
+                alt={item.productName}
+                camera-controls
+                auto-rotate={autoRotate3D}
+                rotation-per-second="25deg"
+                touch-action="pan-y"
+                shadow-intensity="1.2"
+                shadow-softness="0.7"
+                exposure="1.2"
+                environment-image="neutral"
+                loading="eager"
+                interaction-prompt="none"
+                style={{ width: '100%', height: '100%', outline: 'none' }}
+                ref={(el) => {
+                  if (el) {
+                    el.addEventListener('load', () => setIs3DLoading(false), { once: true })
+                    el.addEventListener('error', () => setIs3DLoading(false), { once: true })
+                  }
+                }}
+              />
+
+              {/* Interactive Toolbar Overlay */}
+              <div className="absolute bottom-3 inset-x-3 sm:inset-x-auto sm:left-4 flex items-center justify-between sm:justify-start gap-2 rounded-xl border border-border/80 bg-card/90 px-3 py-1.5 shadow-xl backdrop-blur-md">
+                <button
+                  type="button"
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    autoRotate3D
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
+                  onClick={() => setAutoRotate3D((v) => !v)}
+                  title="Toggle 360° automatic rotation"
+                >
+                  <RotateCw className={`h-3.5 w-3.5 ${autoRotate3D ? 'animate-spin' : ''}`} />
+                  <span>{autoRotate3D ? 'Auto-Rotating' : 'Auto-Rotate'}</span>
+                </button>
+                <div className="h-4 w-px bg-border shrink-0" />
+                <span className="text-[11px] text-muted-foreground select-none">
+                  🖱️ Drag to orbit • Scroll to zoom
+                </span>
+              </div>
+            </div>
+
+            {/* Footer with format and close actions */}
+            <div className="flex items-center justify-between border-t border-border bg-muted/20 px-5 py-3 text-xs">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                <span>Format: <strong className="text-foreground">GLB (Binary glTF 2.0)</strong></span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-semibold"
+                  onClick={() => setShow3DViewer(false)}
+                >
+                  Close Preview
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

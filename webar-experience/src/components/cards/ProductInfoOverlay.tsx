@@ -22,7 +22,29 @@ export function ProductInfoOverlay({ product }: ProductInfoOverlayProps) {
           />
         )}
         <div className="dish-info-text">
-          <h1 className="dish-name">{product.name}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <h1
+              className="dish-name"
+              style={product.soldOutToday ? { textDecoration: 'line-through', opacity: 0.7 } : undefined}
+            >
+              {product.name}
+            </h1>
+            {product.soldOutToday && (
+              <span
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  color: '#fca5a5',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                }}
+              >
+                Sold Out Today
+              </span>
+            )}
+          </div>
           <p className="dish-meta">{product.calories}</p>
           {product.description && (
             <p className="dish-description">{product.description}</p>

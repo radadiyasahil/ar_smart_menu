@@ -23,6 +23,8 @@ export function BottomControlBar({
   }
 
   const handleOrder = () => {
+    if (product.soldOutToday) return
+
     analyticsService.track('add_to_order', product.id)
     analyticsService.flush()
 
@@ -53,9 +55,21 @@ export function BottomControlBar({
           <span>Rotate</span>
         </button>
 
-        <button type="button" className="ctrl-btn ctrl-btn-primary" onClick={handleOrder} aria-label="Add to order">
-          <span>Add to order</span>
-        </button>
+        {product.soldOutToday ? (
+          <button
+            type="button"
+            className="ctrl-btn"
+            disabled
+            style={{ opacity: 0.6, cursor: 'not-allowed', backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: 'rgba(239, 68, 68, 0.4)', color: '#fca5a5' }}
+            aria-label="Sold out for today"
+          >
+            <span>Sold out for today</span>
+          </button>
+        ) : (
+          <button type="button" className="ctrl-btn ctrl-btn-primary" onClick={handleOrder} aria-label="Add to order">
+            <span>Add to order</span>
+          </button>
+        )}
 
         <button type="button" className="ctrl-btn" onClick={() => void handleShare()} aria-label="Share this dish">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">

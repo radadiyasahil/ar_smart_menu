@@ -2,31 +2,36 @@ import 'package:dio/dio.dart';
 
 import '../../models/qr_code_model.dart';
 import 'api_client.dart';
+import 'local_cache_service.dart';
 
 class QrService {
   QrService({Dio? dio}) : _dio = dio ?? ApiClient.dio;
 
   final Dio _dio;
 
-  Future<List<QrCodeModel>> list() async {
-    final response = await _dio.get<Map<String, dynamic>>('/qrcodes');
-    final envelope = response.data!;
-    if (envelope['success'] != true) {
-      throw Exception(envelope['error'] ?? 'Failed to load QR codes');
+  Future<List<QrCodeModel>> list({bool forceRefresh = false}) async {
+    if (!forceRefresh) {
+      final cached = await LocalCacheService.loadFreshQrCodes();
+      if (cached != null) return cached;
     }
-    final data = envelope['data'] as List<dynamic>;
-    return data
-        .map((e) => QrCodeModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+
+    final response = await _dio.get<Map<String, dynamic>>('/qrcodes');
+    final list = ApiClient.parseList(
+      response.data!,
+      QrCodeModel.fromJson,
+      fallbackError: 'Failed to load QR codes',
+    );
+    await LocalCacheService.saveQrCodes(list);
+    return list;
   }
 
   Future<QrCodeModel> getMasterQr() async {
     final response = await _dio.get<Map<String, dynamic>>('/qrcodes/master');
-    final envelope = response.data!;
-    if (envelope['success'] != true) {
-      throw Exception(envelope['error'] ?? 'Failed to get master QR');
-    }
-    return QrCodeModel.fromJson(envelope['data'] as Map<String, dynamic>);
+    return ApiClient.parseOne(
+      response.data!,
+      QrCodeModel.fromJson,
+      fallbackError: 'Failed to get master QR',
+    );
   }
 
   Future<List<QrCodeModel>> generateTableQrs({int count = 3}) async {
@@ -34,14 +39,13 @@ class QrService {
       '/qrcodes/tables',
       queryParameters: {'count': count},
     );
-    final envelope = response.data!;
-    if (envelope['success'] != true) {
-      throw Exception(envelope['error'] ?? 'Failed to generate table QRs');
-    }
-    final data = envelope['data'] as List<dynamic>;
-    return data
-        .map((e) => QrCodeModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final list = ApiClient.parseList(
+      response.data!,
+      QrCodeModel.fromJson,
+      fallbackError: 'Failed to generate table QRs',
+    );
+    await LocalCacheService.invalidateQrCodes();
+    return list;
   }
 
   Future<QrCodeModel> generateForProduct(String productId) async {
@@ -49,25 +53,30 @@ class QrService {
       '/qrcodes/generate',
       data: {'productId': productId},
     );
-    final envelope = response.data!;
-    if (envelope['success'] != true) {
-      throw Exception(envelope['error'] ?? 'Failed to generate QR');
-    }
-    return QrCodeModel.fromJson(envelope['data'] as Map<String, dynamic>);
+    final model = ApiClient.parseOne(
+      response.data!,
+      QrCodeModel.fromJson,
+      fallbackError: 'Failed to generate QR',
+    );
+    await LocalCacheService.invalidateQrCodes();
+    return model;
   }
 
   Future<void> clearTableQrs() async {
     final response = await _dio.delete<Map<String, dynamic>>('/qrcodes/tables');
-    final envelope = response.data!;
-    if (envelope['success'] != true) {
-      throw Exception(envelope['error'] ?? 'Failed to clear table QRs');
-    }
+    ApiClient.ensureSuccess(
+      response.data!,
+      fallbackError: 'Failed to clear table QRs',
+    );
+    await LocalCacheService.invalidateQrCodes();
   }
 
   Future<void> deactivate(String qrId) async {
     final response = await _dio.post<Map<String, dynamic>>('/qrcodes/$qrId/deactivate');
-    if (response.data?['success'] != true) {
-      throw Exception(response.data?['error'] ?? 'Failed to deactivate QR');
-    }
+    ApiClient.ensureSuccess(
+      response.data ?? const {},
+      fallbackError: 'Failed to deactivate QR',
+    );
+    await LocalCacheService.invalidateQrCodes();
   }
 }

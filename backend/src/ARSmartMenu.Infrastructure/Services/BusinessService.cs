@@ -17,18 +17,21 @@ public class BusinessService : IBusinessService
     private readonly AppDbContext _db;
     private readonly IWebHostEnvironment _env;
     private readonly MediaUrlResolver _mediaUrls;
+    private readonly AppLookupCacheService _lookupCache;
     private readonly string? _localRoot;
 
     public BusinessService(
         AppDbContext db,
         IWebHostEnvironment env,
         MediaUrlResolver mediaUrls,
-        IConfiguration config)
+        IConfiguration config,
+        AppLookupCacheService lookupCache)
     {
         _db = db;
         _env = env;
         _mediaUrls = mediaUrls;
         _localRoot = config["Storage:LocalRoot"];
+        _lookupCache = lookupCache;
     }
 
     public async Task<BusinessDto> CreateAsync(Guid userId, CreateBusinessRequest request, CancellationToken ct = default)
@@ -108,6 +111,7 @@ public class BusinessService : IBusinessService
 
         business.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(business.Id);
 
         return MapBusiness(business);
     }
@@ -128,6 +132,7 @@ public class BusinessService : IBusinessService
 
         business.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(business.Id);
 
         return MapBusiness(business);
     }
@@ -153,8 +158,9 @@ public class BusinessService : IBusinessService
         business.LogoUrl = logoUrl;
         business.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(business.Id);
 
-        return await GetMeAsync(userId, ct);
+        return MapBusiness(business);
     }
 
     public async Task<BusinessDto> UpdateStatusAsync(Guid userId, UpdateBusinessStatusRequest request, CancellationToken ct = default)
@@ -189,6 +195,7 @@ public class BusinessService : IBusinessService
 
         business.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(business.Id);
 
         return MapBusiness(business);
     }

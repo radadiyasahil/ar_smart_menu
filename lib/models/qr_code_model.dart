@@ -43,4 +43,17 @@ class QrCodeModel {
           : null,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'businessId': businessId,
+        'productId': productId,
+        'productName': productName,
+        'qrType': qrType,
+        'slug': slug,
+        'webUrl': webUrl,
+        'qrImageUrl': qrImageUrl,
+        'isActive': isActive,
+        if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
+      };
 }

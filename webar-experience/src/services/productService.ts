@@ -227,7 +227,43 @@ function mapExperience(data: PublicArResponse): ArExperience {
   }
 }
 
+const MENU_CACHE_PREFIX = 'ar_menu_cache_v1:'
+const MENU_CACHE_TTL_MS = 15 * 60 * 1000
+
+function normalizeMenu(menu: PublicMenuResponse): PublicMenuResponse {
+  if (menu?.categories) {
+    for (const cat of menu.categories) {
+      for (const dish of cat.dishes) {
+        dish.categoryName = cat.categoryName
+        if (dish.customizationJson && !dish.customization) {
+          try {
+            dish.customization = JSON.parse(dish.customizationJson)
+          } catch {
+            // Ignore parse error
+          }
+        }
+      }
+    }
+  }
+  return menu
+}
+
 export const productService = {
+  /** Read cached menu from localStorage for instant paint while background sync runs */
+  getCachedMenu(slug: string): PublicMenuResponse | null {
+    try {
+      const raw = localStorage.getItem(`${MENU_CACHE_PREFIX}${slug}`)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { savedAt: number; menu: PublicMenuResponse }
+      if (!parsed?.menu || Date.now() - parsed.savedAt > MENU_CACHE_TTL_MS) {
+        return null
+      }
+      return normalizeMenu(parsed.menu)
+    } catch {
+      return null
+    }
+  },
+
   /** Fetch the entire restaurant menu dynamically from the backend */
   async fetchMenuBySlug(slug: string): Promise<PublicMenuResponse> {
     const res = await apiClient.get<ApiEnvelope<PublicMenuResponse>>(
@@ -236,20 +272,14 @@ export const productService = {
     if (!res.data.success || !res.data.data) {
       throw new Error(res.data.error || 'Menu not found')
     }
-    const menu = res.data.data
-    if (menu?.categories) {
-      for (const cat of menu.categories) {
-        for (const dish of cat.dishes) {
-          dish.categoryName = cat.categoryName
-          if (dish.customizationJson) {
-            try {
-              dish.customization = JSON.parse(dish.customizationJson)
-            } catch {
-              // Ignore parse error
-            }
-          }
-        }
-      }
+    const menu = normalizeMenu(res.data.data)
+    try {
+      localStorage.setItem(
+        `${MENU_CACHE_PREFIX}${slug}`,
+        JSON.stringify({ savedAt: Date.now(), menu }),
+      )
+    } catch {
+      // Ignore storage quota errors
     }
     return menu
   },

@@ -36,6 +36,8 @@ public interface IProductService
     Task<IReadOnlyList<ProductDto>> BulkUpdateStatusAsync(Guid businessId, IReadOnlyList<Guid> productIds, ProductStatus status, CancellationToken ct = default);
     Task DeleteAsync(Guid businessId, Guid productId, CancellationToken ct = default);
     Task<ProductDto> SetSoldOutAsync(Guid businessId, Guid productId, bool soldOut, CancellationToken ct = default);
+    Task ReorderAsync(Guid businessId, ReorderProductsRequest request, CancellationToken ct = default);
+    Task BulkSetSoldOutAsync(Guid businessId, BulkSetSoldOutRequest request, CancellationToken ct = default);
     Task<UploadPhotoResponse> UploadPhotoAsync(
         Guid businessId,
         Guid productId,
@@ -99,6 +101,7 @@ public interface IQrCodeService
 
 public interface IAnalyticsService
 {
+    Task<AnalyticsDashboardDto> GetDashboardAsync(Guid businessId, string range, int topLimit = 10, CancellationToken ct = default);
     Task<AnalyticsOverviewDto> GetOverviewAsync(Guid businessId, string range, CancellationToken ct = default);
     Task<IReadOnlyList<AnalyticsChartPointDto>> GetChartAsync(Guid businessId, string range, CancellationToken ct = default);
     Task<IReadOnlyList<TopProductAnalyticsDto>> GetTopProductsAsync(Guid businessId, string range, int limit, CancellationToken ct = default);

@@ -106,6 +106,7 @@ export function DishCustomizationModal({
 
   if (!isOpen || !dish || isNonCustomizableDish(dish)) return null
 
+  const isSoldOut = Boolean(dish.soldOutToday)
   const isVeg = dish.vegStatus === 0 || dish.vegStatus === 2
   const basePrice = dish.pricePaise ? Math.round(dish.pricePaise / 100) : 0
 
@@ -115,12 +116,14 @@ export function DishCustomizationModal({
   const finalTotal = itemUnitPrice * quantity
 
   const toggleAddon = (id: string) => {
+    if (isSoldOut) return
     setSelectedAddonIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     )
   }
 
   const handleSave = () => {
+    if (isSoldOut) return
     const custom: DishCustomization = {
       spiceLevel: showSpiceLevel ? spiceLevel : undefined,
       dietary: showDietary ? dietary : undefined,
@@ -145,7 +148,7 @@ export function DishCustomizationModal({
               )}
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span
                   className={`w-3 h-3 border-[1.5px] rounded-[2px] inline-flex items-center justify-center ${
                     isVeg ? 'border-[#20BF6B] bg-[#20BF6B]/20' : 'border-[#FF5353] bg-[#FF5353]/20'
@@ -153,7 +156,14 @@ export function DishCustomizationModal({
                 >
                   <span className={`w-1.5 h-1.5 rounded-full ${isVeg ? 'bg-[#20BF6B]' : 'bg-[#FF5353]'}`} />
                 </span>
-                <h3 className="text-base font-black text-white truncate">{dish.name}</h3>
+                <h3 className={`text-base font-black truncate ${isSoldOut ? 'text-gray-400 line-through' : 'text-white'}`}>
+                  {dish.name}
+                </h3>
+                {isSoldOut && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                    Sold Out Today
+                  </span>
+                )}
               </div>
               <p className="text-xs text-gray-400 mt-0.5">Base Price: ₹{basePrice}</p>
             </div>
@@ -271,38 +281,46 @@ export function DishCustomizationModal({
 
         {/* Footer with Quantity & Add Button */}
         <div className="p-4 sm:p-5 border-t border-white/10 bg-[#1F2029] flex items-center gap-3">
-          {/* Quantity pill */}
-          <div className="flex items-center bg-[#282A36] border border-white/10 rounded-full px-3 py-1.5 gap-3">
-            <button
-              type="button"
-              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-              disabled={quantity <= 1}
-              className="text-gray-300 hover:text-white disabled:opacity-30 cursor-pointer"
-            >
-              <Minus size={13} />
-            </button>
-            <span className="text-xs font-black text-white min-w-[14px] text-center">
-              {quantity}
-            </span>
-            <button
-              type="button"
-              onClick={() => setQuantity((q) => q + 1)}
-              className="text-gray-300 hover:text-white cursor-pointer"
-            >
-              <Plus size={13} />
-            </button>
-          </div>
+          {isSoldOut ? (
+            <div className="w-full flex items-center justify-center py-3 px-4 rounded-full bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs sm:text-sm font-black tracking-wide select-none cursor-not-allowed">
+              🚫 Sold Out for Today — Cannot Order
+            </div>
+          ) : (
+            <>
+              {/* Quantity pill */}
+              <div className="flex items-center bg-[#282A36] border border-white/10 rounded-full px-3 py-1.5 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                  disabled={quantity <= 1}
+                  className="text-gray-300 hover:text-white disabled:opacity-30 cursor-pointer"
+                >
+                  <Minus size={13} />
+                </button>
+                <span className="text-xs font-black text-white min-w-[14px] text-center">
+                  {quantity}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => q + 1)}
+                  className="text-gray-300 hover:text-white cursor-pointer"
+                >
+                  <Plus size={13} />
+                </button>
+              </div>
 
-          {/* Confirm Button */}
-          <button
-            type="button"
-            onClick={handleSave}
-            className="flex-1 py-3 bg-gradient-to-r from-[#FF5353] to-[#FF7043] hover:from-[#ff4040] hover:to-[#ff6233] text-white font-black rounded-full text-xs sm:text-sm cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-[#FF5353]/30 transition"
-          >
-            <span>Add to Order</span>
-            <span>•</span>
-            <span>₹{finalTotal}</span>
-          </button>
+              {/* Confirm Button */}
+              <button
+                type="button"
+                onClick={handleSave}
+                className="flex-1 py-3 bg-gradient-to-r from-[#FF5353] to-[#FF7043] hover:from-[#ff4040] hover:to-[#ff6233] text-white font-black rounded-full text-xs sm:text-sm cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-[#FF5353]/30 transition"
+              >
+                <span>Add to Order</span>
+                <span>•</span>
+                <span>₹{finalTotal}</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

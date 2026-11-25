@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/bill_model.dart';
 import 'api_client.dart';
+import 'local_cache_service.dart';
 
 class QuickCustomPreset {
   final String name;
@@ -40,8 +41,16 @@ class BillingService {
   static String _gstRateKey(String? bId) =>
       (bId != null && bId.isNotEmpty) ? 'ar_billing_gst_rate_$bId' : _gstRateBaseKey;
 
-  /// Fetches dynamic GST rate percent from backend (admin configured) or local cache
-  Future<double> getDynamicGstRate([String? businessId]) async {
+  static final Map<String, int> _lastBizOrderVersion = {};
+  static final Map<String, List<PendingTableOrder>> _cachedActiveOrders = {};
+
+  /// Fetches dynamic GST rate percent from 10-min device cache first, then backend
+  Future<double> getDynamicGstRate([String? businessId, bool forceRefresh = false]) async {
+    if (!forceRefresh) {
+      final fresh = await LocalCacheService.loadFreshGstRate();
+      if (fresh != null) return fresh;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     try {
       final res = await ApiClient.dio.get('/subscriptions/gst-rate');
@@ -49,22 +58,17 @@ class BillingService {
       if (data is Map && data['data'] != null) {
         final serverRate = (data['data']['gstRatePercent'] as num?)?.toDouble();
         if (serverRate != null && serverRate >= 0) {
+          await LocalCacheService.saveGstRate(serverRate);
           await prefs.setDouble(_gstRateKey(businessId), serverRate);
           return serverRate;
         }
       }
     } catch (_) {}
 
-    final cached = prefs.getDouble(_gstRateKey(businessId));
+    final cached = await LocalCacheService.loadAnyCachedGstRate() ?? prefs.getDouble(_gstRateKey(businessId));
     if (cached != null && cached >= 0) return cached;
 
     return 5.0;
-  }
-
-  /// Saves a customized GST rate for the business locally
-  Future<void> saveGstRate(double rate, [String? businessId]) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_gstRateKey(businessId), rate);
   }
 
   static const List<QuickCustomPreset> defaultPresets = [
@@ -173,58 +177,67 @@ class BillingService {
     return getCachedActiveBills(businessId);
   }
 
+  /// Pure helper to consolidate accepted/completed table orders into active TableBills.
+  List<TableBill> buildBillsFromOrders(
+    List<PendingTableOrder> orders,
+    double dynamicGstRate,
+  ) {
+    final acceptedOrders = orders
+        .where((o) => !o.isCancelled && (o.isAccepted || o.isCompleted))
+        .toList();
+
+    final groupedByTable = <String, List<PendingTableOrder>>{};
+    for (final ord in acceptedOrders) {
+      final cleanTable = ord.tableNumber.trim().isNotEmpty ? ord.tableNumber.trim() : 'Dine-in';
+      groupedByTable.putIfAbsent(cleanTable, () => []).add(ord);
+    }
+
+    final resultBills = <TableBill>[];
+    for (final entry in groupedByTable.entries) {
+      final tableOrders = entry.value;
+      final firstOrder = tableOrders.first;
+      final combinedItems = <BillItem>[];
+
+      for (final ord in tableOrders) {
+        for (final it in ord.items) {
+          final idx = combinedItems.indexWhere((c) =>
+              (it.id.isNotEmpty && c.id == it.id) ||
+              c.name.toLowerCase() == it.name.toLowerCase());
+          if (idx >= 0) {
+            combinedItems[idx].quantity += it.quantity;
+          } else {
+            combinedItems.add(BillItem(
+              id: it.id,
+              name: it.name,
+              unitPrice: it.unitPrice,
+              quantity: it.quantity,
+            ));
+          }
+        }
+      }
+
+      resultBills.add(TableBill(
+        id: 'TBL-${firstOrder.id.length > 6 ? firstOrder.id.substring(0, 6) : firstOrder.id}',
+        tableNumber: entry.key,
+        createdAt: firstOrder.createdAt.toLocal(),
+        customerPhone: tableOrders
+            .firstWhere((o) => o.customerPhone.isNotEmpty, orElse: () => firstOrder)
+            .customerPhone,
+        items: combinedItems,
+        gstRate: dynamicGstRate,
+      ));
+    }
+
+    return resultBills;
+  }
+
   /// Synthesizes active table bills from the backend database for seamless multi-device sync
   Future<List<TableBill>> fetchActiveBills(String businessId) async {
     if (businessId.isEmpty) return [];
     try {
       final dynamicGstRate = await getDynamicGstRate(businessId);
       final orders = await getPendingOrders(businessId);
-      final acceptedOrders = orders
-          .where((o) => !o.isCancelled && (o.isAccepted || o.isCompleted))
-          .toList();
-
-      final groupedByTable = <String, List<PendingTableOrder>>{};
-      for (final ord in acceptedOrders) {
-        final cleanTable = ord.tableNumber.trim().isNotEmpty ? ord.tableNumber.trim() : 'Dine-in';
-        groupedByTable.putIfAbsent(cleanTable, () => []).add(ord);
-      }
-
-      final resultBills = <TableBill>[];
-      for (final entry in groupedByTable.entries) {
-        final tableOrders = entry.value;
-        final firstOrder = tableOrders.first;
-        final combinedItems = <BillItem>[];
-
-        for (final ord in tableOrders) {
-          for (final it in ord.items) {
-            final idx = combinedItems.indexWhere((c) =>
-                (it.id.isNotEmpty && c.id == it.id) ||
-                c.name.toLowerCase() == it.name.toLowerCase());
-            if (idx >= 0) {
-              combinedItems[idx].quantity += it.quantity;
-            } else {
-              combinedItems.add(BillItem(
-                id: it.id,
-                name: it.name,
-                unitPrice: it.unitPrice,
-                quantity: it.quantity,
-              ));
-            }
-          }
-        }
-
-        final bill = TableBill(
-          id: 'TBL-${firstOrder.id.length > 6 ? firstOrder.id.substring(0, 6) : firstOrder.id}',
-          tableNumber: entry.key,
-          createdAt: firstOrder.createdAt.toLocal(),
-          customerPhone: tableOrders
-              .firstWhere((o) => o.customerPhone.isNotEmpty, orElse: () => firstOrder)
-              .customerPhone,
-          items: combinedItems,
-          gstRate: dynamicGstRate,
-        );
-        resultBills.add(bill);
-      }
+      final resultBills = buildBillsFromOrders(orders, dynamicGstRate);
 
       if (resultBills.isNotEmpty) {
         await saveActiveBills(resultBills, businessId);
@@ -307,20 +320,52 @@ class BillingService {
   Future<bool> sendReturnConfirmationWhatsApp({String? customerPhone}) =>
       _launchWhatsApp('⏳ We received your order! We will prepare and serve it as soon as possible. Please wait! 👨‍🍳✨', customerPhone);
 
-  /// Fetches active table orders (pending, preparing, and bill requests)
-  Future<List<PendingTableOrder>> getPendingOrders(String businessId) async {
-    if (businessId.isEmpty) return [];
+  /// Fetches active table orders with version-based delta short-circuiting.
+  Future<({bool unchanged, List<PendingTableOrder> orders})> getPendingOrdersDelta(
+    String businessId,
+  ) async {
+    if (businessId.isEmpty) return (unchanged: false, orders: <PendingTableOrder>[]);
     try {
-      final res = await ApiClient.dio.get('/businesses/$businessId/table-orders?status=ACTIVE');
+      final knownVer = _lastBizOrderVersion[businessId];
+      final hasCached = _cachedActiveOrders.containsKey(businessId);
+      final queryParams = <String, dynamic>{
+        'status': 'ACTIVE',
+        if (knownVer != null && hasCached) 'sinceVersion': knownVer,
+      };
+      final res = await ApiClient.dio.get(
+        '/businesses/$businessId/table-orders',
+        queryParameters: queryParams,
+      );
+      final headerVer = int.tryParse(res.headers.value('x-business-version') ?? '');
       final data = res.data;
-      if (data is Map && data['data'] is List) {
-        final list = data['data'] as List<dynamic>;
-        return list.map((e) => PendingTableOrder.fromJson(e as Map<String, dynamic>)).toList();
+      if (data is Map) {
+        if (data['code'] == 'UNCHANGED' && hasCached) {
+          final msgVer = int.tryParse(data['message']?.toString() ?? '') ?? headerVer;
+          if (msgVer != null) _lastBizOrderVersion[businessId] = msgVer;
+          return (unchanged: true, orders: _cachedActiveOrders[businessId]!);
+        }
+        if (data['data'] is List) {
+          final list = data['data'] as List<dynamic>;
+          final parsed = list
+              .map((e) => PendingTableOrder.fromJson(e as Map<String, dynamic>))
+              .toList();
+          if (headerVer != null) {
+            _lastBizOrderVersion[businessId] = headerVer;
+          }
+          _cachedActiveOrders[businessId] = parsed;
+          return (unchanged: false, orders: parsed);
+        }
       }
     } catch (e) {
       debugPrint('Error fetching pending table orders: $e');
     }
-    return [];
+    return (unchanged: false, orders: _cachedActiveOrders[businessId] ?? <PendingTableOrder>[]);
+  }
+
+  /// Fetches active table orders (pending, preparing, and bill requests)
+  Future<List<PendingTableOrder>> getPendingOrders(String businessId) async {
+    final delta = await getPendingOrdersDelta(businessId);
+    return delta.orders;
   }
 
   /// Mark order accepted in kitchen

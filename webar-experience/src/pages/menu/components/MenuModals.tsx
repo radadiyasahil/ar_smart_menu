@@ -619,6 +619,13 @@ export function CartDrawer({
       onChangeTable()
       return
     }
+
+    const soldOutItemNames = items.filter((i) => i.dish.soldOutToday).map((i) => i.dish.name)
+    if (soldOutItemNames.length > 0) {
+      alert(`The following item(s) are sold out for today:\n• ${soldOutItemNames.join('\n• ')}\n\nPlease remove them from your cart to place your order.`)
+      return
+    }
+
     setIsSubmitting(true)
 
     // Capture frozen snapshot of items so any concurrent background sync doesn't mutate items
@@ -735,6 +742,8 @@ export function CartDrawer({
     setTimeout(() => setWaiterSent(false), 4000)
   }
 
+  const hasSoldOutItems = items.some((i) => i.dish.soldOutToday)
+
   return (
     <BottomSheetShell
       isOpen={isOpen}
@@ -780,6 +789,12 @@ export function CartDrawer({
       footer={
         items.length > 0 && (
           <div className="space-y-2">
+            {hasSoldOutItems && (
+              <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+                <span className="text-sm shrink-0">⚠️</span>
+                <span>Please remove sold-out dishes from your cart before sending order to kitchen.</span>
+              </div>
+            )}
             {!isTableValid && !isTableLocked && (
               <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
                 <span>⚠️ Table &ldquo;{tableNumber}&rdquo; is not a valid table.</span>
@@ -803,7 +818,7 @@ export function CartDrawer({
             ) : (
               <button
                 type="button"
-                disabled={isSubmitting || !isTableValid}
+                disabled={isSubmitting || !isTableValid || hasSoldOutItems}
                 onClick={handleSendOrderDirectly}
                 className="w-full py-3.5 bg-gradient-to-r from-[#FF5353] to-[#FF7043] hover:from-[#ff4040] hover:to-[#ff6233] text-white font-black rounded-full text-sm cursor-pointer flex items-center justify-center gap-2 shadow-xl shadow-[#FF5353]/30 disabled:opacity-50 transition"
               >
@@ -815,6 +830,8 @@ export function CartDrawer({
                 <span>
                   {isSubmitting
                     ? 'Sending to Kitchen...'
+                    : hasSoldOutItems
+                    ? 'Remove Sold-Out Items to Order'
                     : currentRound > 1
                     ? `Send Round ${currentRound} Directly to Kitchen`
                     : 'Send Order Directly to Kitchen'}
@@ -946,19 +963,34 @@ export function CartDrawer({
         <div className="space-y-3">
           {items.map((item) => {
             const { dish, quantity, customization } = item
+            const isSoldOut = Boolean(dish.soldOutToday)
             const isVeg = dish.vegStatus === 0 || dish.vegStatus === 2
             const unitPrice = item.unitPrice ?? (dish.pricePaise ? Math.round(dish.pricePaise / 100) : 0)
             const itemKey = item.id || dish.id
 
             return (
-              <div key={itemKey} className="bg-[#1F1F23] border border-[#2E2E34] rounded-xl p-3 flex flex-col gap-2">
+              <div
+                key={itemKey}
+                className={`border rounded-xl p-3 flex flex-col gap-2 transition ${
+                  isSoldOut
+                    ? 'bg-rose-950/20 border-rose-500/30'
+                    : 'bg-[#1F1F23] border-[#2E2E34]'
+                }`}
+              >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                       <span className={`w-3 h-3 border rounded-[2px] inline-flex items-center justify-center shrink-0 ${isVeg ? 'border-[#20BF6B]' : 'border-[#EF4444]'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${isVeg ? 'bg-[#20BF6B]' : 'bg-[#EF4444]'}`} />
                       </span>
-                      <span className="text-sm font-semibold text-white truncate">{dish.name}</span>
+                      <span className={`text-sm font-semibold truncate ${isSoldOut ? 'text-gray-400 line-through' : 'text-white'}`}>
+                        {dish.name}
+                      </span>
+                      {isSoldOut && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                          Sold Out Today
+                        </span>
+                      )}
                       {item.addedBy && (
                         <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded-full ${
                           item.clientId === myClientId
@@ -969,7 +1001,11 @@ export function CartDrawer({
                         </span>
                       )}
                     </div>
-                    <span className="text-xs text-gray-400">₹{unitPrice} each</span>
+                    {isSoldOut ? (
+                      <span className="text-xs text-rose-300/80 font-medium">⚠️ Sold out — please remove</span>
+                    ) : (
+                      <span className="text-xs text-gray-400">₹{unitPrice} each</span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-3">
@@ -985,9 +1021,14 @@ export function CartDrawer({
                       <span className="text-xs font-bold text-white min-w-[12px] text-center">{quantity}</span>
                       <button
                         type="button"
-                        onClick={() => onQuantityChange(dish, quantity + 1, customization, itemKey)}
-                        className="text-white hover:text-[#EB4F16] cursor-pointer"
-                        title="Increase quantity (preserves customizations)"
+                        disabled={isSoldOut}
+                        onClick={() => !isSoldOut && onQuantityChange(dish, quantity + 1, customization, itemKey)}
+                        className={`cursor-pointer ${
+                          isSoldOut
+                            ? 'text-gray-600 opacity-40 cursor-not-allowed'
+                            : 'text-white hover:text-[#EB4F16]'
+                        }`}
+                        title={isSoldOut ? 'Dish is sold out for today' : 'Increase quantity (preserves customizations)'}
                       >
                         <Plus size={12} />
                       </button>

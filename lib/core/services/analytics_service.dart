@@ -8,12 +8,32 @@ class AnalyticsService {
 
   final Dio _dio;
 
+  /// Combined single-roundtrip analytics endpoint (overview + chart + topProducts).
+  Future<AnalyticsDashboardModel> getDashboard({
+    String range = '7d',
+    int limit = 10,
+  }) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/analytics/dashboard',
+      queryParameters: {'range': range, 'limit': limit},
+    );
+    return ApiClient.parseOne(
+      response.data!,
+      AnalyticsDashboardModel.fromJson,
+      fallbackError: 'Analytics dashboard request failed',
+    );
+  }
+
   Future<AnalyticsOverviewModel> getOverview({String range = '7d'}) async {
     final response = await _dio.get<Map<String, dynamic>>(
       '/analytics/overview',
       queryParameters: {'range': range},
     );
-    return _parseOne(response.data!, AnalyticsOverviewModel.fromJson);
+    return ApiClient.parseOne(
+      response.data!,
+      AnalyticsOverviewModel.fromJson,
+      fallbackError: 'Analytics overview request failed',
+    );
   }
 
   Future<List<AnalyticsChartPointModel>> getChart({String range = '7d'}) async {
@@ -21,7 +41,11 @@ class AnalyticsService {
       '/analytics/chart',
       queryParameters: {'range': range},
     );
-    return _parseList(response.data!, AnalyticsChartPointModel.fromJson);
+    return ApiClient.parseList(
+      response.data!,
+      AnalyticsChartPointModel.fromJson,
+      fallbackError: 'Analytics chart request failed',
+    );
   }
 
   Future<List<TopProductAnalyticsModel>> getTopProducts({
@@ -32,31 +56,10 @@ class AnalyticsService {
       '/analytics/top-products',
       queryParameters: {'range': range, 'limit': limit},
     );
-    return _parseList(response.data!, TopProductAnalyticsModel.fromJson);
-  }
-
-  List<T> _parseList<T>(
-    Map<String, dynamic> envelope,
-    T Function(Map<String, dynamic>) fromJson,
-  ) {
-    _ensureSuccess(envelope);
-    final data = envelope['data'] as List<dynamic>? ?? [];
-    return data
-        .map((e) => fromJson(e as Map<String, dynamic>))
-        .toList(growable: false);
-  }
-
-  T _parseOne<T>(
-    Map<String, dynamic> envelope,
-    T Function(Map<String, dynamic>) fromJson,
-  ) {
-    _ensureSuccess(envelope);
-    return fromJson(envelope['data'] as Map<String, dynamic>);
-  }
-
-  void _ensureSuccess(Map<String, dynamic> envelope) {
-    if (envelope['success'] != true) {
-      throw Exception(envelope['error'] ?? 'Analytics request failed');
-    }
+    return ApiClient.parseList(
+      response.data!,
+      TopProductAnalyticsModel.fromJson,
+      fallbackError: 'Top products request failed',
+    );
   }
 }

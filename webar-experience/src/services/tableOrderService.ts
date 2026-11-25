@@ -76,7 +76,13 @@ export interface FetchTableOrdersResult {
   activeOrdersCount?: number
   occupiedMessage?: string
   sharedCart?: SharedCartResponse | null
+  unchanged?: boolean
 }
+
+const _tablePollVersions = new Map<string, number>()
+const _tablePollCache = new Map<string, FetchTableOrdersResult>()
+const getPollKey = (slug: string, tableNumber: string) =>
+  `${slug.trim().toLowerCase()}:${tableNumber.trim().toLowerCase()}`
 
 const getStorageKey = (tableNumber?: string) =>
   tableNumber && tableNumber.trim()
@@ -184,6 +190,17 @@ export const tableOrderService = {
     }
   },
 
+  invalidatePollCache(slug?: string, tableNumber?: string) {
+    if (!slug) {
+      _tablePollVersions.clear()
+      _tablePollCache.clear()
+      return
+    }
+    const key = getPollKey(slug, tableNumber || 'Dine-in')
+    _tablePollVersions.delete(key)
+    _tablePollCache.delete(key)
+  },
+
   async clearCancelledOrders(slug: string, tableNumber: string): Promise<boolean> {
     try {
       const storedIds = this.getStoredOrderIds(tableNumber)
@@ -192,6 +209,7 @@ export const tableOrderService = {
         `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber || 'dine-in')}/clear-cancelled${queryParam}`,
       )
       this.clearStoredOrderIds(tableNumber)
+      this.invalidatePollCache(slug, tableNumber)
       return true
     } catch (e) {
       console.warn('Could not clear cancelled orders on server:', e)
@@ -202,6 +220,7 @@ export const tableOrderService = {
 
   async fetchTableOrders(slug: string, tableNumber: string): Promise<FetchTableOrdersResult> {
     if (!slug || !tableNumber) return { orders: [], isOccupiedByOther: false }
+    const pollKey = getPollKey(slug, tableNumber)
     try {
       const storedIds = this.getStoredOrderIds(tableNumber)
       const token = this.getSessionToken(tableNumber)
@@ -212,39 +231,70 @@ export const tableOrderService = {
       if (token) {
         params.set('sessionToken', token)
       }
-      const queryParam = params.toString() ? `?${params.toString()}` : ''
-      const [res, sharedCart] = await Promise.all([
-        apiClient.get<ApiEnvelope<LiveTableOrder[]>>(
-          `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}${queryParam}`,
-        ),
-        this.getSharedCart(slug, tableNumber),
-      ])
-      if (res.data?.success && Array.isArray(res.data.data)) {
-        for (const o of res.data.data) {
-          if (o.id) {
-            this.storeOrderId(o.id, tableNumber)
-          }
-        }
-        return {
-          orders: res.data.data,
-          isOccupiedByOther: false,
-          sharedCart,
-        }
+      const knownVer = _tablePollVersions.get(pollKey)
+      if (knownVer !== undefined && _tablePollCache.has(pollKey)) {
+        params.set('sinceVersion', String(knownVer))
       }
-      if (res.data?.code === 'TABLE_OCCUPIED' || res.data?.error?.includes('occupied') || res.data?.message?.includes('occupied')) {
-        return {
+      const queryParam = params.toString() ? `?${params.toString()}` : ''
+      const res = await apiClient.get<
+        ApiEnvelope<{
+          version?: number
+          unchanged?: boolean
+          orders?: LiveTableOrder[]
+          sharedCart?: SharedCartResponse | null
+        }>
+      >(
+        `/public/orders/${encodeURIComponent(slug)}/table/${encodeURIComponent(tableNumber)}/poll${queryParam}`,
+      )
+
+      const envelope = res.data
+      const payload = envelope?.data
+
+      if (envelope?.success && payload?.unchanged && _tablePollCache.has(pollKey)) {
+        if (typeof payload.version === 'number') {
+          _tablePollVersions.set(pollKey, payload.version)
+        }
+        return { ..._tablePollCache.get(pollKey)!, unchanged: true }
+      }
+
+      if (typeof payload?.version === 'number') {
+        _tablePollVersions.set(pollKey, payload.version)
+      }
+
+      if (envelope?.code === 'TABLE_OCCUPIED' || envelope?.error?.includes('occupied') || envelope?.message?.includes('occupied')) {
+        const blockedResult: FetchTableOrdersResult = {
           orders: [],
           isOccupiedByOther: true,
           canJoin: true,
           activeOrdersCount: 0,
-          occupiedMessage: res.data.message || `Table ${tableNumber} is currently occupied by another customer.`,
+          occupiedMessage: envelope.message || `Table ${tableNumber} is currently occupied by another customer.`,
           sharedCart: null,
         }
+        _tablePollCache.set(pollKey, blockedResult)
+        return blockedResult
       }
-      return { orders: [], isOccupiedByOther: false, sharedCart }
+
+      if (envelope?.success && payload) {
+        const orders = Array.isArray(payload.orders) ? payload.orders : []
+        for (const o of orders) {
+          if (o.id) {
+            this.storeOrderId(o.id, tableNumber)
+          }
+        }
+        const result: FetchTableOrdersResult = {
+          orders,
+          isOccupiedByOther: false,
+          sharedCart: payload.sharedCart ?? null,
+          unchanged: false,
+        }
+        _tablePollCache.set(pollKey, result)
+        return result
+      }
+
+      return { orders: [], isOccupiedByOther: false, sharedCart: null }
     } catch (err: any) {
       if (err?.response?.data?.code === 'TABLE_OCCUPIED' || err?.response?.data?.message?.includes('occupied')) {
-        return {
+        const blockedResult: FetchTableOrdersResult = {
           orders: [],
           isOccupiedByOther: true,
           canJoin: true,
@@ -252,9 +302,11 @@ export const tableOrderService = {
           occupiedMessage: err.response.data?.message || `Table ${tableNumber} is currently occupied by another customer.`,
           sharedCart: null,
         }
+        _tablePollCache.set(pollKey, blockedResult)
+        return blockedResult
       }
       console.warn('Failed to fetch table orders:', err)
-      return { orders: [], isOccupiedByOther: false }
+      return _tablePollCache.get(pollKey) ?? { orders: [], isOccupiedByOther: false }
     }
   },
 
@@ -317,6 +369,7 @@ export const tableOrderService = {
         res.data.data.forEach((o) => {
           if (o.id) this.storeOrderId(o.id, tableNumber)
         })
+        this.invalidatePollCache(slug, tableNumber)
         return {
           success: true,
           orders: res.data.data,

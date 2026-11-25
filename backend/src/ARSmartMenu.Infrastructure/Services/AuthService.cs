@@ -24,19 +24,22 @@ public class AuthService : IAuthService
     private readonly IOtpSender _otpSender;
     private readonly IConfiguration _config;
     private readonly ILogger<AuthService> _logger;
+    private readonly AppLookupCacheService _lookupCache;
 
     public AuthService(
         AppDbContext db,
         IJwtTokenService jwt,
         IOtpSender otpSender,
         IConfiguration config,
-        ILogger<AuthService> logger)
+        ILogger<AuthService> logger,
+        AppLookupCacheService lookupCache)
     {
         _db = db;
         _jwt = jwt;
         _otpSender = otpSender;
         _config = config;
         _logger = logger;
+        _lookupCache = lookupCache;
     }
 
     public async Task<SendOtpResponse> SendOtpAsync(SendOtpRequest request, CancellationToken ct = default)
@@ -75,38 +78,7 @@ public class AuthService : IAuthService
         var mobile = NormalizeMobile(request.Mobile);
         ValidateMobile(mobile);
 
-        if (string.IsNullOrWhiteSpace(request.Otp) || request.Otp.Length != OtpLength)
-            throw new ValidationException("OTP must be a 6-digit code.");
-
-        var record = await _db.OtpRecords
-            .FirstOrDefaultAsync(o => o.Id == request.OtpId && o.MobileNumber == mobile, ct);
-
-        if (record is null)
-            throw new UnauthorizedException("Invalid OTP session.");
-
-        if (record.IsUsed)
-            throw new UnauthorizedException("OTP already used.");
-
-        if (record.ExpiresAt < DateTime.UtcNow)
-            throw new UnauthorizedException("OTP expired.");
-
-        if (record.AttemptCount >= MaxVerifyAttempts)
-            throw new UnauthorizedException("Too many failed attempts. Request a new OTP.");
-
-        var devBypass = _config["Otp:DevBypassCode"];
-        var otpValid = (!string.IsNullOrEmpty(devBypass) && request.Otp == devBypass)
-            || record.OtpHash == HashOtp(mobile, request.Otp);
-
-        if (!otpValid)
-        {
-            record.AttemptCount++;
-            record.UpdatedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync(ct);
-            throw new UnauthorizedException("Invalid OTP.");
-        }
-
-        record.IsUsed = true;
-        record.UpdatedAt = DateTime.UtcNow;
+        await ValidateAndConsumeOtpAsync(mobile, request.OtpId, request.Otp, detailedErrors: false, ct);
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.MobileNumber == mobile, ct);
         var isNewUser = user is null;
@@ -123,13 +95,7 @@ public class AuthService : IAuthService
 
         await _db.SaveChangesAsync(ct);
 
-        var business = await _db.Businesses
-            .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.OwnerId == user!.Id, ct);
-
-        var token = _jwt.GenerateToken(user!, business?.Id);
-
-        return new VerifyOtpResponse(token, MapUser(user!), isNewUser);
+        return await IssueAuthResponseAsync(user!, isNewUser, ct);
     }
 
     /// <summary>Development-only login — no OTP, no rate limit.</summary>
@@ -152,14 +118,8 @@ public class AuthService : IAuthService
             await _db.SaveChangesAsync(ct);
         }
 
-        var business = await _db.Businesses
-            .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.OwnerId == user!.Id, ct);
-
-        var token = _jwt.GenerateToken(user!, business?.Id);
         _logger.LogWarning("Dev login for {Mobile} (no OTP)", mobile);
-
-        return new VerifyOtpResponse(token, MapUser(user!), isNewUser);
+        return await IssueAuthResponseAsync(user!, isNewUser, ct);
     }
 
     /// <summary>Mobile number + password / PIN login (no OTP needed).</summary>
@@ -186,14 +146,8 @@ public class AuthService : IAuthService
             throw new UnauthorizedException("Incorrect password or PIN. Please try again.");
         }
 
-        var business = await _db.Businesses
-            .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.OwnerId == user.Id, ct);
-
-        var token = _jwt.GenerateToken(user, business?.Id);
         _logger.LogInformation("Password login successful for {Mobile}", mobile);
-
-        return new VerifyOtpResponse(token, MapUser(user), business is null);
+        return await IssueAuthResponseAsync(user, forceIsNewUser: null, ct);
     }
 
     /// <summary>Mobile number + password / PIN registration (no OTP needed).</summary>
@@ -217,7 +171,6 @@ public class AuthService : IAuthService
                 PasswordHash = PasswordHelper.HashPassword(request.Password.Trim()),
             };
             _db.Users.Add(user);
-            await _db.SaveChangesAsync(ct);
         }
         else
         {
@@ -225,17 +178,11 @@ public class AuthService : IAuthService
             user.PasswordHash = PasswordHelper.HashPassword(request.Password.Trim());
             if (!string.IsNullOrWhiteSpace(request.FullName))
                 user.FullName = request.FullName.Trim();
-            await _db.SaveChangesAsync(ct);
         }
+        await _db.SaveChangesAsync(ct);
 
-        var business = await _db.Businesses
-            .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.OwnerId == user.Id, ct);
-
-        var token = _jwt.GenerateToken(user, business?.Id);
         _logger.LogInformation("Password registration successful for {Mobile}", mobile);
-
-        return new VerifyOtpResponse(token, MapUser(user), business is null);
+        return await IssueAuthResponseAsync(user, forceIsNewUser: null, ct);
     }
 
     /// <summary>Reset owner PIN using verified OTP session.</summary>
@@ -247,38 +194,7 @@ public class AuthService : IAuthService
         if (string.IsNullOrWhiteSpace(request.NewPin) || request.NewPin.Trim().Length < 4)
             throw new ValidationException("New PIN or password must be at least 4 digits/characters.");
 
-        if (string.IsNullOrWhiteSpace(request.Otp) || request.Otp.Length != OtpLength)
-            throw new ValidationException("OTP must be a 6-digit code.");
-
-        var record = await _db.OtpRecords
-            .FirstOrDefaultAsync(o => o.Id == request.OtpId && o.MobileNumber == mobile, ct);
-
-        if (record is null)
-            throw new UnauthorizedException("Invalid OTP session.");
-
-        if (record.IsUsed)
-            throw new UnauthorizedException("OTP has already been used. Please request a new code.");
-
-        if (record.ExpiresAt < DateTime.UtcNow)
-            throw new UnauthorizedException("OTP has expired. Please request a fresh code.");
-
-        if (record.AttemptCount >= MaxVerifyAttempts)
-            throw new UnauthorizedException("Too many failed attempts. Please request a fresh OTP.");
-
-        var devBypass = _config["Otp:DevBypassCode"];
-        var otpValid = (!string.IsNullOrEmpty(devBypass) && request.Otp == devBypass)
-            || record.OtpHash == HashOtp(mobile, request.Otp);
-
-        if (!otpValid)
-        {
-            record.AttemptCount++;
-            record.UpdatedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync(ct);
-            throw new UnauthorizedException("Invalid OTP entered. Please check WhatsApp/SMS and try again.");
-        }
-
-        record.IsUsed = true;
-        record.UpdatedAt = DateTime.UtcNow;
+        await ValidateAndConsumeOtpAsync(mobile, request.OtpId, request.Otp, detailedErrors: true, ct);
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.MobileNumber == mobile, ct);
         if (user is null)
@@ -289,14 +205,8 @@ public class AuthService : IAuthService
 
         await _db.SaveChangesAsync(ct);
 
-        var business = await _db.Businesses
-            .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.OwnerId == user.Id, ct);
-
-        var token = _jwt.GenerateToken(user, business?.Id);
         _logger.LogInformation("PIN reset successful for {Mobile}", mobile);
-
-        return new VerifyOtpResponse(token, MapUser(user), business is null);
+        return await IssueAuthResponseAsync(user, forceIsNewUser: null, ct);
     }
 
     public async Task<RefreshTokenResponse> RefreshTokenAsync(Guid userId, CancellationToken ct = default)
@@ -304,24 +214,23 @@ public class AuthService : IAuthService
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct)
             ?? throw new NotFoundException("User not found.");
 
-        var business = await _db.Businesses
-            .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.OwnerId == userId, ct);
-
-        return new RefreshTokenResponse(_jwt.GenerateToken(user, business?.Id));
+        var businessId = await GetOwnedBusinessIdAsync(userId, ct);
+        return new RefreshTokenResponse(_jwt.GenerateToken(user, businessId));
     }
 
     public async Task LogoutAsync(string tokenId, DateTime tokenExpiresAt, CancellationToken ct = default)
     {
-        var exists = await _db.RevokedTokens.AnyAsync(r => r.TokenId == tokenId, ct);
-        if (exists) return;
-
-        _db.RevokedTokens.Add(new RevokedToken
+        var exists = await _db.RevokedTokens.AsNoTracking().AnyAsync(r => r.TokenId == tokenId, ct);
+        if (!exists)
         {
-            TokenId = tokenId,
-            ExpiresAt = tokenExpiresAt,
-        });
-        await _db.SaveChangesAsync(ct);
+            _db.RevokedTokens.Add(new RevokedToken
+            {
+                TokenId = tokenId,
+                ExpiresAt = tokenExpiresAt,
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+        _lookupCache.MarkTokenRevoked(tokenId, tokenExpiresAt);
     }
 
     public async Task<AuthMeResponse> GetMeAsync(Guid userId, CancellationToken ct = default)
@@ -329,13 +238,13 @@ public class AuthService : IAuthService
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct)
             ?? throw new NotFoundException("User not found.");
 
-        var business = await _db.Businesses
+        var businessSummary = await _db.Businesses
             .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.OwnerId == userId, ct);
+            .Where(b => b.OwnerId == userId)
+            .Select(b => new BusinessSummaryDto(b.Id, b.BusinessName, b.BusinessType, b.City, b.Status))
+            .FirstOrDefaultAsync(ct);
 
-        return new AuthMeResponse(
-            MapUser(user),
-            business is null ? null : MapBusiness(business));
+        return new AuthMeResponse(MapUser(user), businessSummary);
     }
 
     public async Task<UserDto> UpdateMeAsync(Guid userId, UpdateUserRequest request, CancellationToken ct = default)
@@ -357,7 +266,62 @@ public class AuthService : IAuthService
     }
 
     public Task<bool> IsTokenRevokedAsync(string tokenId, CancellationToken ct = default) =>
-        _db.RevokedTokens.AnyAsync(r => r.TokenId == tokenId, ct);
+        _lookupCache.IsTokenRevokedAsync(tokenId, ct);
+
+    private async Task ValidateAndConsumeOtpAsync(
+        string mobile,
+        Guid otpId,
+        string otp,
+        bool detailedErrors,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(otp) || otp.Length != OtpLength)
+            throw new ValidationException("OTP must be a 6-digit code.");
+
+        var record = await _db.OtpRecords
+            .FirstOrDefaultAsync(o => o.Id == otpId && o.MobileNumber == mobile, ct)
+            ?? throw new UnauthorizedException("Invalid OTP session.");
+
+        if (record.IsUsed)
+            throw new UnauthorizedException(detailedErrors ? "OTP has already been used. Please request a new code." : "OTP already used.");
+
+        if (record.ExpiresAt < DateTime.UtcNow)
+            throw new UnauthorizedException(detailedErrors ? "OTP has expired. Please request a fresh code." : "OTP expired.");
+
+        if (record.AttemptCount >= MaxVerifyAttempts)
+            throw new UnauthorizedException(detailedErrors ? "Too many failed attempts. Please request a fresh OTP." : "Too many failed attempts. Request a new OTP.");
+
+        // Strict verification: only the exact OTP generated for this session and mobile is accepted
+        var otpValid = record.OtpHash == HashOtp(mobile, otp);
+
+        if (!otpValid)
+        {
+            record.AttemptCount++;
+            record.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            throw new UnauthorizedException(detailedErrors ? "Invalid OTP entered. Please check WhatsApp/SMS and try again." : "Invalid OTP.");
+        }
+
+        record.IsUsed = true;
+        record.UpdatedAt = DateTime.UtcNow;
+    }
+
+    private Task<Guid?> GetOwnedBusinessIdAsync(Guid ownerId, CancellationToken ct) =>
+        _db.Businesses
+            .AsNoTracking()
+            .Where(b => b.OwnerId == ownerId)
+            .Select(b => (Guid?)b.Id)
+            .FirstOrDefaultAsync(ct);
+
+    private async Task<VerifyOtpResponse> IssueAuthResponseAsync(
+        User user,
+        bool? forceIsNewUser,
+        CancellationToken ct)
+    {
+        var businessId = await GetOwnedBusinessIdAsync(user.Id, ct);
+        var token = _jwt.GenerateToken(user, businessId);
+        return new VerifyOtpResponse(token, MapUser(user), forceIsNewUser ?? businessId is null);
+    }
 
     private string HashOtp(string mobile, string otp)
     {

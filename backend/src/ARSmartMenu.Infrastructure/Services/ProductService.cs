@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ARSmartMenu.Application.Common;
 using ARSmartMenu.Application.DTOs;
 using ARSmartMenu.Application.Interfaces;
@@ -31,6 +32,7 @@ public class ProductService : IProductService
     private readonly IPhotoModelGenerationService _photoModels;
     private readonly MediaUrlResolver _mediaUrls;
     private readonly IWebHostEnvironment _env;
+    private readonly AppLookupCacheService _lookupCache;
     private readonly string? _localRoot;
 
     public ProductService(
@@ -40,7 +42,8 @@ public class ProductService : IProductService
         IPhotoModelGenerationService photoModels,
         MediaUrlResolver mediaUrls,
         IWebHostEnvironment env,
-        IConfiguration config)
+        IConfiguration config,
+        AppLookupCacheService lookupCache)
     {
         _db = db;
         _storage = storage;
@@ -48,6 +51,7 @@ public class ProductService : IProductService
         _photoModels = photoModels;
         _mediaUrls = mediaUrls;
         _env = env;
+        _lookupCache = lookupCache;
         _localRoot = config["Storage:LocalRoot"];
     }
 
@@ -101,6 +105,7 @@ public class ProductService : IProductService
 
         _db.Products.Add(product);
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
 
         return MapProduct(product);
     }
@@ -155,6 +160,7 @@ public class ProductService : IProductService
 
         await _db.Products.AddRangeAsync(createdProducts, ct);
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
 
         var dtos = createdProducts.Select(MapProduct).ToList();
         return new BulkCreateProductsResponse(createdProducts.Count, dtos);
@@ -204,6 +210,7 @@ public class ProductService : IProductService
 
         product.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
 
         return MapProduct(product);
     }
@@ -221,6 +228,7 @@ public class ProductService : IProductService
         product.Status = status;
         product.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
 
         return MapProduct(product);
     }
@@ -235,14 +243,50 @@ public class ProductService : IProductService
             .Where(p => p.BusinessId == businessId && productIds.Contains(p.Id))
             .ToListAsync(ct);
 
+        var now = DateTime.UtcNow;
         foreach (var product in products)
         {
             product.Status = status;
-            product.UpdatedAt = DateTime.UtcNow;
+            product.UpdatedAt = now;
         }
 
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
         return products.Select(MapProduct).ToList();
+    }
+
+    public async Task ReorderAsync(Guid businessId, ReorderProductsRequest request, CancellationToken ct = default)
+    {
+        await EnsureBusinessActiveAsync(businessId, ct);
+        if (request.Items == null || request.Items.Count == 0)
+            return;
+
+        var payload = request.Items.Select(x => new { id = x.Id, displayOrder = x.DisplayOrder });
+        var orderJson = JsonSerializer.Serialize(payload);
+        await _db.Database.ExecuteSqlRawAsync(
+            "EXEC [dbo].[usp_ReorderProducts] @BusinessId = {0}, @OrderJson = {1}",
+            businessId,
+            orderJson);
+
+        _lookupCache.InvalidateBusiness(businessId);
+    }
+
+    public async Task BulkSetSoldOutAsync(Guid businessId, BulkSetSoldOutRequest request, CancellationToken ct = default)
+    {
+        await EnsureBusinessActiveAsync(businessId, ct);
+        if (request.ProductIds == null || request.ProductIds.Count == 0)
+            return;
+
+        var idsJson = JsonSerializer.Serialize(request.ProductIds);
+        object soldOutDate = request.SoldOut ? DateTime.UtcNow.Date : DBNull.Value;
+        await _db.Database.ExecuteSqlRawAsync(
+            "EXEC [dbo].[usp_BulkSetSoldOut] @BusinessId = {0}, @ProductIdsJson = {1}, @SoldOut = {2}, @SoldOutDate = {3}",
+            businessId,
+            idsJson,
+            request.SoldOut,
+            soldOutDate);
+
+        _lookupCache.InvalidateBusiness(businessId);
     }
 
     public async Task DeleteAsync(Guid businessId, Guid productId, CancellationToken ct = default)
@@ -255,17 +299,15 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync(p => p.BusinessId == businessId && p.Id == productId, ct)
             ?? throw new NotFoundException("Product not found.");
 
-        // 1. Unlink any notifications referencing this product (prevents FK_Notifications_Products_ProductId conflict)
+        // 1. Unlink notifications, processing jobs, and analytics events in direct set-based SQL statements
         await _db.Notifications
             .Where(n => n.ProductId == productId)
             .ExecuteUpdateAsync(s => s.SetProperty(n => n.ProductId, (Guid?)null), ct);
 
-        // 2. Unlink any processing jobs referencing this product
         await _db.ProcessingJobs
             .Where(j => j.ProductId == productId)
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.ProductId, (Guid?)null), ct);
 
-        // 3. Unlink scan and view analytics events
         await _db.ArScanEvents
             .Where(e => e.ProductId == productId)
             .ExecuteUpdateAsync(s => s.SetProperty(e => e.ProductId, (Guid?)null), ct);
@@ -274,27 +316,43 @@ public class ProductService : IProductService
             .Where(e => e.ProductId == productId)
             .ExecuteUpdateAsync(s => s.SetProperty(e => e.ProductId, (Guid?)null), ct);
 
-        // 4. Handle associated QR codes: remove standalone product QRs with no scans, or unlink if scanned
+        // 2. Batch-resolve associated QR codes with scan/view history in 2 queries (eliminates per-QR N+1 loop)
         var qrCodes = await _db.QrCodes
             .Where(q => q.ProductId == productId)
             .ToListAsync(ct);
 
-        foreach (var qr in qrCodes)
+        if (qrCodes.Count > 0)
         {
-            var hasScans = await _db.ArScanEvents.AnyAsync(e => e.QrCodeId == qr.Id, ct)
-                        || await _db.ArViewEvents.AnyAsync(e => e.QrCodeId == qr.Id, ct);
-            if (!hasScans)
+            var qrIds = qrCodes.Select(q => q.Id).ToList();
+            var scannedQrIds = (await _db.ArScanEvents
+                    .AsNoTracking()
+                    .Where(e => qrIds.Contains(e.QrCodeId))
+                    .Select(e => e.QrCodeId)
+                    .Distinct()
+                    .ToListAsync(ct))
+                .Union(await _db.ArViewEvents
+                    .AsNoTracking()
+                    .Where(e => qrIds.Contains(e.QrCodeId))
+                    .Select(e => e.QrCodeId)
+                    .Distinct()
+                    .ToListAsync(ct))
+                .ToHashSet();
+
+            foreach (var qr in qrCodes)
             {
-                _db.QrCodes.Remove(qr);
-            }
-            else
-            {
-                qr.ProductId = null;
-                qr.IsActive = false;
+                if (!scannedQrIds.Contains(qr.Id))
+                {
+                    _db.QrCodes.Remove(qr);
+                }
+                else
+                {
+                    qr.ProductId = null;
+                    qr.IsActive = false;
+                }
             }
         }
 
-        // 5. Clean up physical storage files for photos
+        // 3. Clean up physical storage files for photos & 3D model
         foreach (var photo in product.Photos)
         {
             if (!string.IsNullOrEmpty(photo.S3Key))
@@ -303,7 +361,6 @@ public class ProductService : IProductService
             }
         }
 
-        // 6. Clean up physical storage files for 3D model
         if (product.Model3d != null)
         {
             if (!string.IsNullOrEmpty(product.Model3d.GlbS3Key))
@@ -316,9 +373,9 @@ public class ProductService : IProductService
             }
         }
 
-        // 7. Remove the product
         _db.Products.Remove(product);
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
     }
 
     public async Task<ProductDto> SetSoldOutAsync(Guid businessId, Guid productId, bool soldOut, CancellationToken ct = default)
@@ -333,6 +390,7 @@ public class ProductService : IProductService
         product.SoldOutDate = soldOut ? DateOnly.FromDateTime(DateTime.UtcNow) : null;
         product.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
 
         return MapProduct(product);
     }
@@ -450,6 +508,7 @@ public class ProductService : IProductService
         }
 
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
 
         if (shouldEnqueueProcessing)
         {
@@ -520,6 +579,7 @@ public class ProductService : IProductService
         product.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
 
         var refreshed = await LoadProductAsync(businessId, productId, ct);
         return MapProduct(refreshed);
@@ -559,6 +619,7 @@ public class ProductService : IProductService
         product.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
 
         var refreshed = await LoadProductAsync(businessId, productId, ct);
         return MapProduct(refreshed);
@@ -582,15 +643,17 @@ public class ProductService : IProductService
 
     private async Task EnsureBusinessActiveAsync(Guid businessId, CancellationToken ct)
     {
-        var business = await _db.Businesses
+        var status = await _db.Businesses
             .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.Id == businessId, ct)
+            .Where(b => b.Id == businessId)
+            .Select(b => (BusinessStatus?)b.Status)
+            .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("Business not found.");
 
-        if (business.Status == BusinessStatus.Deactivated)
+        if (status == BusinessStatus.Deactivated)
             throw new ValidationException("Your restaurant operations are currently paused / deactivated. Please reactivate your business to perform this action.");
 
-        if (business.Status == BusinessStatus.Suspended)
+        if (status == BusinessStatus.Suspended)
             throw new ValidationException("Your business account is suspended. Please contact support.");
     }
 
@@ -599,30 +662,32 @@ public class ProductService : IProductService
 
     private async Task EnsureWithinPlanLimitAsync(Guid businessId, int additionalCount, CancellationToken ct = default)
     {
-        var business = await _db.Businesses
+        var customDishLimit = await _db.Businesses
             .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.Id == businessId, ct);
-
-        var subscription = await _db.Subscriptions
-            .AsNoTracking()
-            .Include(s => s.Plan)
-            .Where(s => s.BusinessId == businessId && s.Status == SubscriptionStatus.Active && s.EndsAt > DateTime.UtcNow)
-            .OrderByDescending(s => s.EndsAt)
+            .Where(b => b.Id == businessId)
+            .Select(b => b.CustomDishLimit)
             .FirstOrDefaultAsync(ct);
 
         int maxDishes;
-        if (business?.CustomDishLimit.HasValue == true && business.CustomDishLimit.Value > 0)
+        if (customDishLimit.HasValue && customDishLimit.Value > 0)
         {
-            maxDishes = business.CustomDishLimit.Value;
-        }
-        else if (subscription?.Plan != null)
-        {
-            maxDishes = subscription.Plan.MaxProducts;
+            maxDishes = customDishLimit.Value;
         }
         else
         {
-            throw new ValidationException(
-                "An active subscription plan or custom dish limit is required to add dishes. Please renew your plan or contact Admin.");
+            var planLimit = await _db.Subscriptions
+                .AsNoTracking()
+                .Where(s => s.BusinessId == businessId && s.Status == SubscriptionStatus.Active && s.EndsAt > DateTime.UtcNow)
+                .OrderByDescending(s => s.EndsAt)
+                .Select(s => (int?)s.Plan.MaxProducts)
+                .FirstOrDefaultAsync(ct);
+
+            if (!planLimit.HasValue)
+            {
+                throw new ValidationException(
+                    "An active subscription plan or custom dish limit is required to add dishes. Please renew your plan or contact Admin.");
+            }
+            maxDishes = planLimit.Value;
         }
 
         var count = await _db.Products.CountAsync(p => p.BusinessId == businessId, ct);

@@ -181,6 +181,12 @@ public record UploadPhotoResponse(
 
 public record SetSoldOutRequest(bool SoldOut);
 
+public record ReorderProductItem(Guid Id, int DisplayOrder);
+
+public record ReorderProductsRequest(IReadOnlyList<ReorderProductItem> Items);
+
+public record BulkSetSoldOutRequest(IReadOnlyList<Guid> ProductIds, bool SoldOut);
+
 // ── Subscription ────────────────────────────────────────────────────────────
 
 public record SubscriptionPlanDto(
@@ -482,6 +488,11 @@ public record TopProductAnalyticsDto(
     int TotalRevenue = 0);
 
 public record AnalyticsDateRangeQuery(string Range = "7d");
+
+public record AnalyticsDashboardDto(
+    AnalyticsOverviewDto Overview,
+    IReadOnlyList<AnalyticsChartPointDto> Chart,
+    IReadOnlyList<TopProductAnalyticsDto> TopProducts);
 
 // ── Admin ───────────────────────────────────────────────────────────────────
 

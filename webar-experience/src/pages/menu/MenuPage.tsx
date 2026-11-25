@@ -326,9 +326,15 @@ export function MenuPage() {
 
   const fetchOrders = async (silent = false) => {
     if (!slug) return
-    if (!silent) setIsRefreshingOrders(true)
+    if (!silent) {
+      setIsRefreshingOrders(true)
+      tableOrderService.invalidatePollCache(slug, table || 'Dine-in')
+    }
     try {
       const res = await tableOrderService.fetchTableOrders(slug, table || 'Dine-in')
+      if (res.unchanged && !isFirstOrderPoll.current) {
+        return
+      }
       setIsTableOccupiedByOther(res.isOccupiedByOther)
       if (res.isOccupiedByOther) {
         setOccupiedMessage(res.occupiedMessage || `Table ${table} is currently occupied by another customer.`)
@@ -524,9 +530,19 @@ export function MenuPage() {
     if (!slug) return
     fetchOrdersRef.current(true)
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
       fetchOrdersRef.current(true)
     }, 2000)
-    return () => clearInterval(interval)
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        fetchOrdersRef.current(true)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [slug, table])
 
   // Abandon unplaced draft cart when user closes or removes the tab before ordering
@@ -656,13 +672,21 @@ export function MenuPage() {
   }
 
   useEffect(() => {
-    setLoading(true)
+    const targetSlug = slug || 'tasty-bites'
+    const cached = productService.getCachedMenu(targetSlug)
+    if (cached) {
+      setMenu(cached)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
+
     productService
-      .fetchMenuBySlug(slug || 'tasty-bites')
+      .fetchMenuBySlug(targetSlug)
       .then((data) => setMenu(data))
       .catch((err) => {
         console.error('Failed to load menu:', err)
-        setMenu(null)
+        if (!cached) setMenu(null)
       })
       .finally(() => setLoading(false))
   }, [slug])
@@ -720,6 +744,11 @@ export function MenuPage() {
     cartItemKey?: string,
   ) => {
     lastLocalEditTimestamp.current = Date.now()
+    if (qty > 0 && dish.soldOutToday) {
+      showToast(`⚠️ "${dish.name}" is sold out for today and cannot be added.`)
+      return
+    }
+
     if (qty > 0 && isTableOccupiedByOther) {
       showToast(`⚠️ Table ${table} is occupied. Please select an available table.`)
       setIsTableOpen(true)
@@ -826,6 +855,11 @@ export function MenuPage() {
   }
 
   const handleDishCardQty = (dish: PublicMenuDish, newQty: number) => {
+    if (newQty > 0 && dish.soldOutToday) {
+      showToast(`⚠️ "${dish.name}" is sold out for today.`)
+      return
+    }
+
     if (isNonCustomizableDish(dish)) {
       handleQty(dish, newQty, undefined, dish.id)
       return
@@ -864,9 +898,13 @@ export function MenuPage() {
 
   const handleOpen3d = useCallback((d: PublicMenuDish) => setActive3dDish(d), [])
   const handleCustomize = useCallback((d: PublicMenuDish) => {
+    if (d.soldOutToday) {
+      showToast(`⚠️ "${d.name}" is sold out for today.`)
+      return
+    }
     if (isNonCustomizableDish(d)) return
     setCustomizingDish(d)
-  }, [])
+  }, [showToast])
 
   const cartItems = useMemo(() => Object.values(normalizeCart(cart)), [cart])
   const cartCount = cartItems.reduce((s, i) => s + i.quantity, 0)

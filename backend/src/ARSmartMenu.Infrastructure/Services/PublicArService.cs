@@ -16,11 +16,13 @@ public class PublicArService : IPublicArService
 
     private readonly AppDbContext _db;
     private readonly MediaUrlResolver _mediaUrls;
+    private readonly AppLookupCacheService _lookupCache;
 
-    public PublicArService(AppDbContext db, MediaUrlResolver mediaUrls)
+    public PublicArService(AppDbContext db, MediaUrlResolver mediaUrls, AppLookupCacheService lookupCache)
     {
         _db = db;
         _mediaUrls = mediaUrls;
+        _lookupCache = lookupCache;
     }
 
     public async Task<PublicArResponse> GetBySlugAsync(string slug, CancellationToken ct = default)
@@ -69,49 +71,88 @@ public class PublicArService : IPublicArService
 
     public async Task<PublicMenuResponse> GetMenuBySlugAsync(string slug, CancellationToken ct = default)
     {
-        var qr = await _db.QrCodes
+        var cachedMenu = _lookupCache.TryGetPublicMenu(slug);
+        if (cachedMenu != null)
+            return cachedMenu;
+
+        var target = await _lookupCache.ResolveSlugAsync(
+            _db,
+            slug,
+            requireActiveQr: true,
+            fallbackToAnyBusiness: true,
+            ct) ?? throw new NotFoundException("Restaurant menu not found.");
+
+        // Load only display fields + owner WhatsApp/Mobile via SQL JOIN in one query
+        var business = await _db.Businesses
             .AsNoTracking()
-            .Include(q => q.Business)
-            .FirstOrDefaultAsync(q => q.Slug == slug && q.IsActive, ct);
-
-        Business? business = qr?.Business;
-        if (business is null)
-        {
-            if (Guid.TryParse(slug, out var bId))
+            .Where(b => b.Id == target.BusinessId)
+            .Select(b => new
             {
-                business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bId, ct);
-            }
-            business ??= await _db.Businesses.AsNoTracking()
-                .FirstOrDefaultAsync(b => b.BusinessName.ToLower() == slug.ToLower(), ct)
-                ?? await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(ct);
-        }
+                b.Id,
+                b.BusinessName,
+                b.LogoUrl,
+                b.City,
+                b.FullAddress,
+                b.Status,
+                b.WifiName,
+                b.WifiPassword,
+                b.UpiId,
+                b.RequireGeofence,
+                b.GeofenceRadiusMeters,
+                b.Latitude,
+                b.Longitude,
+                b.GstRate,
+                OwnerWhatsApp = b.Owner.WhatsAppNumber,
+                OwnerMobile = b.Owner.MobileNumber
+            })
+            .FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException("Restaurant menu not found.");
 
-        if (business is null)
-            throw new NotFoundException("Restaurant menu not found.");
-
+        // Load live products, photos, 3D model, and active product QR slug in one projected query
         var products = await _db.Products
             .AsNoTracking()
-            .Include(p => p.Photos)
-            .Include(p => p.Model3d)
             .Where(p => p.BusinessId == business.Id && p.Status == ProductStatus.Live)
             .OrderBy(p => p.DisplayOrder)
             .ThenByDescending(p => p.CreatedAt)
+            .Select(p => new
+            {
+                p.Id,
+                p.Name,
+                p.Description,
+                p.PricePaise,
+                p.Category,
+                p.VegStatus,
+                p.IsSpicy,
+                p.IsBestseller,
+                p.IsNew,
+                p.SoldOutToday,
+                p.CustomizationJson,
+                Photos = p.Photos
+                    .OrderBy(ph => ph.SortOrder)
+                    .Select(ph => new { ph.S3Key, ph.PhotoUrl })
+                    .ToList(),
+                GlbS3Key = p.Model3d != null ? p.Model3d.GlbS3Key : null,
+                GlbUrl = p.Model3d != null ? p.Model3d.GlbUrl : null,
+                UsdzUrl = p.Model3d != null ? p.Model3d.UsdzUrl : null,
+                HasModel3d = p.Model3d != null,
+                ActiveQrSlug = p.QrCodes
+                    .Where(q => q.IsActive)
+                    .Select(q => q.Slug)
+                    .FirstOrDefault()
+            })
             .ToListAsync(ct);
 
-        var productQrs = await _db.QrCodes
-            .AsNoTracking()
-            .Where(q => q.BusinessId == business.Id && q.ProductId != null && q.IsActive)
-            .ToDictionaryAsync(q => q.ProductId!.Value, q => q.Slug, ct);
+        var dishCategoryLookup = new Dictionary<Guid, ProductCategory?>();
+        var allDishes = new List<PublicMenuDishDto>(products.Count);
 
-        var allDishes = products.Select(p =>
+        foreach (var p in products)
         {
-            var glbUrl = ResolveModelUrl(p.Model3d?.GlbS3Key, p.Model3d?.GlbUrl, null);
-            var dishSlug = productQrs.TryGetValue(p.Id, out var s) ? s : p.Id.ToString("N");
-            var thumb = p.Photos.OrderBy(ph => ph.SortOrder).FirstOrDefault();
-            var thumbUrl = thumb != null ? _mediaUrls.Resolve(thumb.S3Key, thumb.PhotoUrl) : null;
-            var photos = p.Photos.OrderBy(ph => ph.SortOrder).Select(ph => _mediaUrls.Resolve(ph.S3Key, ph.PhotoUrl)).ToList();
+            dishCategoryLookup[p.Id] = p.Category;
+            var glbUrl = ResolveModelUrl(p.GlbS3Key, p.GlbUrl, null);
+            var dishSlug = p.ActiveQrSlug ?? p.Id.ToString("N");
+            var photos = p.Photos.Select(ph => _mediaUrls.Resolve(ph.S3Key, ph.PhotoUrl)).ToList();
 
-            return new PublicMenuDishDto(
+            allDishes.Add(new PublicMenuDishDto(
                 p.Id,
                 p.Name,
                 p.Description,
@@ -121,27 +162,22 @@ public class PublicArService : IPublicArService
                 p.IsBestseller,
                 p.IsNew,
                 p.SoldOutToday,
-                thumbUrl,
+                photos.FirstOrDefault(),
                 photos,
                 glbUrl,
-                p.Model3d?.UsdzUrl,
-                p.Model3d is not null && !string.IsNullOrEmpty(glbUrl),
+                p.UsdzUrl,
+                p.HasModel3d && !string.IsNullOrEmpty(glbUrl),
                 dishSlug,
-                p.CustomizationJson
-            );
-        }).ToList();
+                p.CustomizationJson));
+        }
 
         var categories = allDishes
-            .GroupBy(d =>
+            .GroupBy(d => dishCategoryLookup[d.Id]?.ToString() ?? "Main Course")
+            .Select(g =>
             {
-                var prod = products.First(p => p.Id == d.Id);
-                return prod.Category?.ToString() ?? "Main Course";
+                var catEnum = dishCategoryLookup[g.First().Id] ?? ProductCategory.MainCourse;
+                return new PublicMenuCategoryDto(g.Key, (int)catEnum, g.ToList());
             })
-            .Select(g => new PublicMenuCategoryDto(
-                g.Key,
-                (int)(products.First(p => (p.Category?.ToString() ?? "Main Course") == g.Key).Category ?? ProductCategory.MainCourse),
-                g.ToList()
-            ))
             .ToList();
 
         if (categories.Count == 0 && allDishes.Count > 0)
@@ -150,61 +186,20 @@ public class PublicArService : IPublicArService
         }
 
         var orderingUrl = await ResolveOrderingUrlAsync(business.Id, Guid.Empty, ct);
-        var owner = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == business.OwnerId, ct);
-
-        // Fetch configured active table QRs for this restaurant
-        var tableQrs = await _db.QrCodes
-            .AsNoTracking()
-            .Where(q => q.BusinessId == business.Id && q.QrType == QrType.Table && q.IsActive)
-            .ToListAsync(ct);
-
-        var availableTables = new List<string>();
-        foreach (var tQr in tableQrs)
-        {
-            var mSlug = System.Text.RegularExpressions.Regex.Match(tQr.Slug, @"-t(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            if (mSlug.Success)
-            {
-                availableTables.Add(mSlug.Groups[1].Value);
-            }
-            else if (!string.IsNullOrEmpty(tQr.WebUrl))
-            {
-                var mUrl = System.Text.RegularExpressions.Regex.Match(tQr.WebUrl, @"[?&]table(?:Number)?=(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (mUrl.Success)
-                    availableTables.Add(mUrl.Groups[1].Value);
-            }
-            else
-            {
-                var mDigits = System.Text.RegularExpressions.Regex.Match(tQr.Slug, @"(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (mDigits.Success)
-                    availableTables.Add(mDigits.Groups[1].Value);
-            }
-        }
-
-        var orderedAvailableTables = availableTables
-            .Distinct()
-            .OrderBy(t => int.TryParse(t, out var n) ? n : 999)
-            .ToList();
-
-        var dynamicGstSetting = await _db.SystemSettings
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Key == "Billing.GstRatePercent", ct);
-        double platformGstRate = 5.0;
-        if (dynamicGstSetting != null && double.TryParse(dynamicGstSetting.Value, out var parsedRate) && parsedRate >= 0)
-        {
-            platformGstRate = parsedRate;
-        }
+        var orderedAvailableTables = await _lookupCache.GetValidTablesForBusinessAsync(_db, business.Id, ct);
+        var platformGstRate = (double)await _lookupCache.GetGstRatePercentRawAsync(_db, ct);
 
         var effectiveGstRate = (business.GstRate > 0 && business.GstRate != 5.0)
             ? business.GstRate
             : platformGstRate;
 
-        return new PublicMenuResponse(
+        var menuResponse = new PublicMenuResponse(
             slug,
             business.BusinessName,
             business.LogoUrl,
             business.City,
             business.FullAddress,
-            owner?.WhatsAppNumber ?? owner?.MobileNumber,
+            business.OwnerWhatsApp ?? business.OwnerMobile,
             orderingUrl,
             categories,
             business.Status == BusinessStatus.Active,
@@ -219,6 +214,9 @@ public class PublicArService : IPublicArService
             business.Longitude,
             effectiveGstRate
         );
+
+        _lookupCache.SetPublicMenu(slug, business.Id, menuResponse);
+        return menuResponse;
     }
 
     public async Task<LogEventResponse> LogScanAsync(
@@ -235,10 +233,10 @@ public class PublicArService : IPublicArService
             QrCodeId = qr.Id,
             BusinessId = qr.BusinessId,
             ProductId = qr.ProductId,
-            SessionId = request.SessionId,
-            UserAgent = userAgent,
-            IpAddress = ipAddress,
-            Referrer = request.Referrer,
+            SessionId = Truncate(request.SessionId, 100),
+            UserAgent = Truncate(userAgent, 160),
+            IpAddress = Truncate(ipAddress, 45),
+            Referrer = Truncate(request.Referrer, 300),
         };
 
         _db.ArScanEvents.Add(scan);
@@ -260,30 +258,24 @@ public class PublicArService : IPublicArService
             QrCodeId = qr.Id,
             BusinessId = qr.BusinessId,
             ProductId = qr.ProductId,
-            SessionId = request.SessionId,
-            UserAgent = userAgent,
+            SessionId = Truncate(request.SessionId, 100),
+            UserAgent = Truncate(userAgent, 160),
             ViewDurationSeconds = request.ViewDurationSeconds,
             ArLaunched = request.ArLaunched || request.Rotated || request.Resized,
         };
 
+        // Note: SQL trigger [tr_ArViewEvents_TrackUsage] atomically increments Businesses.ArViewsUsed
+        // and decrements Businesses.ArViewCredits when ArLaunched = 1.
         _db.ArViewEvents.Add(view);
-
-        if (view.ArLaunched)
-        {
-            var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == qr.BusinessId, ct);
-            if (business != null)
-            {
-                business.ArViewsUsed++;
-                if (business.ArViewCredits > 0)
-                {
-                    business.ArViewCredits--;
-                }
-            }
-        }
-
         await _db.SaveChangesAsync(ct);
 
         return new LogEventResponse(view.Id, "View event logged.");
+    }
+
+    private static string? Truncate(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        return value.Length <= maxLength ? value : value[..maxLength];
     }
 
     private async Task<IReadOnlyList<PublicArOtherProductDto>> GetOtherProductsAsync(
@@ -323,16 +315,19 @@ public class PublicArService : IPublicArService
         Guid productId,
         CancellationToken ct)
     {
-        var productEmbed = await (
-            from e in _db.EmbedLinks.AsNoTracking()
-            join m in _db.ModelAssets on e.ModelAssetId equals m.Id
-            join j in _db.ProcessingJobs on m.ProcessingJobId equals j.Id
-            where e.IsActive && e.OrderDeepLink != null && j.ProductId == productId
-            select e.OrderDeepLink)
-            .FirstOrDefaultAsync(ct);
+        if (productId != Guid.Empty)
+        {
+            var productEmbed = await (
+                from e in _db.EmbedLinks.AsNoTracking()
+                join m in _db.ModelAssets on e.ModelAssetId equals m.Id
+                join j in _db.ProcessingJobs on m.ProcessingJobId equals j.Id
+                where e.IsActive && e.OrderDeepLink != null && j.ProductId == productId
+                select e.OrderDeepLink)
+                .FirstOrDefaultAsync(ct);
 
-        if (!string.IsNullOrWhiteSpace(productEmbed))
-            return productEmbed;
+            if (!string.IsNullOrWhiteSpace(productEmbed))
+                return productEmbed;
+        }
 
         return await _db.EmbedLinks
             .AsNoTracking()

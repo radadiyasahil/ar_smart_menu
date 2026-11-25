@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/services/api_client.dart';
 import '../core/services/auth_service.dart';
 import '../core/services/local_cache_service.dart';
 import '../models/user_model.dart';
@@ -163,6 +164,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _saveSession(String token, UserModel user) async {
     _token = token;
     _user = user;
+    ApiClient.setCachedToken(token);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_token', token);
     await prefs.setInt('auth_token_saved_at', DateTime.now().millisecondsSinceEpoch);
@@ -172,6 +174,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> clearSession() async {
     _token = null;
     _user = null;
+    ApiClient.clearCachedToken();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
     await prefs.remove('auth_token_saved_at');

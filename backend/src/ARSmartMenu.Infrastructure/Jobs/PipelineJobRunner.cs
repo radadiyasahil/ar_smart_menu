@@ -161,8 +161,8 @@ public class PipelineJobRunner
 
     public async Task CleanupTemporaryFilesAsync()
     {
-        _logger.LogInformation("Cleanup job: removing expired temporary uploads");
-        await Task.CompletedTask;
+        _logger.LogInformation("Cleanup job: running usp_CleanupExpiredData and cleaning expired temporary uploads");
+        await _db.Database.ExecuteSqlRawAsync("EXEC [dbo].[usp_CleanupExpiredData]");
     }
 
     private async Task EnsureModelAssetAndReviewAsync(ProcessingJob job)

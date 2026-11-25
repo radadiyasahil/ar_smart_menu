@@ -43,6 +43,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<SystemSetting>(e =>
         {
+            e.ToTable("SystemSettings", tb => tb.HasTrigger("tr_SystemSettings_SyncBusinessGstRate"));
             e.HasIndex(s => s.Key).IsUnique();
         });
     }

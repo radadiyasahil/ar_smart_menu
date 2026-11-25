@@ -32,6 +32,7 @@ export function Interactive3dModal({
   const price = dish.pricePaise ? Math.round(dish.pricePaise / 100) : 0
 
   const handleAdd = () => {
+    if (!dish || dish.soldOutToday) return
     onQuantityChange(dish, qty)
     setAdded(true)
     onAddedToCart(dish)
@@ -135,7 +136,16 @@ export function Interactive3dModal({
         {/* Dish Info */}
         <div className="p-4 space-y-3 overflow-y-auto flex-1">
           <div className="flex items-center justify-between">
-            <span className="text-xl font-extrabold text-[#EB4F16]">₹{price}</span>
+            <div className="flex items-center gap-2">
+              <span className={`text-xl font-extrabold ${dish.soldOutToday ? 'text-gray-500 line-through' : 'text-[#EB4F16]'}`}>
+                ₹{price}
+              </span>
+              {dish.soldOutToday && (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 uppercase tracking-tight">
+                  Sold Out for Today
+                </span>
+              )}
+            </div>
             <div className="flex gap-1.5">
               {dish.isBestseller && (
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
@@ -174,47 +184,68 @@ export function Interactive3dModal({
 
         {/* Footer Actions */}
         <div className="p-4 bg-[#1E1E22] border-t border-[#2A2A30] flex items-center gap-3">
-          <div className="flex items-center bg-[#27272A] border border-[#3F3F46] rounded-full px-3 py-1.5 gap-3">
-            <button
-              type="button"
-              onClick={() => setQty(Math.max(1, qty - 1))}
-              disabled={qty <= 1}
-              className="text-white disabled:opacity-40 cursor-pointer"
-            >
-              <Minus size={13} />
-            </button>
-            <span className="text-xs font-bold text-white min-w-[14px] text-center">{qty}</span>
-            <button
-              type="button"
-              onClick={() => setQty(qty + 1)}
-              className="text-white hover:text-[#EB4F16] cursor-pointer"
-            >
-              <Plus size={13} />
-            </button>
-          </div>
+          {dish.soldOutToday ? (
+            <div className="w-full flex items-center justify-between bg-rose-500/10 border border-rose-500/30 rounded-2xl px-4 py-3">
+              <div className="flex items-center gap-2 text-rose-300">
+                <span className="text-base">⛔</span>
+                <div>
+                  <span className="text-xs font-bold block text-rose-300">Sold Out for Today</span>
+                  <span className="text-[10px] text-gray-400">Owner marked this item unavailable</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled
+                className="py-2 px-4 rounded-full text-xs font-bold bg-neutral-800 text-neutral-400 border border-neutral-700/60 cursor-not-allowed select-none opacity-80"
+              >
+                Cannot Order
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center bg-[#27272A] border border-[#3F3F46] rounded-full px-3 py-1.5 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setQty(Math.max(1, qty - 1))}
+                  disabled={qty <= 1}
+                  className="text-white disabled:opacity-40 cursor-pointer"
+                >
+                  <Minus size={13} />
+                </button>
+                <span className="text-xs font-bold text-white min-w-[14px] text-center">{qty}</span>
+                <button
+                  type="button"
+                  onClick={() => setQty(qty + 1)}
+                  className="text-white hover:text-[#EB4F16] cursor-pointer"
+                >
+                  <Plus size={13} />
+                </button>
+              </div>
 
-          <button
-            type="button"
-            onClick={handleAdd}
-            className={`flex-1 py-3 px-4 rounded-full text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-lg transition ${
-              added
-                ? 'bg-[#20BF6B] text-white shadow-[#20BF6B]/30'
-                : 'bg-gradient-to-r from-[#EB4F16] to-[#FF6A3D] text-white shadow-[#EB4F16]/30'
-            }`}
-          >
-            {added ? (
-              <>
-                <Check size={14} />
-                <span>Added!</span>
-              </>
-            ) : (
-              <>
-                <span>Add to Table Order</span>
-                <span>•</span>
-                <span>₹{price * qty}</span>
-              </>
-            )}
-          </button>
+              <button
+                type="button"
+                onClick={handleAdd}
+                className={`flex-1 py-3 px-4 rounded-full text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-lg transition ${
+                  added
+                    ? 'bg-[#20BF6B] text-white shadow-[#20BF6B]/30'
+                    : 'bg-gradient-to-r from-[#EB4F16] to-[#FF6A3D] text-white shadow-[#EB4F16]/30'
+                }`}
+              >
+                {added ? (
+                  <>
+                    <Check size={14} />
+                    <span>Added!</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Add to Table Order</span>
+                    <span>•</span>
+                    <span>₹{price * qty}</span>
+                  </>
+                )}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

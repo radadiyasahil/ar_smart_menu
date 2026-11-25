@@ -16,11 +16,17 @@ public class QrCodeService : IQrCodeService
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly AppLookupCacheService _lookupCache;
 
-    public QrCodeService(AppDbContext db, IConfiguration config, IHttpContextAccessor? httpContextAccessor = null)
+    public QrCodeService(
+        AppDbContext db,
+        IConfiguration config,
+        AppLookupCacheService lookupCache,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _db = db;
         _config = config;
+        _lookupCache = lookupCache;
         _httpContextAccessor = httpContextAccessor;
     }
 
@@ -82,25 +88,33 @@ public class QrCodeService : IQrCodeService
     public async Task<QrCodeDto> GetOrCreateMasterQrAsync(Guid businessId, CancellationToken ct = default)
     {
         var existing = await _db.QrCodes
-            .Include(q => q.Product)
+            .AsNoTracking()
             .FirstOrDefaultAsync(q => q.BusinessId == businessId && q.QrType == QrType.Menu && q.IsActive, ct);
 
         if (existing is not null)
         {
             var expectedUrl = BuildQrWebUrl(QrType.Menu, existing.Slug);
-            if (existing.WebUrl != expectedUrl)
-            {
-                existing.WebUrl = expectedUrl;
-                existing.UpdatedAt = DateTime.UtcNow;
-                await _db.SaveChangesAsync(ct);
-            }
-            return MapQr(existing, "Restaurant Master Menu");
+            return new QrCodeDto(
+                existing.Id,
+                existing.BusinessId,
+                existing.ProductId,
+                "Restaurant Master Menu",
+                existing.QrType,
+                existing.Slug,
+                expectedUrl,
+                existing.QrImageUrl,
+                existing.IsActive,
+                existing.CreatedAt);
         }
 
-        var business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == businessId, ct)
+        var businessName = await _db.Businesses
+            .AsNoTracking()
+            .Where(b => b.Id == businessId)
+            .Select(b => b.BusinessName)
+            .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("Business not found.");
 
-        var slug = await GenerateUniqueSlugAsync(business.BusinessName + "-menu", ct);
+        var slug = await GenerateUniqueSlugAsync(businessName + "-menu", ct);
         var webUrl = BuildQrWebUrl(QrType.Menu, slug);
         var qrImageUrl = $"{GetWebArBaseUrl()}/dish/qr/{slug}.png";
 
@@ -118,6 +132,7 @@ public class QrCodeService : IQrCodeService
 
         _db.QrCodes.Add(qr);
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
 
         return MapQr(qr, "Restaurant Master Menu");
     }
@@ -194,32 +209,30 @@ public class QrCodeService : IQrCodeService
         }
 
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
         return results.Select(q => MapQr(q, $"Table {q.Slug.Split("-t").Last()}")).ToList();
     }
 
     public async Task ClearTableQrsAsync(Guid businessId, CancellationToken ct = default)
     {
-        var existingTables = await _db.QrCodes
+        var now = DateTime.UtcNow;
+        var updated = await _db.QrCodes
             .Where(q => q.BusinessId == businessId && q.QrType == QrType.Table && q.IsActive)
-            .ToListAsync(ct);
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(q => q.IsActive, false)
+                .SetProperty(q => q.UpdatedAt, now), ct);
 
-        foreach (var t in existingTables)
-        {
-            t.IsActive = false;
-            t.UpdatedAt = DateTime.UtcNow;
-        }
-
-        if (existingTables.Count > 0)
-        {
-            await _db.SaveChangesAsync(ct);
-        }
+        if (updated > 0)
+            _lookupCache.InvalidateBusiness(businessId);
     }
 
     public async Task<QrCodeDto> GenerateForProductAsync(Guid businessId, Guid productId, CancellationToken ct = default)
     {
         var product = await _db.Products
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == productId && p.BusinessId == businessId, ct)
+            .Where(p => p.Id == productId && p.BusinessId == businessId)
+            .Select(p => new { p.Id, p.Name, p.Status })
+            .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("Product not found.");
 
         if (product.Status is not ProductStatus.Live and not ProductStatus.Review and not ProductStatus.Submitted)
@@ -243,6 +256,7 @@ public class QrCodeService : IQrCodeService
 
         _db.QrCodes.Add(qr);
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
 
         return MapQr(qr, product.Name);
     }
@@ -250,27 +264,34 @@ public class QrCodeService : IQrCodeService
     public async Task<IReadOnlyList<QrCodeDto>> ListAsync(Guid businessId, CancellationToken ct = default)
     {
         var codes = await _db.QrCodes
-            .Include(q => q.Product)
+            .AsNoTracking()
             .Where(q => q.BusinessId == businessId && q.IsActive)
             .OrderByDescending(q => q.CreatedAt)
+            .Select(q => new
+            {
+                q.Id,
+                q.BusinessId,
+                q.ProductId,
+                ProductName = q.Product != null ? q.Product.Name : null,
+                q.QrType,
+                q.Slug,
+                q.QrImageUrl,
+                q.IsActive,
+                q.CreatedAt
+            })
             .ToListAsync(ct);
 
-        var dirty = false;
-        foreach (var qr in codes)
-        {
-            var expected = BuildQrWebUrl(qr.QrType, qr.Slug);
-            if (qr.WebUrl != expected)
-            {
-                qr.WebUrl = expected;
-                qr.UpdatedAt = DateTime.UtcNow;
-                dirty = true;
-            }
-        }
-
-        if (dirty)
-            await _db.SaveChangesAsync(ct);
-
-        return codes.Select(q => MapQr(q, q.Product?.Name)).ToList();
+        return codes.Select(q => new QrCodeDto(
+            q.Id,
+            q.BusinessId,
+            q.ProductId,
+            q.ProductName,
+            q.QrType,
+            q.Slug,
+            BuildQrWebUrl(q.QrType, q.Slug),
+            q.QrImageUrl,
+            q.IsActive,
+            q.CreatedAt)).ToList();
     }
 
     public async Task<QrCodeDto> DeactivateAsync(Guid businessId, Guid qrCodeId, CancellationToken ct = default)
@@ -283,6 +304,7 @@ public class QrCodeService : IQrCodeService
         qr.IsActive = false;
         qr.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
 
         return MapQr(qr, qr.Product?.Name);
     }

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/services/analytics_service.dart';
 import '../core/services/billing_service.dart';
+import '../core/services/local_cache_service.dart';
 import '../core/utils/api_error_utils.dart';
 import '../models/analytics_model.dart';
 
@@ -76,17 +77,18 @@ class AnalyticsProvider extends ChangeNotifier {
 
     try {
       final apiRange = _range.apiValue;
-      final results = await Future.wait([
-        _analyticsService.getOverview(range: apiRange),
-        _analyticsService.getChart(range: apiRange),
-        _analyticsService.getTopProducts(range: apiRange),
-      ]);
+      AnalyticsDashboardModel? dash;
+      if (!force) {
+        dash = await LocalCacheService.loadFreshAnalyticsDashboard(businessId, apiRange);
+      }
+      if (dash == null) {
+        dash = await _analyticsService.getDashboard(range: apiRange);
+        await LocalCacheService.saveAnalyticsDashboard(businessId, apiRange, dash);
+      }
 
-      var ov = results[0] as AnalyticsOverviewModel;
-      var cp = List<AnalyticsChartPointModel>.from(
-          results[1] as List<AnalyticsChartPointModel>);
-      var tp = List<TopProductAnalyticsModel>.from(
-          results[2] as List<TopProductAnalyticsModel>);
+      var ov = dash.overview;
+      var cp = List<AnalyticsChartPointModel>.from(dash.chart);
+      var tp = List<TopProductAnalyticsModel>.from(dash.topProducts);
 
       // Merge with completed local bills only for THIS specific business
       try {

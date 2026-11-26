@@ -10,14 +10,16 @@ import {
   RotateCw,
   Sparkles,
   Upload,
+  Trash2,
   X,
   ZoomIn,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { adminService } from '@/services/adminService'
 import {
   PHOTO_ANGLE_LABELS,
   PRODUCT_CATEGORY_LABELS,
@@ -38,6 +40,7 @@ interface ProductDetailModalProps {
   onEnqueue: (productId: string) => void
   onAdvanceToReview: (jobId: string) => void
   onSetStatus?: (productId: string, status: number) => void
+  onRefresh?: () => void
 }
 
 export function ProductDetailModal({
@@ -50,12 +53,65 @@ export function ProductDetailModal({
   onEnqueue,
   onAdvanceToReview,
   onSetStatus,
+  onRefresh,
 }: ProductDetailModalProps) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null)
   const [show3DViewer, setShow3DViewer] = useState(false)
   const [autoRotate3D, setAutoRotate3D] = useState(true)
   const [is3DLoading, setIs3DLoading] = useState(true)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [isUploadingGlb, setIsUploadingGlb] = useState(false)
+  const [isDeletingGlb, setIsDeletingGlb] = useState(false)
+  const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null)
+  const [statusNotice, setStatusNotice] = useState<string | null>(null)
+  const glbInputRef = useRef<HTMLInputElement>(null)
+
+  const handleUploadGlb = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIsUploadingGlb(true)
+    setStatusNotice(null)
+    try {
+      await adminService.uploadProductModel(item.productId, file)
+      setStatusNotice('3D Model (.glb) uploaded successfully! Dish is now Live.')
+      if (onRefresh) onRefresh()
+    } catch (err: unknown) {
+      alert((err as { message?: string })?.message || 'Failed to upload 3D model')
+    } finally {
+      setIsUploadingGlb(false)
+      if (glbInputRef.current) glbInputRef.current.value = ''
+    }
+  }
+
+  const handleDeleteGlb = async () => {
+    if (!window.confirm('Are you sure you want to delete this 3D model (.glb)? This will remove it from diner AR view.')) return
+    setIsDeletingGlb(true)
+    setStatusNotice(null)
+    try {
+      await adminService.deleteProductModel(item.productId)
+      setStatusNotice('3D model deleted successfully.')
+      if (onRefresh) onRefresh()
+    } catch (err: unknown) {
+      alert((err as { message?: string })?.message || 'Failed to delete 3D model')
+    } finally {
+      setIsDeletingGlb(false)
+    }
+  }
+
+  const handleDeletePhoto = async (photoId: string) => {
+    if (!window.confirm('Are you sure you want to delete this photo?')) return
+    setDeletingPhotoId(photoId)
+    setStatusNotice(null)
+    try {
+      await adminService.deleteProductPhoto(item.productId, photoId)
+      setStatusNotice('Photo deleted successfully.')
+      if (onRefresh) onRefresh()
+    } catch (err: unknown) {
+      alert((err as { message?: string })?.message || 'Failed to delete photo')
+    } finally {
+      setDeletingPhotoId(null)
+    }
+  }
 
   const handleDownloadGlb = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault()
@@ -205,6 +261,15 @@ export function ProductDetailModal({
               </span>
             </div>
 
+            {statusNotice && (
+              <div className="rounded-md bg-primary/10 p-2.5 text-xs text-primary border border-primary/20 flex items-center justify-between">
+                <span>{statusNotice}</span>
+                <button type="button" onClick={() => setStatusNotice(null)} className="text-primary hover:opacity-70">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
             {item.photos && item.photos.length > 0 ? (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {item.photos.map((ph) => {
@@ -227,6 +292,18 @@ export function ProductDetailModal({
                       <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
                         <ZoomIn className="h-6 w-6 text-white" />
                       </div>
+                      <button
+                        type="button"
+                        disabled={deletingPhotoId === ph.id}
+                        className="absolute top-1.5 right-1.5 z-10 rounded-full bg-red-600/90 p-1 text-white opacity-80 hover:opacity-100 shadow-sm transition hover:scale-110"
+                        title="Delete photo"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeletePhoto(ph.id)
+                        }}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
                       <div className="p-2 text-center">
                         <span className="text-xs font-semibold text-foreground">
                           {angleName}
@@ -245,6 +322,13 @@ export function ProductDetailModal({
 
           {/* 3D Model & AR Pipeline Status */}
           <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+            <input
+              ref={glbInputRef}
+              type="file"
+              accept=".glb"
+              className="hidden"
+              onChange={handleUploadGlb}
+            />
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <Layers className="h-4 w-4 text-primary" />
@@ -263,7 +347,7 @@ export function ProductDetailModal({
                   <Check className="h-4 w-4 shrink-0" />
                   <span className="font-semibold">3D GLB Model generated and ready!</span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
                   {/* Option 1: Interactive 3D View */}
                   <Button
                     type="button"
@@ -291,13 +375,52 @@ export function ProductDetailModal({
                     <Download className={`h-3.5 w-3.5 ${isDownloading ? 'animate-bounce' : 'text-muted-foreground'}`} />
                     <span>{isDownloading ? 'Downloading...' : 'Download GLB'}</span>
                   </Button>
+
+                  {/* Option 3: Replace .GLB */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 border-primary/50 text-primary hover:bg-primary/10 text-xs font-semibold shadow-xs"
+                    onClick={() => glbInputRef.current?.click()}
+                    disabled={isUploadingGlb}
+                    title="Replace the .glb 3D model file"
+                  >
+                    <Upload className={`h-3.5 w-3.5 ${isUploadingGlb ? 'animate-spin' : ''}`} />
+                    <span>{isUploadingGlb ? 'Uploading...' : 'Replace GLB'}</span>
+                  </Button>
+
+                  {/* Option 4: Delete 3D Model */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 border-danger/50 text-danger hover:bg-danger/10 text-xs font-semibold shadow-xs"
+                    onClick={handleDeleteGlb}
+                    disabled={isDeletingGlb}
+                    title="Delete 3D model from product"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>{isDeletingGlb ? 'Deleting...' : 'Delete 3D'}</span>
+                  </Button>
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                3D photogrammetry model has not been published yet. Once the pipeline completes,
-                the admin approves the model and publishes it live to customer AR menus.
-              </p>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-md bg-muted/40 border border-border">
+                <p className="text-xs text-muted-foreground">
+                  3D photogrammetry model has not been published yet. Upload a ready .glb model to activate interactive 3D AR immediately.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 gap-1.5 bg-primary text-white hover:bg-primary/90 text-xs font-semibold shrink-0"
+                  onClick={() => glbInputRef.current?.click()}
+                  disabled={isUploadingGlb}
+                >
+                  <Upload className={`h-3.5 w-3.5 ${isUploadingGlb ? 'animate-spin' : ''}`} />
+                  <span>{isUploadingGlb ? 'Uploading...' : 'Upload .GLB'}</span>
+                </Button>
+              </div>
             )}
 
             {item.rejectionReason && (

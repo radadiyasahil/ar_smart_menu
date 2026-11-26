@@ -285,6 +285,25 @@ class ProductService {
     return _parseOne(response.data!);
   }
 
+  /// DELETE /api/products/{id}/photos/{photoId}
+  Future<ProductModel> deletePhoto({
+    required String productId,
+    required String photoId,
+  }) async {
+    final response = await _dio.delete<Map<String, dynamic>>(
+      '/products/$productId/photos/$photoId',
+    );
+    return _parseOne(response.data!);
+  }
+
+  /// DELETE /api/products/{id}/model
+  Future<ProductModel> deleteModel(String productId) async {
+    final response = await _dio.delete<Map<String, dynamic>>(
+      '/products/$productId/model',
+    );
+    return _parseOne(response.data!);
+  }
+
   List<ProductModel> _parseList(Map<String, dynamic> envelope) {
     _ensureSuccess(envelope);
     final data = envelope['data'] as List<dynamic>;

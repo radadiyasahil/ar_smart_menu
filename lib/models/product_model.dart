@@ -235,6 +235,42 @@ class ProductCustomizationConfig {
   String toJsonString() => jsonEncode(toJson());
 }
 
+class Model3dSummaryModel {
+  const Model3dSummaryModel({
+    required this.id,
+    this.glbUrl,
+    this.usdzUrl,
+    this.processingStatus,
+    this.approvedAt,
+  });
+
+  final String id;
+  final String? glbUrl;
+  final String? usdzUrl;
+  final int? processingStatus;
+  final DateTime? approvedAt;
+
+  factory Model3dSummaryModel.fromJson(Map<String, dynamic> json) {
+    return Model3dSummaryModel(
+      id: json['id'] as String? ?? '',
+      glbUrl: json['glbUrl'] as String?,
+      usdzUrl: json['usdzUrl'] as String?,
+      processingStatus: json['processingStatus'] as int?,
+      approvedAt: json['approvedAt'] != null
+          ? DateTime.tryParse(json['approvedAt'] as String)
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'glbUrl': glbUrl,
+        'usdzUrl': usdzUrl,
+        'processingStatus': processingStatus,
+        'approvedAt': approvedAt?.toIso8601String(),
+      };
+}
+
 class ProductModel {
   const ProductModel({
     required this.id,
@@ -252,6 +288,7 @@ class ProductModel {
     this.soldOutToday = false,
     this.displayOrder = 0,
     this.photos = const [],
+    this.model3d,
     this.createdAt,
     this.customizationJson,
   });
@@ -271,6 +308,7 @@ class ProductModel {
   final bool soldOutToday;
   final int displayOrder;
   final List<ProductPhotoModel> photos;
+  final Model3dSummaryModel? model3d;
   final DateTime? createdAt;
   final String? customizationJson;
 
@@ -395,6 +433,7 @@ class ProductModel {
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     final photosJson = json['photos'] as List<dynamic>? ?? [];
+    final modelJson = json['model3d'] as Map<String, dynamic>?;
     return ProductModel(
       id: json['id'] as String,
       businessId: json['businessId'] as String,
@@ -415,6 +454,7 @@ class ProductModel {
       photos: photosJson
           .map((e) => ProductPhotoModel.fromJson(e as Map<String, dynamic>))
           .toList(),
+      model3d: modelJson != null ? Model3dSummaryModel.fromJson(modelJson) : null,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String)
           : null,
@@ -425,6 +465,8 @@ class ProductModel {
   ProductModel copyWith({
     bool? soldOutToday,
     int? displayOrder,
+    Model3dSummaryModel? model3d,
+    bool clearModel3d = false,
   }) {
     return ProductModel(
       id: id,
@@ -442,6 +484,7 @@ class ProductModel {
       soldOutToday: soldOutToday ?? this.soldOutToday,
       displayOrder: displayOrder ?? this.displayOrder,
       photos: photos,
+      model3d: clearModel3d ? null : (model3d ?? this.model3d),
       createdAt: createdAt,
       customizationJson: customizationJson,
     );
@@ -464,6 +507,7 @@ class ProductModel {
         'soldOutToday': soldOutToday,
         'displayOrder': displayOrder,
         'photos': photos.map((p) => p.toJson()).toList(),
+        'model3d': model3d?.toJson(),
         'createdAt': createdAt?.toIso8601String(),
         'customizationJson': customizationJson,
       };

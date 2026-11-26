@@ -12,7 +12,6 @@ namespace ARSmartMenu.Infrastructure.Services;
 public class QualityReviewService : IQualityReviewService
 {
     private const string DevGlbUrl = "https://modelviewer.dev/shared-assets/models/Hamburger.glb";
-    private const string DevUsdzUrl = "https://modelviewer.dev/shared-assets/models/Hamburger.usdz";
 
     private readonly AppDbContext _db;
     private readonly IStorageService _storage;
@@ -137,7 +136,11 @@ public class QualityReviewService : IQualityReviewService
         asset.GlbCdnUrl = !string.IsNullOrWhiteSpace(asset.GlbStorageKey)
             ? _mediaUrls.Resolve(asset.GlbStorageKey)
             : DevGlbUrl;
-        asset.UsdzCdnUrl = DevUsdzUrl;
+        // Prefer a real USDZ when we have one. Never hardcode the sample Hamburger —
+        // model-viewer can synthesize Quick Look USDZ from the GLB on iOS Safari.
+        asset.UsdzCdnUrl = !string.IsNullOrWhiteSpace(asset.UsdzStorageKey)
+            ? _mediaUrls.Resolve(asset.UsdzStorageKey)
+            : null;
         asset.ThumbnailCdnUrl = asset.ThumbnailStorageKey is not null
             ? _mediaUrls.Resolve(asset.ThumbnailStorageKey)
             : null;

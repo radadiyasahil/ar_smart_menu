@@ -154,6 +154,39 @@ public class AdminController : ControllerBase
         return Ok(ApiResponse<ProductDto>.Ok(result, "Product is now Live and notification sent"));
     }
 
+    /// <summary>Upload or replace a 3D GLB model for any product as admin.</summary>
+    [HttpPost("products/{productId:guid}/model")]
+    [RequestSizeLimit(35 * 1024 * 1024)]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> AdminUploadModel(
+        Guid productId,
+        IFormFile file,
+        CancellationToken ct)
+    {
+        var result = await _admin.AdminUploadModelAsync(productId, file, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, "3D model uploaded successfully."));
+    }
+
+    /// <summary>Delete a 3D model from a product as admin.</summary>
+    [HttpDelete("products/{productId:guid}/model")]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> AdminDeleteModel(
+        Guid productId,
+        CancellationToken ct)
+    {
+        var result = await _admin.AdminDeleteModelAsync(productId, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, "3D model removed successfully."));
+    }
+
+    /// <summary>Delete a photo from a product as admin.</summary>
+    [HttpDelete("products/{productId:guid}/photos/{photoId:guid}")]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> AdminDeletePhoto(
+        Guid productId,
+        Guid photoId,
+        CancellationToken ct)
+    {
+        var result = await _admin.AdminDeletePhotoAsync(productId, photoId, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, "Photo deleted successfully."));
+    }
+
     /// <summary>Change business status (Active, Suspended, Deactivated, Rejected) with notes.</summary>
     [HttpPost("businesses/{id:guid}/set-status")]
     public async Task<ActionResult<ApiResponse<BusinessDto>>> SetBusinessStatus(

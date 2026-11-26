@@ -139,11 +139,19 @@ export function useArViewer({ slug }: UseArViewerOptions = {}) {
   }, [activeProduct?.id])
 
   const handleArStatus = useCallback((status: ArStatus) => {
-    if (status === 'object-placed' || status === 'session-started') {
+    if (status === 'object-placed') {
       setShowScanOverlay(false)
+    }
+    if (status === 'session-started') {
+      // Keep scan hint briefly while the user finds a table surface
+      setShowScanOverlay(true)
+    }
+    if (status === 'not-presenting') {
+      setShowScanOverlay(true)
     }
     if (status === 'failed') {
       setArUnavailable(true)
+      setShowScanOverlay(false)
       analyticsService.track('ar_failed', undefined, { status })
     }
   }, [])

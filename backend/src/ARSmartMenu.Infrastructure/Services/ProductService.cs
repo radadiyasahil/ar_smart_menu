@@ -625,6 +625,67 @@ public class ProductService : IProductService
         return MapProduct(refreshed);
     }
 
+    public async Task<ProductDto> DeletePhotoAsync(
+        Guid businessId,
+        Guid productId,
+        Guid photoId,
+        CancellationToken ct = default)
+    {
+        var product = await _db.Products
+            .Include(p => p.Photos)
+            .Include(p => p.Model3d)
+            .FirstOrDefaultAsync(p => p.BusinessId == businessId && p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        var photo = product.Photos.FirstOrDefault(p => p.Id == photoId)
+            ?? throw new NotFoundException("Photo not found.");
+
+        _db.ProductPhotos.Remove(photo);
+        product.Photos.Remove(photo);
+
+        if (product.Status == ProductStatus.Submitted && !HasAllRequiredAngles(product.Photos))
+        {
+            product.Status = ProductStatus.Draft;
+        }
+
+        product.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
+
+        var refreshed = await LoadProductAsync(businessId, productId, ct);
+        return MapProduct(refreshed);
+    }
+
+    public async Task<ProductDto> DeleteModelAsync(
+        Guid businessId,
+        Guid productId,
+        CancellationToken ct = default)
+    {
+        var product = await _db.Products
+            .Include(p => p.Photos)
+            .Include(p => p.Model3d)
+            .FirstOrDefaultAsync(p => p.BusinessId == businessId && p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        if (product.Model3d != null)
+        {
+            _db.Models3d.Remove(product.Model3d);
+            product.Model3d = null;
+        }
+
+        if (product.Status == ProductStatus.Live && !HasAllRequiredAngles(product.Photos))
+        {
+            product.Status = ProductStatus.Draft;
+        }
+
+        product.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        _lookupCache.InvalidateBusiness(businessId);
+
+        var refreshed = await LoadProductAsync(businessId, productId, ct);
+        return MapProduct(refreshed);
+    }
+
     private static bool HasAllRequiredAngles(IEnumerable<ProductPhoto> photos)
     {
         var used = photos.Select(p => p.AngleType).ToHashSet();

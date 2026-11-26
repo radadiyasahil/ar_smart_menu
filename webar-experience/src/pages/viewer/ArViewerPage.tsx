@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { ModelViewer } from '@/components/ar/ModelViewer'
+import { SurfaceScanOverlay } from '@/components/ar/SurfaceScanOverlay'
 import { ProductInfoOverlay } from '@/components/cards/ProductInfoOverlay'
 import { ProductPhotoStrip } from '@/components/cards/ProductPhotoStrip'
 import { BottomControlBar } from '@/components/controls/BottomControlBar'
@@ -26,6 +27,7 @@ export function ArViewerPage() {
     modelProgress,
     modelError,
     arUnavailable,
+    showScanOverlay,
     scale,
     scaleString,
     orientationString,
@@ -103,9 +105,16 @@ export function ArViewerPage() {
 
       {arUnavailable && (
         <div className="no-ar-banner visible">
-          AR is not available on this device — you can still view the 3D model
+          AR needs a phone/tablet camera — you can still preview the 3D model here
         </div>
       )}
+
+      <div className="absolute inset-0 z-[90] pointer-events-none">
+        <SurfaceScanOverlay
+          visible={showScanOverlay && !isModelLoading && !modelError && !arUnavailable}
+          message="Tap Place on Table, then aim at your dining surface"
+        />
+      </div>
 
       {isModelLoading && (
         <div className="model-loading">

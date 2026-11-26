@@ -171,6 +171,40 @@ export const adminService = {
     }
   },
 
+  async uploadProductModel(productId: string, file: File): Promise<void> {
+    await ensureAdminAuth()
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await apiClient.post<ApiEnvelope<unknown>>(
+      `/admin/products/${productId}/model`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    if (!res.data.success) {
+      throw new Error(res.data.error ?? 'Failed to upload 3D model')
+    }
+  },
+
+  async deleteProductModel(productId: string): Promise<void> {
+    await ensureAdminAuth()
+    const res = await apiClient.delete<ApiEnvelope<unknown>>(
+      `/admin/products/${productId}/model`,
+    )
+    if (!res.data.success) {
+      throw new Error(res.data.error ?? 'Failed to delete 3D model')
+    }
+  },
+
+  async deleteProductPhoto(productId: string, photoId: string): Promise<void> {
+    await ensureAdminAuth()
+    const res = await apiClient.delete<ApiEnvelope<unknown>>(
+      `/admin/products/${productId}/photos/${photoId}`,
+    )
+    if (!res.data.success) {
+      throw new Error(res.data.error ?? 'Failed to delete photo')
+    }
+  },
+
   async submitQualityReview(
     jobId: string,
     decision: 1 | 2,

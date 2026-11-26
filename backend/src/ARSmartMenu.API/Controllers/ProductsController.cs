@@ -222,6 +222,27 @@ public class ProductsController : ControllerBase
         return Ok(ApiResponse<ProductDto>.Ok(result, "Walkaround video uploaded successfully."));
     }
 
+    [HttpDelete("{id:guid}/photos/{photoId:guid}")]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> DeletePhoto(
+        Guid id,
+        Guid photoId,
+        CancellationToken ct = default)
+    {
+        var businessId = RequireBusinessId();
+        var result = await _products.DeletePhotoAsync(businessId, id, photoId, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, "Photo removed successfully."));
+    }
+
+    [HttpDelete("{id:guid}/model")]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> DeleteModel(
+        Guid id,
+        CancellationToken ct = default)
+    {
+        var businessId = RequireBusinessId();
+        var result = await _products.DeleteModelAsync(businessId, id, ct);
+        return Ok(ApiResponse<ProductDto>.Ok(result, "3D model removed successfully."));
+    }
+
     private Guid RequireBusinessId()
     {
         return _currentUser.GetBusinessId()

@@ -54,6 +54,15 @@ public interface IProductService
         Guid productId,
         IFormFile file,
         CancellationToken ct = default);
+    Task<ProductDto> DeletePhotoAsync(
+        Guid businessId,
+        Guid productId,
+        Guid photoId,
+        CancellationToken ct = default);
+    Task<ProductDto> DeleteModelAsync(
+        Guid businessId,
+        Guid productId,
+        CancellationToken ct = default);
 }
 
 public interface ISubscriptionService
@@ -131,6 +140,9 @@ public interface IAdminService
     Task<AdminBusinessListItemDto> UpdateBusinessSettingsAsync(Guid businessId, UpdateBusinessSettingsRequest request, CancellationToken ct = default);
     Task<AdminOperationsSummaryDto> GetOperationsSummaryAsync(CancellationToken ct = default);
     Task<byte[]> ExportOperationsCsvAsync(CancellationToken ct = default);
+    Task<ProductDto> AdminUploadModelAsync(Guid productId, IFormFile file, CancellationToken ct = default);
+    Task<ProductDto> AdminDeleteModelAsync(Guid productId, CancellationToken ct = default);
+    Task<ProductDto> AdminDeletePhotoAsync(Guid productId, Guid photoId, CancellationToken ct = default);
 }
 
 public interface IPublicArService

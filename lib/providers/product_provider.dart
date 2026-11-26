@@ -324,6 +324,26 @@ class ProductProvider extends ChangeNotifier {
     return updated;
   }
 
+  Future<ProductModel> deletePhoto({
+    required String productId,
+    required String photoId,
+  }) async {
+    final updated = await _productService.deletePhoto(
+      productId: productId,
+      photoId: photoId,
+    );
+    _replaceLocal(updated);
+    await _persistProducts();
+    return updated;
+  }
+
+  Future<ProductModel> deleteModel(String productId) async {
+    final updated = await _productService.deleteModel(productId);
+    _replaceLocal(updated);
+    await _persistProducts();
+    return updated;
+  }
+
   void clear() {
     _products = [];
     _isLoaded = false;

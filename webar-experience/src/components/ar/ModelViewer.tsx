@@ -29,7 +29,10 @@ export function ModelViewer({
   onError,
   onArStatus,
 }: ModelViewerProps) {
+  // Prefer in-browser WebXR hit-test (table surface), then Android Scene Viewer, then iOS Quick Look
   const arModes = 'webxr scene-viewer quick-look'
+  const safeUsdz =
+    usdzUrl && !usdzUrl.includes('Hamburger.usdz') ? usdzUrl : undefined
 
   useEffect(() => {
     const el = viewerRef.current
@@ -70,7 +73,7 @@ export function ModelViewer({
     <model-viewer
       ref={setRef}
       src={glbUrl}
-      ios-src={usdzUrl}
+      ios-src={safeUsdz}
       poster={posterUrl}
       alt={alt}
       ar
@@ -78,30 +81,29 @@ export function ModelViewer({
       ar-placement="floor"
       ar-scale="fixed"
       camera-controls
-      auto-rotate
-      auto-rotate-delay="0"
-      rotation-per-second="30deg"
       touch-action="pan-y"
-      shadow-intensity="1"
-      shadow-softness="0.8"
-      exposure="1.2"
+      shadow-intensity="1.2"
+      shadow-softness="0.9"
+      exposure="1.15"
       environment-image="neutral"
       loading="eager"
       reveal="auto"
       interaction-prompt="none"
+      camera-orbit="0deg 65deg 105%"
+      field-of-view="28deg"
       scale={scale}
       orientation={orientation}
-      style={{ width: '100%', height: '100%', background: '#1a1a1a' }}
+      style={{ width: '100%', height: '100%', background: '#111' }}
     >
       <button
         slot="ar-button"
         className="ar-launch-btn"
-        aria-label="View on your table in AR"
+        aria-label="Place dish on your table in AR"
       >
-        <span>View in AR</span>
+        <span>📷 Place on Table</span>
       </button>
       <div slot="ar-prompt" className="ar-prompt">
-        <p>Move your phone over the table</p>
+        <p>Point at a flat table, then tap to place the dish</p>
       </div>
     </model-viewer>
   )

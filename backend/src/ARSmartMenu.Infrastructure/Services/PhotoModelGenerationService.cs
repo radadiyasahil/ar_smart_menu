@@ -215,64 +215,67 @@ public class PhotoModelGenerationService : IPhotoModelGenerationService
         return Path.Combine(root, normalizedKey.Replace('/', Path.DirectorySeparatorChar));
     }
 
+    /// <summary>
+    /// Builds a low plate-like cylinder (~24 cm diameter, ~4 cm tall) so the dish
+    /// sits naturally on a table in AR instead of looking like a spinning photo box.
+    /// Top = overhead photo; side ring blends front / right / back / left angles.
+    /// </summary>
     private static byte[] BuildTexturedDishGlb(IReadOnlyDictionary<PhotoAngleType, Image<Rgba32>> textures)
     {
-        var frontMat = CreateMaterial(textures[PhotoAngleType.Front], "front.jpg");
         var topMat = CreateMaterial(textures[PhotoAngleType.Top], "top.jpg");
+        var frontMat = CreateMaterial(textures[PhotoAngleType.Front], "front.jpg");
         var leftMat = CreateMaterial(textures[PhotoAngleType.Left], "left.jpg");
         var rightMat = CreateMaterial(textures[PhotoAngleType.Right], "right.jpg");
+        var baseMat = new MaterialBuilder("base")
+            .WithDoubleSide(true)
+            .WithMetallicRoughnessShader()
+            .WithBaseColor(new Vector4(0.12f, 0.1f, 0.08f, 1f));
 
         var mesh = new MeshBuilder<VertexPosition, VertexTexture1>("dish");
 
-        const float halfWidth = 0.12f;
-        const float halfHeight = 0.04f;
-        const float halfDepth = 0.12f;
+        // Real-world-ish plate size for 1:1 AR (meters)
+        const float radius = 0.12f;
+        const float height = 0.04f;
+        const int segments = 48;
+        var yTop = height;
+        var yBottom = 0f;
 
-        // Front (+Z)
-        AddQuad(mesh, frontMat,
-            new Vector3(-halfWidth, -halfHeight, halfDepth),
-            new Vector3(halfWidth, -halfHeight, halfDepth),
-            new Vector3(halfWidth, halfHeight, halfDepth),
-            new Vector3(-halfWidth, halfHeight, halfDepth));
+        // Top disc (Y-up) — main dish view when looking down at the table
+        AddDisc(mesh, topMat, radius, yTop, segments, upward: true);
 
-        // Back (-Z) — reuse front texture for a closed box
-        AddQuad(mesh, frontMat,
-            new Vector3(halfWidth, -halfHeight, -halfDepth),
-            new Vector3(-halfWidth, -halfHeight, -halfDepth),
-            new Vector3(-halfWidth, halfHeight, -halfDepth),
-            new Vector3(halfWidth, halfHeight, -halfDepth));
+        // Bottom disc — rests on the detected table surface
+        AddDisc(mesh, baseMat, radius, yBottom, segments, upward: false);
 
-        // Top (+Y)
-        AddQuad(mesh, topMat,
-            new Vector3(-halfWidth, halfHeight, halfDepth),
-            new Vector3(halfWidth, halfHeight, halfDepth),
-            new Vector3(halfWidth, halfHeight, -halfDepth),
-            new Vector3(-halfWidth, halfHeight, -halfDepth));
+        // Side wall — map each quadrant to the matching angle photo
+        for (var i = 0; i < segments; i++)
+        {
+            var t0 = i / (float)segments;
+            var t1 = (i + 1) / (float)segments;
+            var a0 = t0 * MathF.Tau;
+            var a1 = t1 * MathF.Tau;
 
-        // Bottom (-Y) — subtle dark base
-        var baseMat = new MaterialBuilder()
-            .WithDoubleSide(true)
-            .WithMetallicRoughnessShader()
-            .WithBaseColor(new Vector4(0.15f, 0.12f, 0.1f, 1f));
-        AddQuad(mesh, baseMat,
-            new Vector3(-halfWidth, -halfHeight, -halfDepth),
-            new Vector3(halfWidth, -halfHeight, -halfDepth),
-            new Vector3(halfWidth, -halfHeight, halfDepth),
-            new Vector3(-halfWidth, -halfHeight, halfDepth));
+            var x0 = MathF.Sin(a0) * radius;
+            var z0 = MathF.Cos(a0) * radius;
+            var x1 = MathF.Sin(a1) * radius;
+            var z1 = MathF.Cos(a1) * radius;
 
-        // Left (-X)
-        AddQuad(mesh, leftMat,
-            new Vector3(-halfWidth, -halfHeight, -halfDepth),
-            new Vector3(-halfWidth, -halfHeight, halfDepth),
-            new Vector3(-halfWidth, halfHeight, halfDepth),
-            new Vector3(-halfWidth, halfHeight, -halfDepth));
+            // Angle around +Z (front): 0 → front, 0.25 → right, 0.5 → back, 0.75 → left
+            var sideMat = PickSideMaterial(t0, frontMat, rightMat, leftMat);
 
-        // Right (+X)
-        AddQuad(mesh, rightMat,
-            new Vector3(halfWidth, -halfHeight, halfDepth),
-            new Vector3(halfWidth, -halfHeight, -halfDepth),
-            new Vector3(halfWidth, halfHeight, -halfDepth),
-            new Vector3(halfWidth, halfHeight, halfDepth));
+            var u0 = t0 * 4f % 1f;
+            var u1 = t1 * 4f % 1f;
+            if (u1 < u0) u1 = 1f;
+
+            AddQuad(mesh, sideMat,
+                new Vector3(x0, yBottom, z0),
+                new Vector3(x1, yBottom, z1),
+                new Vector3(x1, yTop, z1),
+                new Vector3(x0, yTop, z0),
+                new Vector2(u0, 1f),
+                new Vector2(u1, 1f),
+                new Vector2(u1, 0f),
+                new Vector2(u0, 0f));
+        }
 
         var scene = new SceneBuilder();
         scene.AddRigidMesh(mesh, Matrix4x4.Identity);
@@ -280,6 +283,59 @@ public class PhotoModelGenerationService : IPhotoModelGenerationService
         var model = scene.ToGltf2();
         var glb = model.WriteGLB();
         return glb.Array is { } array ? array : glb.ToArray();
+    }
+
+    private static MaterialBuilder PickSideMaterial(
+        float t,
+        MaterialBuilder front,
+        MaterialBuilder right,
+        MaterialBuilder left)
+    {
+        // t in [0,1) around +Z
+        if (t < 0.125f || t >= 0.875f) return front;
+        if (t < 0.375f) return right;
+        if (t < 0.625f) return front; // back reuses front photo
+        return left;
+    }
+
+    private static void AddDisc(
+        MeshBuilder<VertexPosition, VertexTexture1> mesh,
+        MaterialBuilder material,
+        float radius,
+        float y,
+        int segments,
+        bool upward)
+    {
+        var prim = mesh.UsePrimitive(material);
+        var center = new Vector3(0, y, 0);
+        var centerUv = new Vector2(0.5f, 0.5f);
+
+        for (var i = 0; i < segments; i++)
+        {
+            var a0 = i / (float)segments * MathF.Tau;
+            var a1 = (i + 1) / (float)segments * MathF.Tau;
+
+            var p0 = new Vector3(MathF.Sin(a0) * radius, y, MathF.Cos(a0) * radius);
+            var p1 = new Vector3(MathF.Sin(a1) * radius, y, MathF.Cos(a1) * radius);
+
+            var uv0 = new Vector2(0.5f + MathF.Sin(a0) * 0.5f, 0.5f + MathF.Cos(a0) * 0.5f);
+            var uv1 = new Vector2(0.5f + MathF.Sin(a1) * 0.5f, 0.5f + MathF.Cos(a1) * 0.5f);
+
+            if (upward)
+            {
+                prim.AddTriangle(
+                    (new VertexPosition(center), new VertexTexture1(centerUv)),
+                    (new VertexPosition(p0), new VertexTexture1(uv0)),
+                    (new VertexPosition(p1), new VertexTexture1(uv1)));
+            }
+            else
+            {
+                prim.AddTriangle(
+                    (new VertexPosition(center), new VertexTexture1(centerUv)),
+                    (new VertexPosition(p1), new VertexTexture1(uv1)),
+                    (new VertexPosition(p0), new VertexTexture1(uv0)));
+            }
+        }
     }
 
     private static MaterialBuilder CreateMaterial(Image<Rgba32> texture, string name)
@@ -298,16 +354,25 @@ public class PhotoModelGenerationService : IPhotoModelGenerationService
         Vector3 v0,
         Vector3 v1,
         Vector3 v2,
-        Vector3 v3)
+        Vector3 v3,
+        Vector2? uv0 = null,
+        Vector2? uv1 = null,
+        Vector2? uv2 = null,
+        Vector2? uv3 = null)
     {
+        var t0 = uv0 ?? new Vector2(0, 1);
+        var t1 = uv1 ?? new Vector2(1, 1);
+        var t2 = uv2 ?? new Vector2(1, 0);
+        var t3 = uv3 ?? new Vector2(0, 0);
+
         var prim = mesh.UsePrimitive(material);
         prim.AddTriangle(
-            (new VertexPosition(v0), new VertexTexture1(new Vector2(0, 1))),
-            (new VertexPosition(v1), new VertexTexture1(new Vector2(1, 1))),
-            (new VertexPosition(v2), new VertexTexture1(new Vector2(1, 0))));
+            (new VertexPosition(v0), new VertexTexture1(t0)),
+            (new VertexPosition(v1), new VertexTexture1(t1)),
+            (new VertexPosition(v2), new VertexTexture1(t2)));
         prim.AddTriangle(
-            (new VertexPosition(v0), new VertexTexture1(new Vector2(0, 1))),
-            (new VertexPosition(v2), new VertexTexture1(new Vector2(1, 0))),
-            (new VertexPosition(v3), new VertexTexture1(new Vector2(0, 0))));
+            (new VertexPosition(v0), new VertexTexture1(t0)),
+            (new VertexPosition(v2), new VertexTexture1(t2)),
+            (new VertexPosition(v3), new VertexTexture1(t3)));
     }
 }

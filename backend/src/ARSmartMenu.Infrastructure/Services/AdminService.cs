@@ -4,6 +4,7 @@ using ARSmartMenu.Application.Interfaces;
 using ARSmartMenu.Domain.Entities;
 using ARSmartMenu.Domain.Enums;
 using ARSmartMenu.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace ARSmartMenu.Infrastructure.Services;
@@ -822,5 +823,35 @@ public class AdminService : IAdminService
         }
 
         return System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+    }
+
+    public async Task<ProductDto> AdminUploadModelAsync(Guid productId, IFormFile file, CancellationToken ct = default)
+    {
+        var product = await _db.Products
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        return await _products.UploadModelAsync(product.BusinessId, productId, file, ct);
+    }
+
+    public async Task<ProductDto> AdminDeleteModelAsync(Guid productId, CancellationToken ct = default)
+    {
+        var product = await _db.Products
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        return await _products.DeleteModelAsync(product.BusinessId, productId, ct);
+    }
+
+    public async Task<ProductDto> AdminDeletePhotoAsync(Guid productId, Guid photoId, CancellationToken ct = default)
+    {
+        var product = await _db.Products
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == productId, ct)
+            ?? throw new NotFoundException("Product not found.");
+
+        return await _products.DeletePhotoAsync(product.BusinessId, productId, photoId, ct);
     }
 }

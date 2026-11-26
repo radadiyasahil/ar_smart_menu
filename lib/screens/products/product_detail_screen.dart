@@ -206,6 +206,99 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
   }
 
+  Future<void> _deletePhoto(String photoId) async {
+    final product = _product;
+    if (product == null || _isUploading) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Photo?'),
+        content: const Text(
+          'Are you sure you want to remove this photo? If this dish is submitted or live, deleting required photos may revert it to draft.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isUploading = true);
+    try {
+      final updated = await context.read<ProductProvider>().deletePhoto(
+            productId: product.id,
+            photoId: photoId,
+          );
+      if (mounted) {
+        setState(() {
+          _product = updated;
+          _isUploading = false;
+        });
+        TopToast.success(context, 'Photo removed successfully');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploading = false);
+        TopToast.error(context, formatApiError(e));
+      }
+    }
+  }
+
+  Future<void> _deleteModel() async {
+    final product = _product;
+    if (product == null || _isUploading) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete 3D Model?'),
+        content: const Text(
+          'Are you sure you want to delete the 3D model (.glb)? AR view will be disabled until a new 3D model is uploaded.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete 3D Model'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isUploading = true);
+    try {
+      final updated = await context.read<ProductProvider>().deleteModel(product.id);
+      if (mounted) {
+        setState(() {
+          _product = updated;
+          _isUploading = false;
+        });
+        TopToast.success(context, '3D model deleted');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploading = false);
+        TopToast.error(context, formatApiError(e));
+      }
+    }
+  }
+
   Future<void> _toggleLiveStatus(ProductStatus targetStatus) async {
     final product = _product;
     if (product == null) return;
@@ -448,6 +541,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               isUploading: _isUploading,
               onPhotoSelected: (bytes, filename) =>
                   _uploadPhotoBytes(PhotoAngleType.front, bytes, filename),
+              onPhotoRemoved: product.photos.isNotEmpty
+                  ? () => _deletePhoto(product.photos.first.id)
+                  : null,
             ),
             const SizedBox(height: 12),
             Center(
@@ -480,7 +576,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               const SizedBox(height: 8),
             ],
             FourPhotoUploader(
-              title: product.isLive ? 'Replace AR photos' : 'AR photos (4 Required)',
+              title: product.isLive ? 'Manage AR photos' : 'AR photos (4 Required)',
               remotePhotoUrls: {
                 for (final angle in PhotoAngleType.requiredForSubmit)
                   angle: product.photoForAngle(angle)?.photoUrl,
@@ -490,6 +586,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               showReplaceHint: product.isLive,
               onPhotoSelected: (angle, bytes, filename) =>
                   _uploadPhotoBytes(angle, bytes, filename),
+              onPhotoRemoved: (angle) {
+                final p = product.photoForAngle(angle);
+                if (p != null) {
+                  _deletePhoto(p.id);
+                }
+              },
             ),
             const SizedBox(height: AppSpacing.lg),
             Container(
@@ -508,49 +610,105 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(Icons.bolt, color: AppColors.primaryOrange, size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        'Direct 3D & Video Upload',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      const Row(
+                        children: [
+                          Icon(Icons.bolt, color: AppColors.primaryOrange, size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Raw 3D & Video Assets',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                        ],
                       ),
+                      if (product.model3d?.glbUrl != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.success.withValues(alpha: 0.4)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.check_circle, size: 12, color: AppColors.success),
+                              SizedBox(width: 4),
+                              Text('3D GLB Active', style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Upload a ready .glb 3D scan (instant live) or a short 10s walkaround video (<35MB).',
-                    style: TextStyle(fontSize: 12, color: AppColors.mediumGray),
+                  Text(
+                    product.model3d?.glbUrl != null
+                        ? '3D model is active. You can replace the .glb file or delete it to revert to 2D photos.'
+                        : 'Upload a ready .glb 3D scan (instant live) or a short 10s walkaround video (<35MB).',
+                    style: const TextStyle(fontSize: 12, color: AppColors.mediumGray),
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.view_in_ar, size: 18),
-                          label: const Text('Upload .glb (3D)'),
+                  if (product.model3d?.glbUrl != null) ...[
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.sm,
+                      children: [
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.sync, size: 16),
+                          label: const Text('Replace .glb'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.primaryOrange,
                             side: const BorderSide(color: AppColors.primaryOrange),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                           onPressed: _isUploading ? null : _pickAndUploadGlb,
                         ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.videocam_outlined, size: 18),
-                          label: const Text('Upload Video'),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.delete_outline, size: 16),
+                          label: const Text('Delete 3D Model'),
                           style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            foregroundColor: AppColors.error,
+                            side: const BorderSide(color: AppColors.error),
                           ),
+                          onPressed: _isUploading ? null : _deleteModel,
+                        ),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.videocam_outlined, size: 16),
+                          label: const Text('Upload Video'),
                           onPressed: _isUploading ? null : _pickAndUploadVideo,
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ] else ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.view_in_ar, size: 18),
+                            label: const Text('Upload .glb (3D)'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primaryOrange,
+                              side: const BorderSide(color: AppColors.primaryOrange),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onPressed: _isUploading ? null : _pickAndUploadGlb,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.videocam_outlined, size: 18),
+                            label: const Text('Upload Video'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onPressed: _isUploading ? null : _pickAndUploadVideo,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -569,19 +727,38 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
                 itemBuilder: (context, index) {
                   final photo = product.photos[index];
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                    child: Image.network(
-                      photo.photoUrl,
-                      width: 100,
-                      height: 100,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Container(
-                        width: 100,
-                        color: AppColors.lightGray,
-                        child: const Icon(Icons.broken_image_outlined),
+                  return Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                        child: Image.network(
+                          photo.photoUrl,
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Container(
+                            width: 100,
+                            color: AppColors.lightGray,
+                            child: const Icon(Icons.broken_image_outlined),
+                          ),
+                        ),
                       ),
-                    ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: GestureDetector(
+                          onTap: () => _deletePhoto(photo.id),
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.75),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.delete_outline, size: 14, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),

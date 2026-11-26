@@ -17,6 +17,10 @@ public class MediaController : ControllerBase
     {
         _env = env;
         _config = config;
+        // Required for Android Scene Viewer + iOS Quick Look AR
+        _contentTypes.Mappings[".glb"] = "model/gltf-binary";
+        _contentTypes.Mappings[".gltf"] = "model/gltf+json";
+        _contentTypes.Mappings[".usdz"] = "model/vnd.usdz+zip";
     }
 
     [HttpGet("{**storageKey}")]
@@ -35,6 +39,7 @@ public class MediaController : ControllerBase
             contentType = "application/octet-stream";
 
         Response.Headers.Append("Access-Control-Allow-Origin", "*");
+        Response.Headers.Append("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges");
         return PhysicalFile(filePath, contentType, enableRangeProcessing: true);
     }
 }

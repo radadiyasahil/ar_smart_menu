@@ -869,6 +869,7 @@ export function ProductsPage() {
           onEnqueue={handleEnqueue}
           onAdvanceToReview={handleAdvanceToReview}
           onSetStatus={handleSetProductStatus}
+          onRefresh={load}
         />
       )}
 

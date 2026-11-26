@@ -36,7 +36,7 @@ public class PublicArService : IPublicArService
             ? ResolveModelUrl(product.Model3d?.GlbS3Key, product.Model3d?.GlbUrl, resolved.FallbackGlbUrl)
             : null;
         var usdzUrl = isArActive
-            ? (product.Model3d?.UsdzUrl ?? resolved.FallbackUsdzUrl)
+            ? SanitizeUsdzUrl(product.Model3d?.UsdzUrl ?? resolved.FallbackUsdzUrl)
             : null;
         var orderingUrl = await ResolveOrderingUrlAsync(resolved.Business.Id, product.Id, ct);
         var otherProducts = await GetOtherProductsAsync(
@@ -165,7 +165,7 @@ public class PublicArService : IPublicArService
                 photos.FirstOrDefault(),
                 photos,
                 glbUrl,
-                p.UsdzUrl,
+                SanitizeUsdzUrl(p.UsdzUrl),
                 p.HasModel3d && !string.IsNullOrEmpty(glbUrl),
                 dishSlug,
                 p.CustomizationJson));
@@ -305,7 +305,7 @@ public class PublicArService : IPublicArService
                     p.Name,
                     p.PricePaise,
                     qr?.Slug ?? p.Id.ToString("N")[..12],
-                    new PublicArModelDto(p.Model3d?.GlbUrl, p.Model3d?.UsdzUrl));
+                    new PublicArModelDto(p.Model3d?.GlbUrl, SanitizeUsdzUrl(p.Model3d?.UsdzUrl)));
             })
             .ToList();
     }
@@ -431,6 +431,18 @@ public class PublicArService : IPublicArService
             return storedUrl;
 
         return fallbackUrl;
+    }
+
+    /// <summary>
+    /// Drop the old sample Hamburger USDZ so iOS Quick Look uses the real dish GLB instead.
+    /// </summary>
+    private static string? SanitizeUsdzUrl(string? usdzUrl)
+    {
+        if (string.IsNullOrWhiteSpace(usdzUrl))
+            return null;
+        if (usdzUrl.Contains("Hamburger.usdz", StringComparison.OrdinalIgnoreCase))
+            return null;
+        return usdzUrl;
     }
 
     private sealed record ResolvedArExperience(

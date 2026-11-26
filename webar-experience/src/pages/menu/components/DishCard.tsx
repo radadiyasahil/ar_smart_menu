@@ -59,10 +59,10 @@ export const DishCard = memo(function DishCard({
             </span>
           </div>
         ) : dish.has3dModel ? (
-          /* 3D AR Pill badge on thumbnail */
+          /* AR pill badge on thumbnail */
           <div className="ar-shimmer-badge absolute bottom-0 inset-x-0 text-white py-0.2 text-[8px] font-black flex items-center justify-center gap-0.5">
             <Sparkles size={8} />
-            <span>3D</span>
+            <span>AR</span>
           </div>
         ) : null}
       </div>
@@ -137,10 +137,10 @@ export const DishCard = memo(function DishCard({
             type="button"
             onClick={() => onOpen3d(dish)}
             className="btn-view-3d p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
-            title="View 3D AR Model"
+            title="Place dish on your table in AR"
           >
             <Sparkles size={11} />
-            <span className="hidden sm:inline text-[11px]">3D</span>
+            <span className="hidden sm:inline text-[11px]">AR</span>
           </button>
         )}
 
